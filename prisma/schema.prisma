@@ -1,0 +1,48 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_TEST
+  ON_HOLD
+  DONE
+}
+
+model Developer {
+  id        String   @id @default(cuid())
+  name      String
+  color     String   @default("#60a5fa")
+  createdAt DateTime @default(now())
+  tasks     Task[]
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  status      TaskStatus @default(TODO)
+  startDate   DateTime
+  endDate     DateTime
+  order       Int        @default(0)
+  developerId String?
+  developer   Developer? @relation(fields: [developerId], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Sprint {
+  id        String   @id
+  startDate DateTime
+  endDate   DateTime
+  updatedAt DateTime @updatedAt
+}
