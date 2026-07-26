@@ -10,7 +10,7 @@ import {
   weekdayLetter,
 } from "@/lib/dates";
 import { contrastText } from "@/lib/color";
-import { STATUS_OPTIONS, statusMeta } from "@/lib/types";
+import { STATUS_OPTIONS, Task, statusMeta } from "@/lib/types";
 import { useBoard } from "@/components/BoardProvider";
 import { Avatar, Stat, StatusPill } from "@/components/ui";
 import { TaskModal } from "@/components/TaskModal";
@@ -21,6 +21,29 @@ const DAY_WIDTH_COMPACT = 36;
 const DAYS_BEFORE_TODAY = 3;
 const MIN_DAYS_AFTER_TODAY = 21;
 const MIN_COL_WIDTH = 64;
+/** Pointer travel before a press on a bar becomes a drag rather than a click. */
+const BAR_DRAG_THRESHOLD = 4;
+
+/** Keeps a column index inside the rendered range. */
+function clampIdx(i: number, length: number) {
+  return Math.max(0, Math.min(length - 1, i));
+}
+
+/** Which part of a bar the pointer grabbed. */
+type BarMode = "move" | "start" | "end";
+
+interface BarDrag {
+  taskId: string;
+  mode: BarMode;
+  pointerId: number;
+  startX: number;
+  /** Column indices the bar occupied when the drag began. */
+  fromIdx: number;
+  toIdx: number;
+  /** Snapped column offset applied so far. */
+  shift: number;
+  active: boolean;
+}
 
 type ColKey = "task" | "status" | "developer";
 type ColWidths = Record<ColKey, number>;
@@ -33,6 +56,8 @@ export function GanttBoard() {
     useBoard();
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [barDrag, setBarDrag] = useState<BarDrag | null>(null);
+  const barDragRef = useRef<BarDrag | null>(null);
 
   const [hideWeekends, setHideWeekends] = useState(false);
   const [compact, setCompact] = useState(false);
@@ -138,6 +163,128 @@ export function GanttBoard() {
     if (!sprintRange) return false;
     return d >= sprintRange.start && d <= sprintRange.end;
   }
+
+  /** Bar geometry for a task, accounting for an in-flight drag. */
+  function barFor(task: Task) {
+    const s = startOfDay(new Date(task.startDate));
+    const e = startOfDay(new Date(task.endDate));
+    const base = columnSpan(s, e);
+    if (!base) return null;
+
+    const drag = barDrag?.active && barDrag.taskId === task.id ? barDrag : null;
+    if (!drag) return { ...base, fromIdx: null, toIdx: null };
+
+    let fromIdx = drag.fromIdx;
+    let toIdx = drag.toIdx;
+    if (drag.mode === "move") {
+      fromIdx = clampIdx(drag.fromIdx + drag.shift, days.length);
+      toIdx = clampIdx(drag.toIdx + drag.shift, days.length);
+    } else if (drag.mode === "start") {
+      fromIdx = clampIdx(Math.min(drag.fromIdx + drag.shift, drag.toIdx), days.length);
+    } else {
+      toIdx = clampIdx(Math.max(drag.toIdx + drag.shift, drag.fromIdx), days.length);
+    }
+
+    return {
+      left: fromIdx * dayWidth,
+      width: (toIdx - fromIdx + 1) * dayWidth,
+      fromIdx,
+      toIdx,
+    };
+  }
+
+  function beginBarDrag(
+    e: React.PointerEvent,
+    task: Task,
+    mode: BarMode,
+    span: { left: number; width: number }
+  ) {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    e.stopPropagation();
+
+    const next: BarDrag = {
+      taskId: task.id,
+      mode,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      fromIdx: Math.round(span.left / dayWidth),
+      toIdx: Math.round((span.left + span.width) / dayWidth) - 1,
+      shift: 0,
+      active: false,
+    };
+    barDragRef.current = next;
+    setBarDrag(next);
+  }
+
+  // Dragging a bar edits dates by whole days, snapped to the columns on screen.
+  useEffect(() => {
+    if (!barDrag) return;
+
+    function onMove(ev: PointerEvent) {
+      const d = barDragRef.current;
+      if (!d || ev.pointerId !== d.pointerId) return;
+      const dx = ev.clientX - d.startX;
+      const next: BarDrag = {
+        ...d,
+        shift: Math.round(dx / dayWidth),
+        active: d.active || Math.abs(dx) > BAR_DRAG_THRESHOLD,
+      };
+      barDragRef.current = next;
+      setBarDrag(next);
+      if (next.active) ev.preventDefault();
+    }
+
+    function onUp(ev: PointerEvent) {
+      const d = barDragRef.current;
+      barDragRef.current = null;
+      setBarDrag(null);
+      if (!d || ev.pointerId !== d.pointerId) return;
+
+      // A press that never moved is a click: open the editor instead.
+      if (!d.active) {
+        setEditingId(d.taskId);
+        return;
+      }
+
+      const task = tasks.find((t) => t.id === d.taskId);
+      if (!task) return;
+
+      let fromIdx = d.fromIdx;
+      let toIdx = d.toIdx;
+      if (d.mode === "move") {
+        fromIdx = clampIdx(d.fromIdx + d.shift, days.length);
+        toIdx = clampIdx(d.toIdx + d.shift, days.length);
+      } else if (d.mode === "start") {
+        fromIdx = clampIdx(Math.min(d.fromIdx + d.shift, d.toIdx), days.length);
+      } else {
+        toIdx = clampIdx(Math.max(d.toIdx + d.shift, d.fromIdx), days.length);
+      }
+
+      const startDate = toISODate(days[fromIdx]);
+      const endDate = toISODate(days[toIdx]);
+      if (
+        startDate === toISODate(startOfDay(new Date(task.startDate))) &&
+        endDate === toISODate(startOfDay(new Date(task.endDate)))
+      ) {
+        return;
+      }
+      updateTask(task.id, { startDate, endDate });
+    }
+
+    function onCancel() {
+      barDragRef.current = null;
+      setBarDrag(null);
+    }
+
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+  }, [barDrag, dayWidth, days, tasks, updateTask]);
 
   const editingTask = tasks.find((t) => t.id === editingId) ?? null;
 
@@ -382,10 +529,9 @@ export function GanttBoard() {
             </div>
 
             {tasks.map((task) => {
-              const s = startOfDay(new Date(task.startDate));
-              const e = startOfDay(new Date(task.endDate));
-              const bar = columnSpan(s, e);
+              const bar = barFor(task);
               const color = task.developer?.color ?? statusMeta(task.status).color;
+              const dragging = barDrag?.active && barDrag.taskId === task.id;
               return (
                 <div
                   key={task.id}
@@ -402,9 +548,21 @@ export function GanttBoard() {
                     />
                   ))}
                   {bar && (
-                    <button
-                      onClick={() => setEditingId(task.id)}
-                      className="absolute top-2 bottom-2 flex items-center truncate rounded-md px-2 text-left text-[0.6875rem] font-medium leading-none shadow-sm ring-2 ring-[var(--surface)] transition hover:brightness-95"
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onPointerDown={(e) => beginBarDrag(e, task, "move", bar)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setEditingId(task.id);
+                        }
+                      }}
+                      className={`group/bar absolute top-2 bottom-2 flex touch-none select-none items-center rounded-md px-2 text-left text-[0.6875rem] font-medium leading-none shadow-sm ring-2 ring-[var(--surface)] ${
+                        dragging
+                          ? "cursor-grabbing"
+                          : "cursor-grab transition hover:brightness-95"
+                      }`}
                       style={{
                         left: bar.left + 2,
                         width: bar.width - 4,
@@ -417,13 +575,33 @@ export function GanttBoard() {
                           : task.title
                       }
                     >
+                      {/* Grab either end to reschedule just that date. */}
+                      <span
+                        onPointerDown={(e) => beginBarDrag(e, task, "start", bar)}
+                        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md opacity-0 transition group-hover/bar:opacity-100"
+                        style={{ background: "rgba(255,255,255,0.45)" }}
+                        aria-hidden="true"
+                      />
+                      <span
+                        onPointerDown={(e) => beginBarDrag(e, task, "end", bar)}
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-r-md opacity-0 transition group-hover/bar:opacity-100"
+                        style={{ background: "rgba(255,255,255,0.45)" }}
+                        aria-hidden="true"
+                      />
+
                       {task.developer && (
                         <span className="mr-1.5 -ml-0.5 shrink-0">
                           <Avatar person={task.developer} size={16} />
                         </span>
                       )}
                       <span className="truncate">{task.title}</span>
-                    </button>
+
+                      {dragging && bar.fromIdx != null && bar.toIdx != null && (
+                        <span className="pointer-events-none absolute -top-6 left-0 whitespace-nowrap rounded bg-[var(--ink)] px-1.5 py-1 text-[0.625rem] font-medium text-[var(--surface)] shadow">
+                          {toISODate(days[bar.fromIdx])} → {toISODate(days[bar.toIdx])}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               );
