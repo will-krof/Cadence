@@ -12,6 +12,11 @@ export async function PATCH(
     where: { id },
     data: {
       title: typeof body.title === "string" ? body.title.trim() : undefined,
+      description:
+        body.description === undefined
+          ? undefined
+          : body.description?.trim() || null,
+      link: body.link === undefined ? undefined : body.link?.trim() || null,
       status: body.status || undefined,
       startDate: body.startDate ? new Date(body.startDate) : undefined,
       endDate: body.endDate ? new Date(body.endDate) : undefined,

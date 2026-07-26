@@ -1,0 +1,354 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { BoardProvider, useBoard } from "@/components/BoardProvider";
+import { GanttBoard } from "@/components/GanttBoard";
+import { TrackerBoard } from "@/components/TrackerBoard";
+import { Wordmark } from "@/components/Logo";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import {
+  AddTaskModal,
+  CloseIcon,
+  DevelopersModal,
+  NewProjectModal,
+} from "@/components/ui";
+
+type View = "timeline" | "tracker";
+
+const TIMELINE_ICON = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <rect x="1.5" y="3" width="8" height="2.6" rx="1.3" fill="currentColor" />
+    <rect x="4" y="6.7" width="10.5" height="2.6" rx="1.3" fill="currentColor" />
+    <rect x="1.5" y="10.4" width="6.5" height="2.6" rx="1.3" fill="currentColor" />
+  </svg>
+);
+
+const TRACKER_ICON = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <rect
+      x="1.6"
+      y="2.4"
+      width="4.3"
+      height="11.2"
+      rx="1.4"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    />
+    <rect
+      x="10.1"
+      y="2.4"
+      width="4.3"
+      height="7"
+      rx="1.4"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    />
+  </svg>
+);
+
+export default function AppShell() {
+  return (
+    <BoardProvider>
+      <Shell />
+    </BoardProvider>
+  );
+}
+
+function Shell() {
+  const {
+    loading,
+    projectLoading,
+    projects,
+    activeProject,
+    selectProject,
+    createProject,
+    deleteProject,
+    developers,
+    createTask,
+    createDeveloper,
+    deleteDeveloper,
+  } = useBoard();
+
+  const [view, setView] = useState<View>("timeline");
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [showDevelopers, setShowDevelopers] = useState(false);
+  const [showNewProject, setShowNewProject] = useState(false);
+
+  const available: View[] = activeProject
+    ? [
+        ...(activeProject.hasTimeline ? (["timeline"] as View[]) : []),
+        ...(activeProject.hasTracker ? (["tracker"] as View[]) : []),
+      ]
+    : [];
+
+  // Keep the selected view valid for whichever project is open — a project
+  // may not have both tools enabled.
+  useEffect(() => {
+    if (available.length && !available.includes(view)) {
+      setView(available[0]);
+    }
+  }, [available, view]);
+
+  return (
+    <div className="flex h-full flex-col bg-[var(--plane)]">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--hairline)] bg-[var(--surface)] px-3 py-2.5 sm:px-4">
+        <Wordmark />
+        <div className="flex items-center gap-2">
+          {activeProject && (
+            <>
+              <button
+                onClick={() => setShowDevelopers(true)}
+                className="btn-secondary flex h-8 w-8 items-center justify-center !p-0 sm:h-auto sm:w-auto sm:!px-3.5 sm:!py-[0.4375rem]"
+                aria-label="Developers"
+                title="Developers"
+              >
+                <span className="hidden sm:inline">Developers</span>
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  className="sm:hidden"
+                >
+                  <circle cx="6" cy="5" r="2.6" stroke="currentColor" strokeWidth="1.5" />
+                  <path
+                    d="M1.6 13.2c0-2.4 2-4 4.4-4s4.4 1.6 4.4 4"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M11 3.2a2.4 2.4 0 010 4.4M12.2 9.6c1.4.5 2.2 1.8 2.2 3.6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+              <button onClick={() => setShowAddTask(true)} className="btn-primary">
+                New task
+              </button>
+            </>
+          )}
+          <ThemeToggle />
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        <nav
+          className="thin-scroll flex w-14 shrink-0 flex-col gap-4 overflow-y-auto border-r border-[var(--hairline)] bg-[var(--surface)] p-2 lg:w-56"
+          aria-label="Projects and views"
+        >
+          <div className="flex flex-col gap-1">
+            <div className="hidden items-center justify-between px-2 pt-1 pb-1 lg:flex">
+              <span className="field-label">Projects</span>
+              <button
+                onClick={() => setShowNewProject(true)}
+                className="rounded p-0.5 text-[var(--ink-muted)] transition hover:text-[var(--ink)]"
+                aria-label="New project"
+                title="New project"
+              >
+                <PlusIcon />
+              </button>
+            </div>
+            <button
+              onClick={() => setShowNewProject(true)}
+              className="flex items-center justify-center rounded-[var(--radius)] p-2 text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] lg:hidden"
+              aria-label="New project"
+              title="New project"
+            >
+              <PlusIcon />
+            </button>
+
+            {projects.map((p) => {
+              const active = p.id === activeProject?.id;
+              return (
+                <div key={p.id} className="group relative">
+                  <button
+                    onClick={() => selectProject(p.id)}
+                    aria-current={active ? "true" : undefined}
+                    title={p.description ? `${p.name} — ${p.description}` : p.name}
+                    className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition lg:pr-7 ${
+                      active
+                        ? "bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
+                        : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    <span
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[0.3rem] text-[0.625rem] font-semibold uppercase"
+                      style={{
+                        background: active
+                          ? "var(--accent)"
+                          : "var(--gridline)",
+                        color: active ? "#fff" : "var(--ink-secondary)",
+                      }}
+                    >
+                      {p.name.slice(0, 1)}
+                    </span>
+                    <span className="hidden truncate lg:inline">{p.name}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (
+                        confirm(
+                          `Delete “${p.name}” and all of its tasks? This cannot be undone.`
+                        )
+                      ) {
+                        deleteProject(p.id);
+                      }
+                    }}
+                    className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded p-1 text-[var(--ink-muted)] opacity-0 transition hover:text-[#d03b3b] focus-visible:opacity-100 group-hover:opacity-100 lg:block"
+                    aria-label={`Delete project ${p.name}`}
+                  >
+                    <CloseIcon size={10} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {available.length > 0 && (
+            <div className="flex flex-col gap-1 border-t border-[var(--hairline)] pt-3">
+              <span className="hidden px-2 pb-1 lg:block">
+                <span className="field-label">Views</span>
+              </span>
+              {available.includes("timeline") && (
+                <ViewButton
+                  active={view === "timeline"}
+                  onClick={() => setView("timeline")}
+                  icon={TIMELINE_ICON}
+                  label="Timeline"
+                />
+              )}
+              {available.includes("tracker") && (
+                <ViewButton
+                  active={view === "tracker"}
+                  onClick={() => setView("tracker")}
+                  icon={TRACKER_ICON}
+                  label="Tracker"
+                />
+              )}
+            </div>
+          )}
+        </nav>
+
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--surface)]">
+          {loading ? (
+            <Centered>Loading…</Centered>
+          ) : !activeProject ? (
+            <Centered>
+              <div className="flex flex-col items-center gap-3 text-center">
+                <p className="text-sm text-[var(--ink-secondary)]">
+                  No projects yet.
+                </p>
+                <button
+                  onClick={() => setShowNewProject(true)}
+                  className="btn-primary"
+                >
+                  Create your first project
+                </button>
+              </div>
+            </Centered>
+          ) : (
+            <>
+              <div className="flex items-baseline gap-2 border-b border-[var(--hairline)] px-4 py-2.5 sm:px-6">
+                <h2 className="text-[0.8125rem] font-semibold tracking-tight">
+                  {activeProject.name}
+                </h2>
+                {activeProject.description && (
+                  <p className="truncate text-[0.75rem] text-[var(--ink-muted)]">
+                    {activeProject.description}
+                  </p>
+                )}
+              </div>
+              {projectLoading ? (
+                <Centered>Loading project…</Centered>
+              ) : view === "timeline" ? (
+                <GanttBoard />
+              ) : (
+                <TrackerBoard />
+              )}
+            </>
+          )}
+        </main>
+      </div>
+
+      {showAddTask && activeProject && (
+        <AddTaskModal
+          developers={developers}
+          onClose={() => setShowAddTask(false)}
+          onCreate={async (input) => {
+            await createTask(input);
+            setShowAddTask(false);
+          }}
+        />
+      )}
+      {showDevelopers && (
+        <DevelopersModal
+          developers={developers}
+          onClose={() => setShowDevelopers(false)}
+          onCreate={createDeveloper}
+          onDelete={deleteDeveloper}
+        />
+      )}
+      {showNewProject && (
+        <NewProjectModal
+          onClose={() => setShowNewProject(false)}
+          onCreate={async (input) => {
+            await createProject(input);
+            setShowNewProject(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ViewButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      title={label}
+      className={`flex items-center justify-center gap-2.5 rounded-[var(--radius)] px-2 py-2 text-[0.8125rem] font-medium transition lg:justify-start lg:px-3 ${
+        active
+          ? "bg-[var(--accent-wash)] text-[var(--accent)]"
+          : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+      }`}
+    >
+      {icon}
+      <span className="hidden lg:inline">{label}</span>
+    </button>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+      <path
+        d="M6 2v8M2 6h8"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function Centered({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--ink-muted)]">
+      {children}
+    </div>
+  );
+}

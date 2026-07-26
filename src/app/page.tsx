@@ -1,5 +1,5 @@
-import GanttBoard from "@/components/GanttBoard";
+import AppShell from "@/components/AppShell";
 
 export default function Home() {
-  return <GanttBoard />;
+  return <AppShell />;
 }

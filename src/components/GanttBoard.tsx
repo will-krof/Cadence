@@ -10,28 +10,34 @@ import {
   weekdayLetter,
 } from "@/lib/dates";
 import { contrastText } from "@/lib/color";
-import { Developer, Sprint, STATUS_OPTIONS, Task, TaskStatus, statusMeta } from "@/lib/types";
+import { STATUS_OPTIONS, statusMeta } from "@/lib/types";
+import { useBoard } from "@/components/BoardProvider";
+import { CloseIcon, Stat, StatusPill } from "@/components/ui";
 
-const ROW_HEIGHT = 40;
-const DAY_WIDTH = 40;
+const ROW_HEIGHT = 44;
+const DAY_WIDTH = 44;
+const DAY_WIDTH_COMPACT = 36;
 const DAYS_BEFORE_TODAY = 3;
 const MIN_DAYS_AFTER_TODAY = 21;
-const MIN_COL_WIDTH = 60;
+const MIN_COL_WIDTH = 64;
 
 type ColKey = "task" | "status" | "developer";
 type ColWidths = Record<ColKey, number>;
 
-const DEFAULT_COL_WIDTHS: ColWidths = { task: 200, status: 130, developer: 130 };
+const COL_WIDTHS_WIDE: ColWidths = { task: 240, status: 132, developer: 132 };
+const COL_WIDTHS_COMPACT: ColWidths = { task: 132, status: 104, developer: 96 };
 
-export default function GanttBoard() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [developers, setDevelopers] = useState<Developer[]>([]);
-  const [sprint, setSprint] = useState<Sprint | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [showAddTask, setShowAddTask] = useState(false);
-  const [showAddDeveloper, setShowAddDeveloper] = useState(false);
-  const [colWidths, setColWidths] = useState<ColWidths>(DEFAULT_COL_WIDTHS);
+export function GanttBoard() {
+  const { tasks, developers, sprint, stats, updateTask, deleteTask, updateSprint } =
+    useBoard();
 
+  const [hideWeekends, setHideWeekends] = useState(false);
+  const [compact, setCompact] = useState(false);
+  const [colWidths, setColWidths] = useState<ColWidths>(COL_WIDTHS_WIDE);
+
+  // Track whether the user has hand-sized the columns, so a viewport change
+  // doesn't overwrite their choice.
+  const userSizedRef = useRef(false);
   const resizingRef = useRef<{
     key: ColKey;
     startX: number;
@@ -39,7 +45,16 @@ export default function GanttBoard() {
   } | null>(null);
 
   useEffect(() => {
-    refreshAll();
+    const mq = window.matchMedia("(max-width: 767px)");
+    function apply() {
+      setCompact(mq.matches);
+      if (!userSizedRef.current) {
+        setColWidths(mq.matches ? COL_WIDTHS_COMPACT : COL_WIDTHS_WIDE);
+      }
+    }
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, []);
 
   useEffect(() => {
@@ -64,35 +79,15 @@ export default function GanttBoard() {
   function startResize(key: ColKey) {
     return (e: React.MouseEvent) => {
       e.preventDefault();
+      userSizedRef.current = true;
       resizingRef.current = { key, startX: e.clientX, startWidth: colWidths[key] };
     };
   }
 
-  async function refreshAll() {
-    setLoading(true);
-    const [taskRes, devRes, sprintRes] = await Promise.all([
-      fetch("/api/tasks"),
-      fetch("/api/developers"),
-      fetch("/api/sprint"),
-    ]);
-    setTasks(await taskRes.json());
-    setDevelopers(await devRes.json());
-    setSprint(await sprintRes.json());
-    setLoading(false);
-  }
-
-  async function updateSprint(startDate: string, endDate: string) {
-    const res = await fetch("/api/sprint", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ startDate, endDate }),
-    });
-    setSprint(await res.json());
-  }
-
   const today = useMemo(() => startOfDay(new Date()), []);
+  const dayWidth = compact ? DAY_WIDTH_COMPACT : DAY_WIDTH;
 
-  const { rangeStart, days } = useMemo(() => {
+  const { days } = useMemo(() => {
     let start = addDays(today, -DAYS_BEFORE_TODAY);
     let end = addDays(today, MIN_DAYS_AFTER_TODAY);
 
@@ -111,9 +106,22 @@ export default function GanttBoard() {
     }
 
     const count = diffDays(start, end) + 1;
-    const days = Array.from({ length: count }, (_, i) => addDays(start, i));
-    return { rangeStart: start, days };
-  }, [tasks, today, sprint]);
+    const all = Array.from({ length: count }, (_, i) => addDays(start, i));
+    const days = hideWeekends ? all.filter((d) => !isWeekend(d)) : all;
+    return { days };
+  }, [tasks, today, sprint, hideWeekends]);
+
+  // Bars are placed by visible column index, not by date difference, so the
+  // math stays correct when weekend columns are filtered out.
+  function columnSpan(from: Date, to: Date) {
+    const first = days.findIndex((d) => d >= from && d <= to);
+    if (first === -1) return null;
+    let last = first;
+    for (let i = first; i < days.length; i++) {
+      if (days[i] <= to) last = i;
+    }
+    return { left: first * dayWidth, width: (last - first + 1) * dayWidth };
+  }
 
   const sprintRange = useMemo(() => {
     if (!sprint) return null;
@@ -128,199 +136,148 @@ export default function GanttBoard() {
     return d >= sprintRange.start && d <= sprintRange.end;
   }
 
-  const stats = useMemo(() => {
-    const total = tasks.length;
-    const counts: Record<TaskStatus, number> = {
-      TODO: 0,
-      IN_PROGRESS: 0,
-      IN_TEST: 0,
-      ON_HOLD: 0,
-      DONE: 0,
-    };
-    for (const t of tasks) counts[t.status]++;
-    const progress = total === 0 ? 0 : (counts.DONE / total) * 100;
-    return { total, counts, progress };
-  }, [tasks]);
-
-  async function updateTask(id: string, data: Partial<Task>) {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, ...data } : t))
-    );
-    const res = await fetch(`/api/tasks/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const updated = await res.json();
-    setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
-  }
-
-  async function deleteTask(id: string) {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    await fetch(`/api/tasks/${id}`, { method: "DELETE" });
-  }
-
-  async function createTask(input: {
-    title: string;
-    startDate: string;
-    endDate: string;
-    developerId: string | null;
-  }) {
-    const res = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    });
-    const created = await res.json();
-    setTasks((prev) => [...prev, created]);
-    setShowAddTask(false);
-  }
-
-  async function createDeveloper(input: { name: string; color: string }) {
-    const res = await fetch("/api/developers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    });
-    const created = await res.json();
-    setDevelopers((prev) => [...prev, created]);
-    setShowAddDeveloper(false);
-  }
-
-  async function deleteDeveloper(id: string) {
-    setDevelopers((prev) => prev.filter((d) => d.id !== id));
-    await fetch(`/api/developers/${id}`, { method: "DELETE" });
-    setTasks((prev) =>
-      prev.map((t) => (t.developerId === id ? { ...t, developerId: null, developer: null } : t))
-    );
-  }
-
-  if (loading) {
-    return <div className="p-8 text-sm text-zinc-500">Loading…</div>;
-  }
-
   const gridTemplateColumns = `${colWidths.task}px ${colWidths.status}px ${colWidths.developer}px`;
   const leftPanelWidth = colWidths.task + colWidths.status + colWidths.developer;
 
   return (
-    <div className="flex flex-col h-full">
-      <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-col gap-3 border-b border-[var(--hairline)] px-4 py-3 sm:px-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Gantt Chart</h1>
-          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
-            <span>Total: {stats.total}</span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <Stat label="Total" value={stats.total} />
             {STATUS_OPTIONS.map((s) => (
-              <span key={s.value}>
-                {s.label}: {stats.counts[s.value]}
-              </span>
+              <Stat
+                key={s.value}
+                label={s.label}
+                value={stats.counts[s.value]}
+                dot={s.color}
+              />
             ))}
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">
-              Progress: {stats.progress.toFixed(2)}%
+          </div>
+          <div className="mt-2.5 flex items-center gap-2">
+            <div className="h-1 w-28 overflow-hidden rounded-full bg-[var(--gridline)] sm:w-40">
+              <div
+                className="h-full rounded-full bg-[#0ca30c] transition-[width] duration-300"
+                style={{ width: `${stats.progress}%` }}
+              />
+            </div>
+            <span className="text-[0.6875rem] tabular-nums text-[var(--ink-secondary)]">
+              {stats.progress.toFixed(0)}% done
             </span>
           </div>
         </div>
-        <div className="flex items-end gap-4">
-          <div className="flex items-end gap-2">
-            <Field label="Sprint start">
-              <input
-                type="date"
-                value={sprint ? toISODate(new Date(sprint.startDate)) : ""}
-                onChange={(e) =>
-                  updateSprint(
-                    e.target.value,
-                    sprint ? toISODate(new Date(sprint.endDate)) : e.target.value
-                  )
-                }
-                className="input"
-              />
-            </Field>
-            <Field label="Sprint end">
-              <input
-                type="date"
-                value={sprint ? toISODate(new Date(sprint.endDate)) : ""}
-                onChange={(e) =>
-                  updateSprint(
-                    sprint ? toISODate(new Date(sprint.startDate)) : e.target.value,
-                    e.target.value
-                  )
-                }
-                className="input"
-              />
-            </Field>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowAddDeveloper(true)}
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-            >
-              + Developer
-            </button>
-            <button
-              onClick={() => setShowAddTask(true)}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900"
-            >
-              + Task
-            </button>
-          </div>
-        </div>
-      </header>
 
-      <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+          <label className="flex flex-col gap-1">
+            <span className="field-label">Sprint start</span>
+            <input
+              type="date"
+              value={sprint ? toISODate(new Date(sprint.startDate)) : ""}
+              onChange={(e) =>
+                updateSprint(
+                  e.target.value,
+                  sprint ? toISODate(new Date(sprint.endDate)) : e.target.value
+                )
+              }
+              className="input w-[9.5rem]"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="field-label">Sprint end</span>
+            <input
+              type="date"
+              value={sprint ? toISODate(new Date(sprint.endDate)) : ""}
+              onChange={(e) =>
+                updateSprint(
+                  sprint ? toISODate(new Date(sprint.startDate)) : e.target.value,
+                  e.target.value
+                )
+              }
+              className="input w-[9.5rem]"
+            />
+          </label>
+          <label className="flex cursor-pointer select-none items-center gap-2 pb-2 text-xs text-[var(--ink-secondary)]">
+            <input
+              type="checkbox"
+              checked={hideWeekends}
+              onChange={(e) => setHideWeekends(e.target.checked)}
+              className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
+            />
+            Hide weekends
+          </label>
+        </div>
+      </div>
+
+      {/* On small screens the table and timeline scroll together as one surface,
+          so the timeline gets the full viewport width instead of a sliver. */}
+      <div
+        className={`flex min-h-0 flex-1 ${
+          compact ? "thin-scroll overflow-auto" : ""
+        }`}
+      >
         {/* Left panel: task table */}
         <div
-          className="relative shrink-0 overflow-y-auto border-r border-zinc-200 dark:border-zinc-800"
+          className={`relative shrink-0 border-r border-[var(--hairline)] ${
+            compact ? "" : "thin-scroll overflow-y-auto"
+          }`}
           style={{ width: leftPanelWidth }}
         >
           <div
-            className="grid border-b border-zinc-200 bg-zinc-50 text-xs font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900"
+            className="sticky top-0 z-20 grid items-center border-b border-[var(--hairline)] bg-[var(--surface)] text-[0.6875rem] font-medium uppercase tracking-wide text-[var(--ink-muted)]"
             style={{ height: ROW_HEIGHT, gridTemplateColumns }}
           >
-            <div className="flex items-center px-3">Task</div>
-            <div className="flex items-center px-2">Status</div>
-            <div className="flex items-center px-2">Developer</div>
+            <div className="truncate px-3">Task</div>
+            <div className="truncate px-2">Status</div>
+            <div className="truncate px-2">Developer</div>
           </div>
+
           {tasks.map((task) => (
             <div
               key={task.id}
-              className="group grid items-center border-b border-zinc-100 dark:border-zinc-900"
+              className="group grid items-center border-b border-[var(--hairline)] transition-colors hover:bg-[var(--plane)]"
               style={{ height: ROW_HEIGHT, gridTemplateColumns }}
             >
-              <div className="flex items-center gap-1 px-3 text-sm">
-                <span className="truncate">{task.title}</span>
+              <div className="flex min-w-0 items-center gap-1 px-3 text-[0.8125rem]">
+                {task.link ? (
+                  <a
+                    href={task.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="truncate text-[var(--accent)] hover:underline"
+                    title={task.description || task.link}
+                  >
+                    {task.title}
+                  </a>
+                ) : (
+                  <span className="truncate" title={task.description || undefined}>
+                    {task.title}
+                  </span>
+                )}
                 <button
                   onClick={() => deleteTask(task.id)}
-                  className="ml-auto shrink-0 text-zinc-300 opacity-0 hover:text-red-500 group-hover:opacity-100"
+                  className="ml-auto shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[#d03b3b] focus-visible:opacity-100 group-hover:opacity-100"
                   title="Delete task"
+                  aria-label={`Delete ${task.title}`}
                 >
-                  ✕
+                  <CloseIcon />
                 </button>
               </div>
+
               <div className="px-2">
-                <select
-                  value={task.status}
-                  onChange={(e) =>
-                    updateTask(task.id, { status: e.target.value as TaskStatus })
-                  }
-                  className="w-full rounded border-none px-1.5 py-1 text-xs font-medium outline-none"
-                  style={{
-                    background: statusMeta(task.status).color,
-                    color: statusMeta(task.status).text,
-                  }}
-                >
-                  {STATUS_OPTIONS.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
+                <StatusPill
+                  status={task.status}
+                  onChange={(status) => updateTask(task.id, { status })}
+                />
               </div>
+
               <div className="px-2">
                 <select
                   value={task.developerId ?? ""}
                   onChange={(e) =>
                     updateTask(task.id, { developerId: e.target.value || null })
                   }
-                  className="w-full rounded border border-zinc-200 bg-transparent px-1.5 py-1 text-xs dark:border-zinc-700"
+                  className="select truncate"
+                  aria-label={`Assignee for ${task.title}`}
                 >
                   <option value="">—</option>
                   {developers.map((d) => (
@@ -332,311 +289,121 @@ export default function GanttBoard() {
               </div>
             </div>
           ))}
+
           {tasks.length === 0 && (
-            <div className="p-4 text-sm text-zinc-400">No tasks yet.</div>
+            <div className="px-3 py-6 text-[0.8125rem] text-[var(--ink-muted)]">
+              No tasks yet.
+            </div>
           )}
 
-          {/* Column resize handles */}
-          <div
-            onMouseDown={startResize("task")}
-            className="absolute top-0 bottom-0 z-10 w-1.5 -ml-[3px] cursor-col-resize hover:bg-blue-400/50"
-            style={{ left: colWidths.task }}
-          />
-          <div
-            onMouseDown={startResize("status")}
-            className="absolute top-0 bottom-0 z-10 w-1.5 -ml-[3px] cursor-col-resize hover:bg-blue-400/50"
-            style={{ left: colWidths.task + colWidths.status }}
-          />
+          {/* Column resize handles — pointer only */}
+          {!compact && (
+            <>
+              <div
+                onMouseDown={startResize("task")}
+                className="absolute top-0 bottom-0 z-30 -ml-[3px] w-1.5 cursor-col-resize transition-colors hover:bg-[var(--accent)]/40"
+                style={{ left: colWidths.task }}
+              />
+              <div
+                onMouseDown={startResize("status")}
+                className="absolute top-0 bottom-0 z-30 -ml-[3px] w-1.5 cursor-col-resize transition-colors hover:bg-[var(--accent)]/40"
+                style={{ left: colWidths.task + colWidths.status }}
+              />
+            </>
+          )}
         </div>
 
         {/* Right panel: timeline */}
-        <div className="flex-1 overflow-auto">
-          <div className="relative" style={{ width: days.length * DAY_WIDTH }}>
-            {sprintRange && (
-              <div
-                className="pointer-events-none absolute top-0 bottom-0 -z-10 bg-indigo-500/5"
-                style={{
-                  left: diffDays(rangeStart, sprintRange.start) * DAY_WIDTH,
-                  width:
-                    (diffDays(sprintRange.start, sprintRange.end) + 1) * DAY_WIDTH,
-                }}
-              />
-            )}
+        <div className={compact ? "shrink-0" : "thin-scroll flex-1 overflow-auto"}>
+          <div className="relative" style={{ width: days.length * dayWidth }}>
+            {(() => {
+              if (!sprintRange) return null;
+              const band = columnSpan(sprintRange.start, sprintRange.end);
+              if (!band) return null;
+              return (
+                <div
+                  className="pointer-events-none absolute top-0 bottom-0 -z-10 bg-[var(--accent-wash)]"
+                  style={{ left: band.left, width: band.width }}
+                />
+              );
+            })()}
+
             <div
-              className="grid border-b border-zinc-200 dark:border-zinc-800"
+              className="sticky top-0 z-20 grid border-b border-[var(--hairline)] bg-[var(--surface)]"
               style={{
-                gridTemplateColumns: `repeat(${days.length}, ${DAY_WIDTH}px)`,
+                gridTemplateColumns: `repeat(${days.length}, ${dayWidth}px)`,
                 height: ROW_HEIGHT,
               }}
             >
-              {days.map((d) => (
-                <div
-                  key={d.toISOString()}
-                  className={`flex flex-col items-center justify-center border-l text-xs ${
-                    isWeekend(d)
-                      ? "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-                      : "border-zinc-100 dark:border-zinc-900"
-                  } ${diffDays(today, d) === 0 ? "bg-blue-50 dark:bg-blue-950" : ""} ${
-                    isInSprint(d) ? "border-b-2 border-b-indigo-500" : ""
-                  }`}
-                >
-                  <span className="font-semibold">{d.getDate()}</span>
-                  <span className="text-[10px] text-zinc-400">
-                    {weekdayLetter(d)}
-                  </span>
-                </div>
-              ))}
+              {days.map((d) => {
+                const isToday = diffDays(today, d) === 0;
+                return (
+                  <div
+                    key={d.toISOString()}
+                    className={`relative flex flex-col items-center justify-center gap-0.5 border-l border-[var(--hairline)] ${
+                      isWeekend(d) ? "bg-[var(--plane)]" : ""
+                    }`}
+                  >
+                    <span
+                      className={`flex h-5 w-5 items-center justify-center rounded-full text-[0.6875rem] tabular-nums ${
+                        isToday
+                          ? "bg-[var(--ink)] font-semibold text-[var(--surface)]"
+                          : "font-medium"
+                      }`}
+                    >
+                      {d.getDate()}
+                    </span>
+                    <span className="text-[0.5625rem] uppercase text-[var(--ink-muted)]">
+                      {weekdayLetter(d)}
+                    </span>
+                    {isInSprint(d) && (
+                      <span className="absolute bottom-0 h-0.5 w-full bg-[var(--accent)]/60" />
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {tasks.map((task) => {
               const s = startOfDay(new Date(task.startDate));
               const e = startOfDay(new Date(task.endDate));
-              const offset = diffDays(rangeStart, s);
-              const span = Math.max(1, diffDays(s, e) + 1);
+              const bar = columnSpan(s, e);
               const color = task.developer?.color ?? statusMeta(task.status).color;
               return (
                 <div
                   key={task.id}
-                  className="relative border-b border-zinc-100 dark:border-zinc-900"
+                  className="relative border-b border-[var(--hairline)]"
                   style={{ height: ROW_HEIGHT }}
                 >
-                  <div
-                    className="absolute top-1.5 bottom-1.5 rounded-md px-2 text-[11px] font-medium leading-none flex items-center truncate shadow-sm"
-                    style={{
-                      left: offset * DAY_WIDTH,
-                      width: span * DAY_WIDTH - 4,
-                      background: color,
-                      color: contrastText(color),
-                    }}
-                    title={task.title}
-                  >
-                    {task.title}
-                  </div>
+                  {days.map((d, i) => (
+                    <div
+                      key={d.toISOString()}
+                      className={`pointer-events-none absolute top-0 bottom-0 border-l border-[var(--hairline)] ${
+                        isWeekend(d) ? "bg-[var(--plane)]" : ""
+                      }`}
+                      style={{ left: i * dayWidth, width: dayWidth }}
+                    />
+                  ))}
+                  {bar && (
+                    <div
+                      className="absolute top-2 bottom-2 flex items-center truncate rounded-md px-2 text-[0.6875rem] font-medium leading-none shadow-sm ring-2 ring-[var(--surface)]"
+                      style={{
+                        left: bar.left + 2,
+                        width: bar.width - 4,
+                        background: color,
+                        color: contrastText(color),
+                      }}
+                      title={task.description || task.title}
+                    >
+                      {task.title}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
       </div>
-
-      {showAddTask && (
-        <AddTaskModal
-          developers={developers}
-          onClose={() => setShowAddTask(false)}
-          onCreate={createTask}
-        />
-      )}
-      {showAddDeveloper && (
-        <AddDeveloperModal
-          developers={developers}
-          onClose={() => setShowAddDeveloper(false)}
-          onCreate={createDeveloper}
-          onDelete={deleteDeveloper}
-        />
-      )}
     </div>
-  );
-}
-
-function AddTaskModal({
-  developers,
-  onClose,
-  onCreate,
-}: {
-  developers: Developer[];
-  onClose: () => void;
-  onCreate: (input: {
-    title: string;
-    startDate: string;
-    endDate: string;
-    developerId: string | null;
-  }) => void;
-}) {
-  const today = toISODate(new Date());
-  const [title, setTitle] = useState("");
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
-  const [developerId, setDeveloperId] = useState("");
-
-  return (
-    <Modal onClose={onClose} title="New Task">
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!title.trim()) return;
-          onCreate({
-            title: title.trim(),
-            startDate,
-            endDate: endDate < startDate ? startDate : endDate,
-            developerId: developerId || null,
-          });
-        }}
-      >
-        <Field label="Title">
-          <input
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="input"
-            placeholder="e.g. [Backend] API update"
-          />
-        </Field>
-        <div className="flex gap-3">
-          <Field label="Start" className="flex-1">
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="input"
-            />
-          </Field>
-          <Field label="End" className="flex-1">
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="input"
-            />
-          </Field>
-        </div>
-        <Field label="Developer">
-          <select
-            value={developerId}
-            onChange={(e) => setDeveloperId(e.target.value)}
-            className="input"
-          >
-            <option value="">Unassigned</option>
-            {developers.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <div className="mt-2 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="btn-secondary">
-            Cancel
-          </button>
-          <button type="submit" className="btn-primary">
-            Create
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function AddDeveloperModal({
-  developers,
-  onClose,
-  onCreate,
-  onDelete,
-}: {
-  developers: Developer[];
-  onClose: () => void;
-  onCreate: (input: { name: string; color: string }) => void;
-  onDelete: (id: string) => void;
-}) {
-  const [name, setName] = useState("");
-  const [color, setColor] = useState("#60a5fa");
-
-  return (
-    <Modal onClose={onClose} title="Developers">
-      <div className="mb-4 flex flex-col gap-2">
-        {developers.map((d) => (
-          <div key={d.id} className="flex items-center gap-2 text-sm">
-            <span
-              className="h-3 w-3 rounded-full"
-              style={{ background: d.color }}
-            />
-            <span className="flex-1">{d.name}</span>
-            <button
-              onClick={() => onDelete(d.id)}
-              className="text-zinc-300 hover:text-red-500"
-            >
-              ✕
-            </button>
-          </div>
-        ))}
-        {developers.length === 0 && (
-          <div className="text-sm text-zinc-400">No developers yet.</div>
-        )}
-      </div>
-      <form
-        className="flex items-end gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!name.trim()) return;
-          onCreate({ name: name.trim(), color });
-          setName("");
-        }}
-      >
-        <Field label="Name" className="flex-1">
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="input"
-            placeholder="e.g. Alex"
-          />
-        </Field>
-        <Field label="Color">
-          <input
-            type="color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            className="h-9 w-12 cursor-pointer rounded border border-zinc-200 dark:border-zinc-700"
-          />
-        </Field>
-        <button type="submit" className="btn-primary">
-          Add
-        </button>
-      </form>
-    </Modal>
-  );
-}
-
-function Modal({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl dark:bg-zinc-900">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold">{title}</h2>
-          <button
-            onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-          >
-            ✕
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-  className = "",
-}: {
-  label: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <label className={`flex flex-col gap-1 text-xs text-zinc-500 ${className}`}>
-      {label}
-      {children}
-    </label>
   );
 }
