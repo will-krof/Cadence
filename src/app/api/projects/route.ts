@@ -24,12 +24,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }
 
-  // A project with neither view enabled would be unreachable in the UI.
+  // A project with nothing enabled would be unreachable in the UI.
   const hasTimeline = body.hasTimeline !== false;
   const hasTracker = body.hasTracker !== false;
-  if (!hasTimeline && !hasTracker) {
+  const hasTeam = body.hasTeam !== false;
+  if (!hasTimeline && !hasTracker && !hasTeam) {
     return NextResponse.json(
-      { error: "Enable at least one of timeline or tracker" },
+      { error: "Enable at least one tool" },
       { status: 400 }
     );
   }
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
       description: body.description?.trim() || null,
       hasTimeline,
       hasTracker,
+      hasTeam,
       userId: user.id,
     },
   });

@@ -16,6 +16,7 @@ import {
   Task,
   TaskStatus,
 } from "@/lib/types";
+import { useFeedback } from "@/components/Feedback";
 
 interface TaskInput {
   title: string;
@@ -32,13 +33,15 @@ interface ProjectInput {
   description: string;
   hasTimeline: boolean;
   hasTracker: boolean;
+  hasTeam: boolean;
 }
 
 interface BoardContextValue {
   projects: Project[];
   activeProject: Project | null;
   selectProject: (id: string) => void;
-  createProject: (input: ProjectInput) => Promise<Project>;
+  createProject: (input: ProjectInput) => Promise<Project | null>;
+  updateProject: (id: string, input: Partial<ProjectInput>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
 
   tasks: Task[];
@@ -54,7 +57,7 @@ interface BoardContextValue {
   createTask: (input: TaskInput) => Promise<void>;
   updateTask: (id: string, data: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
-  createDeveloper: (input: Partial<DeveloperInput>) => Promise<Developer>;
+  createDeveloper: (input: Partial<DeveloperInput>) => Promise<Developer | null>;
   updateDeveloper: (id: string, input: Partial<DeveloperInput>) => Promise<void>;
   deleteDeveloper: (id: string) => Promise<void>;
   updateSprint: (startDate: string, endDate: string) => Promise<void>;
@@ -62,16 +65,29 @@ interface BoardContextValue {
 
 const BoardContext = createContext<BoardContextValue | null>(null);
 
-/** Stable identity so consumers don't re-render on every empty state. */
-const EMPTY_TASKS: Task[] = [];
-
 export function useBoard() {
   const ctx = useContext(BoardContext);
   if (!ctx) throw new Error("useBoard must be used inside <BoardProvider>");
   return ctx;
 }
 
+/** Stable identity so consumers don't re-render on every empty state. */
+const EMPTY_TASKS: Task[] = [];
+
+/** Pulls the server's error message out of a failed response, if there is one. */
+async function errorMessage(res: Response, fallback: string) {
+  try {
+    const body = await res.json();
+    if (typeof body?.error === "string") return body.error;
+  } catch {
+    // Non-JSON body — fall through to the generic message.
+  }
+  return fallback;
+}
+
 export function BoardProvider({ children }: { children: React.ReactNode }) {
+  const { notify } = useFeedback();
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [developers, setDevelopers] = useState<Developer[]>([]);
@@ -100,25 +116,24 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const setSprint = useCallback(
-    (next: Sprint | null) => setLoaded((prev) => ({ ...prev, sprint: next })),
-    []
-  );
-
-  // Projects and the (shared) developer roster load once.
+  // Projects and the developer roster load once.
   useEffect(() => {
     (async () => {
-      const [projectRes, devRes] = await Promise.all([
-        fetch("/api/projects"),
-        fetch("/api/developers"),
-      ]);
-      const loaded: Project[] = await projectRes.json();
-      setProjects(loaded);
-      setDevelopers(await devRes.json());
-      setActiveId(loaded[0]?.id ?? null);
+      try {
+        const [projectRes, devRes] = await Promise.all([
+          fetch("/api/projects"),
+          fetch("/api/developers"),
+        ]);
+        const loadedProjects: Project[] = await projectRes.json();
+        setProjects(loadedProjects);
+        setDevelopers(await devRes.json());
+        setActiveId(loadedProjects[0]?.id ?? null);
+      } catch {
+        notify("error", "Could not load your workspace.");
+      }
       setLoading(false);
     })();
-  }, []);
+  }, [notify]);
 
   // Tasks and sprint are per-project, so they reload on every switch.
   useEffect(() => {
@@ -127,20 +142,24 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     (async () => {
       setProjectLoading(true);
-      const [taskRes, sprintRes] = await Promise.all([
-        fetch(`/api/tasks?projectId=${activeId}`),
-        fetch(`/api/sprint?projectId=${activeId}`),
-      ]);
-      const nextTasks = await taskRes.json();
-      const nextSprint = await sprintRes.json();
-      if (cancelled) return;
-      setLoaded({ projectId: activeId, tasks: nextTasks, sprint: nextSprint });
-      setProjectLoading(false);
+      try {
+        const [taskRes, sprintRes] = await Promise.all([
+          fetch(`/api/tasks?projectId=${activeId}`),
+          fetch(`/api/sprint?projectId=${activeId}`),
+        ]);
+        const nextTasks = await taskRes.json();
+        const nextSprint = await sprintRes.json();
+        if (cancelled) return;
+        setLoaded({ projectId: activeId, tasks: nextTasks, sprint: nextSprint });
+      } catch {
+        if (!cancelled) notify("error", "Could not load this project.");
+      }
+      if (!cancelled) setProjectLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeId]);
+  }, [activeId, notify]);
 
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeId) ?? null,
@@ -149,30 +168,60 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
 
   const selectProject = useCallback((id: string) => setActiveId(id), []);
 
-  const createProject = useCallback(async (input: ProjectInput) => {
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    });
-    const created: Project = await res.json();
-    setProjects((prev) => [...prev, created]);
-    setActiveId(created.id);
-    return created;
-  }, []);
+  const createProject = useCallback(
+    async (input: ProjectInput) => {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not create the project."));
+        return null;
+      }
+      const created: Project = await res.json();
+      setProjects((prev) => [...prev, created]);
+      setActiveId(created.id);
+      notify("success", `Project “${created.name}” created.`);
+      return created;
+    },
+    [notify]
+  );
+
+  const updateProject = useCallback(
+    async (id: string, input: Partial<ProjectInput>) => {
+      const res = await fetch(`/api/projects/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not save the project."));
+        return;
+      }
+      const updated: Project = await res.json();
+      setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      notify("success", "Project updated.");
+    },
+    [notify]
+  );
 
   const deleteProject = useCallback(
     async (id: string) => {
-      await fetch(`/api/projects/${id}`, { method: "DELETE" });
+      const name = projects.find((p) => p.id === id)?.name ?? "Project";
+      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not delete the project."));
+        return;
+      }
       setProjects((prev) => {
         const next = prev.filter((p) => p.id !== id);
-        setActiveId((current) =>
-          current === id ? next[0]?.id ?? null : current
-        );
+        setActiveId((current) => (current === id ? next[0]?.id ?? null : current));
         return next;
       });
+      notify("success", `“${name}” deleted.`);
     },
-    []
+    [projects, notify]
   );
 
   const createTask = useCallback(
@@ -183,27 +232,55 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...input, projectId: activeId }),
       });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not create the task."));
+        return;
+      }
       const created = await res.json();
       setTasks((prev) => [...prev, created]);
+      notify("success", `Task “${created.title}” created.`);
     },
-    [activeId, setTasks]
+    [activeId, setTasks, notify]
   );
 
-  const updateTask = useCallback(async (id: string, data: Partial<Task>) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...data } : t)));
-    const res = await fetch(`/api/tasks/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const updated = await res.json();
-    setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
-  }, [setTasks]);
+  const updateTask = useCallback(
+    async (id: string, data: Partial<Task>) => {
+      const previous = loaded.tasks;
+      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...data } : t)));
 
-  const deleteTask = useCallback(async (id: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    await fetch(`/api/tasks/${id}`, { method: "DELETE" });
-  }, [setTasks]);
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        // Put the optimistic edit back the way it was.
+        setTasks(previous);
+        notify("error", await errorMessage(res, "Could not save the task."));
+        return;
+      }
+      const updated = await res.json();
+      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    },
+    [loaded.tasks, setTasks, notify]
+  );
+
+  const deleteTask = useCallback(
+    async (id: string) => {
+      const previous = loaded.tasks;
+      const title = previous.find((t) => t.id === id)?.title ?? "Task";
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+
+      const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setTasks(previous);
+        notify("error", await errorMessage(res, "Could not delete the task."));
+        return;
+      }
+      notify("success", `“${title}” deleted.`);
+    },
+    [loaded.tasks, setTasks, notify]
+  );
 
   const createDeveloper = useCallback(
     async (input: Partial<DeveloperInput>) => {
@@ -212,11 +289,16 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not add this person."));
+        return null;
+      }
       const created: Developer = await res.json();
       setDevelopers((prev) => [...prev, created]);
+      notify("success", `${created.name} added to the team.`);
       return created;
     },
-    []
+    [notify]
   );
 
   const updateDeveloper = useCallback(
@@ -226,27 +308,39 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not save this profile."));
+        return;
+      }
       const updated: Developer = await res.json();
       setDevelopers((prev) => prev.map((d) => (d.id === id ? updated : d)));
       // Assignee chips on tasks carry a copy of the person, so refresh those.
       setTasks((prev) =>
-        prev.map((t) =>
-          t.developerId === id ? { ...t, developer: updated } : t
-        )
+        prev.map((t) => (t.developerId === id ? { ...t, developer: updated } : t))
       );
+      notify("success", `${updated.name}’s profile saved.`);
     },
-    [setTasks]
+    [setTasks, notify]
   );
 
-  const deleteDeveloper = useCallback(async (id: string) => {
-    setDevelopers((prev) => prev.filter((d) => d.id !== id));
-    await fetch(`/api/developers/${id}`, { method: "DELETE" });
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.developerId === id ? { ...t, developerId: null, developer: null } : t
-      )
-    );
-  }, [setTasks]);
+  const deleteDeveloper = useCallback(
+    async (id: string) => {
+      const name = developers.find((d) => d.id === id)?.name ?? "Person";
+      const res = await fetch(`/api/developers/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not remove this person."));
+        return;
+      }
+      setDevelopers((prev) => prev.filter((d) => d.id !== id));
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.developerId === id ? { ...t, developerId: null, developer: null } : t
+        )
+      );
+      notify("success", `${name} removed from the team.`);
+    },
+    [developers, setTasks, notify]
+  );
 
   const updateSprint = useCallback(
     async (startDate: string, endDate: string) => {
@@ -256,9 +350,15 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId: activeId, startDate, endDate }),
       });
-      setSprint(await res.json());
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not save the sprint."));
+        return;
+      }
+      const next = await res.json();
+      setLoaded((prev) => ({ ...prev, sprint: next }));
+      notify("success", "Sprint dates updated.");
     },
-    [activeId, setSprint]
+    [activeId, notify]
   );
 
   const stats = useMemo(() => {
@@ -280,6 +380,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     activeProject,
     selectProject,
     createProject,
+    updateProject,
     deleteProject,
     tasks,
     developers,

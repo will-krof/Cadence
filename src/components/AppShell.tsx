@@ -7,7 +7,9 @@ import { GanttBoard } from "@/components/GanttBoard";
 import { TrackerBoard } from "@/components/TrackerBoard";
 import { Wordmark } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { CloseIcon, NewProjectModal } from "@/components/ui";
+
+import { ProjectModal } from "@/components/ProjectModal";
+import { FeedbackProvider, useFeedback } from "@/components/Feedback";
 import { TaskModal } from "@/components/TaskModal";
 import { TeamView } from "@/components/TeamView";
 
@@ -70,9 +72,11 @@ export interface ShellUser {
 
 export default function AppShell({ user }: { user: ShellUser }) {
   return (
-    <BoardProvider>
-      <Shell user={user} />
-    </BoardProvider>
+    <FeedbackProvider>
+      <BoardProvider>
+        <Shell user={user} />
+      </BoardProvider>
+    </FeedbackProvider>
   );
 }
 
@@ -84,14 +88,17 @@ function Shell({ user }: { user: ShellUser }) {
     activeProject,
     selectProject,
     createProject,
+    updateProject,
     deleteProject,
     developers,
     createTask,
   } = useBoard();
+  const { confirm } = useFeedback();
 
   const [view, setView] = useState<View>("timeline");
   const [showAddTask, setShowAddTask] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
 
   const available: View[] = useMemo(
     () =>
@@ -99,8 +106,7 @@ function Shell({ user }: { user: ShellUser }) {
         ? [
             ...(activeProject.hasTimeline ? (["timeline"] as View[]) : []),
             ...(activeProject.hasTracker ? (["tracker"] as View[]) : []),
-            // The team roster is shared across projects, so it's always here.
-            "team" as View,
+            ...(activeProject.hasTeam ? (["team"] as View[]) : []),
           ]
         : [],
     [activeProject]
@@ -110,6 +116,9 @@ function Shell({ user }: { user: ShellUser }) {
   // rather than synced — switching projects can never leave it on a view the
   // project doesn't have.
   const activeView = available.includes(view) ? view : available[0];
+
+  const editingProject =
+    projects.find((p) => p.id === editingProjectId) ?? null;
 
   return (
     <div className="flex h-full flex-col bg-[var(--plane)]">
@@ -180,19 +189,12 @@ function Shell({ user }: { user: ShellUser }) {
                     <span className="hidden truncate lg:inline">{p.name}</span>
                   </button>
                   <button
-                    onClick={() => {
-                      if (
-                        confirm(
-                          `Delete “${p.name}” and all of its tasks? This cannot be undone.`
-                        )
-                      ) {
-                        deleteProject(p.id);
-                      }
-                    }}
-                    className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded p-1 text-[var(--ink-muted)] opacity-0 transition hover:text-[#d03b3b] focus-visible:opacity-100 group-hover:opacity-100 lg:block"
-                    aria-label={`Delete project ${p.name}`}
+                    onClick={() => setEditingProjectId(p.id)}
+                    className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded p-1 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100 lg:block"
+                    aria-label={`Settings for ${p.name}`}
+                    title="Project settings"
                   >
-                    <CloseIcon size={10} />
+                    <GearIcon />
                   </button>
                 </div>
               );
@@ -220,12 +222,14 @@ function Shell({ user }: { user: ShellUser }) {
                   label="Tracker"
                 />
               )}
-              <ViewButton
-                active={activeView === "team"}
-                onClick={() => setView("team")}
-                icon={TEAM_ICON}
-                label="Team"
-              />
+              {available.includes("team") && (
+                <ViewButton
+                  active={activeView === "team"}
+                  onClick={() => setView("team")}
+                  icon={TEAM_ICON}
+                  label="Team"
+                />
+              )}
             </div>
           )}
         </nav>
@@ -284,11 +288,32 @@ function Shell({ user }: { user: ShellUser }) {
         />
       )}
       {showNewProject && (
-        <NewProjectModal
+        <ProjectModal
           onClose={() => setShowNewProject(false)}
-          onCreate={async (input) => {
-            await createProject(input);
-            setShowNewProject(false);
+          onSubmit={async (values) => {
+            const created = await createProject(values);
+            if (created) setShowNewProject(false);
+          }}
+        />
+      )}
+      {editingProject && (
+        <ProjectModal
+          project={editingProject}
+          onClose={() => setEditingProjectId(null)}
+          onSubmit={async (values) => {
+            await updateProject(editingProject.id, values);
+            setEditingProjectId(null);
+          }}
+          onDelete={async () => {
+            const ok = await confirm({
+              title: `Delete “${editingProject.name}”?`,
+              body: "Its tasks and sprint go with it. This cannot be undone.",
+              confirmLabel: "Delete project",
+              destructive: true,
+            });
+            if (!ok) return;
+            await deleteProject(editingProject.id);
+            setEditingProjectId(null);
           }}
         />
       )}
@@ -393,6 +418,20 @@ function ViewButton({
       {icon}
       <span className="hidden lg:inline">{label}</span>
     </button>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M8 1.6v1.5M8 12.9v1.5M14.4 8h-1.5M3.1 8H1.6M12.5 3.5l-1 1M4.5 11.5l-1 1M12.5 12.5l-1-1M4.5 4.5l-1-1"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 

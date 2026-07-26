@@ -72,6 +72,7 @@ export interface Project {
   description: string | null;
   hasTimeline: boolean;
   hasTracker: boolean;
+  hasTeam: boolean;
   createdAt: string;
 }
 

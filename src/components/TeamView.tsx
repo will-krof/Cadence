@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
 import { Field } from "@/components/ui";
+import { useFeedback } from "@/components/Feedback";
 import {
   CURRENCIES,
   Developer,
@@ -55,6 +56,7 @@ async function fileToAvatar(file: File): Promise<string> {
 export function TeamView() {
   const { developers, createDeveloper, updateDeveloper, deleteDeveloper } =
     useBoard();
+  const { confirm } = useFeedback();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -144,21 +146,24 @@ export function TeamView() {
                 await updateDeveloper(selected.id, values);
               } else {
                 const created = await createDeveloper(values);
-                setCreating(false);
-                setSelectedId(created.id);
+                if (created) {
+                  setCreating(false);
+                  setSelectedId(created.id);
+                }
               }
             }}
             onDelete={
               selected
                 ? async () => {
-                    if (
-                      confirm(
-                        `Remove ${selected.name} from the team? Their tasks stay, but become unassigned.`
-                      )
-                    ) {
-                      await deleteDeveloper(selected.id);
-                      setSelectedId(null);
-                    }
+                    const ok = await confirm({
+                      title: `Remove ${selected.name}?`,
+                      body: "Their tasks stay, but become unassigned.",
+                      confirmLabel: "Remove",
+                      destructive: true,
+                    });
+                    if (!ok) return;
+                    await deleteDeveloper(selected.id);
+                    setSelectedId(null);
                   }
                 : undefined
             }
@@ -247,7 +252,6 @@ function ProfileForm({
 
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [saved, setSaved] = useState(false);
 
   async function pickAvatar(file: File) {
     setError(null);
@@ -278,8 +282,6 @@ function ProfileForm({
         notes,
         color,
       });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
     } catch {
       setError("Could not save. Try again.");
     }
@@ -470,9 +472,6 @@ function ProfileForm({
           >
             Remove
           </button>
-        )}
-        {saved && (
-          <span className="text-[0.75rem] text-[#0ca30c]">Saved</span>
         )}
         <button
           type="button"

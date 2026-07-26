@@ -34,6 +34,7 @@ export async function PATCH(
         typeof body.hasTimeline === "boolean" ? body.hasTimeline : undefined,
       hasTracker:
         typeof body.hasTracker === "boolean" ? body.hasTracker : undefined,
+      hasTeam: typeof body.hasTeam === "boolean" ? body.hasTeam : undefined,
     },
   });
   return NextResponse.json(project);
