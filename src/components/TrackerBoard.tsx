@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
-import { CloseIcon, StatusPill } from "@/components/ui";
+import { StatusPill } from "@/components/ui";
+import { TaskModal } from "@/components/TaskModal";
 import { STATUS_OPTIONS, Task, TaskStatus } from "@/lib/types";
 import { toISODate } from "@/lib/dates";
 
@@ -26,6 +27,7 @@ export function TrackerBoard() {
   const { tasks, developers, updateTask, deleteTask } = useBoard();
   const [assignee, setAssignee] = useState("");
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<TaskStatus | null>(null);
   const dragRef = useRef<DragState | null>(null);
 
@@ -118,6 +120,8 @@ export function TrackerBoard() {
     ? tasks.find((t) => t.id === drag.taskId) ?? null
     : null;
 
+  const editingTask = tasks.find((t) => t.id === editingId) ?? null;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-end gap-3 border-b border-[var(--hairline)] px-4 py-3 sm:px-6">
@@ -179,7 +183,7 @@ export function TrackerBoard() {
                     onAssign={(developerId) =>
                       updateTask(task.id, { developerId })
                     }
-                    onDelete={() => deleteTask(task.id)}
+                    onOpen={() => setEditingId(task.id)}
                     developers={developers}
                   />
                 ))}
@@ -209,6 +213,22 @@ export function TrackerBoard() {
           </p>
         </div>
       )}
+
+      {editingTask && (
+        <TaskModal
+          task={editingTask}
+          developers={developers}
+          onClose={() => setEditingId(null)}
+          onSubmit={async (values) => {
+            await updateTask(editingTask.id, values);
+            setEditingId(null);
+          }}
+          onDelete={async () => {
+            await deleteTask(editingTask.id);
+            setEditingId(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -220,7 +240,7 @@ function TaskCard({
   onDragStart,
   onStatusChange,
   onAssign,
-  onDelete,
+  onOpen,
 }: {
   task: Task;
   developers: { id: string; name: string; color: string }[];
@@ -228,7 +248,7 @@ function TaskCard({
   onDragStart: (state: DragState) => void;
   onStatusChange: (status: TaskStatus) => void;
   onAssign: (developerId: string | null) => void;
-  onDelete: () => void;
+  onOpen: () => void;
 }) {
   const start = toISODate(new Date(task.startDate));
   const end = toISODate(new Date(task.endDate));
@@ -279,11 +299,19 @@ function TaskCard({
           </h4>
         )}
         <button
-          onClick={onDelete}
-          className="mt-0.5 shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[#d03b3b] focus-visible:opacity-100 group-hover:opacity-100"
-          aria-label={`Delete ${task.title}`}
+          onClick={onOpen}
+          className="mt-0.5 shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100"
+          aria-label={`Edit ${task.title}`}
+          title="Edit task"
         >
-          <CloseIcon />
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path
+              d="M9.2 1.8l3 3L4.8 12.2 1.4 12.6l.4-3.4 7.4-7.4z"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
       </div>
 

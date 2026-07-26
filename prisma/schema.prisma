@@ -42,9 +42,22 @@ model Session {
 }
 
 model Developer {
-  id        String   @id @default(cuid())
-  name      String
-  color     String   @default("#60a5fa")
+  id    String @id @default(cuid())
+  name  String
+  color String @default("#60a5fa")
+
+  // Profile
+  role           String?
+  email          String?
+  phone          String?
+  avatar         String? // data URL, downscaled client-side before upload
+  startDate      DateTime?
+  salary         Int?
+  currency       String    @default("USD")
+  employmentType String? // FULL_TIME | PART_TIME | CONTRACT | INTERN
+  active         Boolean   @default(true)
+  notes          String?
+
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())

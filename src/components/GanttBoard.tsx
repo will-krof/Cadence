@@ -12,7 +12,8 @@ import {
 import { contrastText } from "@/lib/color";
 import { STATUS_OPTIONS, statusMeta } from "@/lib/types";
 import { useBoard } from "@/components/BoardProvider";
-import { CloseIcon, Stat, StatusPill } from "@/components/ui";
+import { Stat, StatusPill } from "@/components/ui";
+import { TaskModal } from "@/components/TaskModal";
 
 const ROW_HEIGHT = 44;
 const DAY_WIDTH = 44;
@@ -30,6 +31,8 @@ const COL_WIDTHS_COMPACT: ColWidths = { task: 132, status: 104, developer: 96 };
 export function GanttBoard() {
   const { tasks, developers, sprint, stats, updateTask, deleteTask, updateSprint } =
     useBoard();
+
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [hideWeekends, setHideWeekends] = useState(false);
   const [compact, setCompact] = useState(false);
@@ -135,6 +138,8 @@ export function GanttBoard() {
     if (!sprintRange) return false;
     return d >= sprintRange.start && d <= sprintRange.end;
   }
+
+  const editingTask = tasks.find((t) => t.id === editingId) ?? null;
 
   const gridTemplateColumns = `${colWidths.task}px ${colWidths.status}px ${colWidths.developer}px`;
   const leftPanelWidth = colWidths.task + colWidths.status + colWidths.developer;
@@ -254,12 +259,19 @@ export function GanttBoard() {
                   </span>
                 )}
                 <button
-                  onClick={() => deleteTask(task.id)}
-                  className="ml-auto shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[#d03b3b] focus-visible:opacity-100 group-hover:opacity-100"
-                  title="Delete task"
-                  aria-label={`Delete ${task.title}`}
+                  onClick={() => setEditingId(task.id)}
+                  className="ml-auto shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100"
+                  title="Edit task"
+                  aria-label={`Edit ${task.title}`}
                 >
-                  <CloseIcon />
+                  <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                    <path
+                      d="M9.2 1.8l3 3L4.8 12.2 1.4 12.6l.4-3.4 7.4-7.4z"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </button>
               </div>
 
@@ -385,8 +397,9 @@ export function GanttBoard() {
                     />
                   ))}
                   {bar && (
-                    <div
-                      className="absolute top-2 bottom-2 flex items-center truncate rounded-md px-2 text-[0.6875rem] font-medium leading-none shadow-sm ring-2 ring-[var(--surface)]"
+                    <button
+                      onClick={() => setEditingId(task.id)}
+                      className="absolute top-2 bottom-2 flex items-center truncate rounded-md px-2 text-left text-[0.6875rem] font-medium leading-none shadow-sm ring-2 ring-[var(--surface)] transition hover:brightness-95"
                       style={{
                         left: bar.left + 2,
                         width: bar.width - 4,
@@ -396,7 +409,7 @@ export function GanttBoard() {
                       title={task.description || task.title}
                     >
                       {task.title}
-                    </div>
+                    </button>
                   )}
                 </div>
               );
@@ -404,6 +417,22 @@ export function GanttBoard() {
           </div>
         </div>
       </div>
+
+      {editingTask && (
+        <TaskModal
+          task={editingTask}
+          developers={developers}
+          onClose={() => setEditingId(null)}
+          onSubmit={async (values) => {
+            await updateTask(editingTask.id, values);
+            setEditingId(null);
+          }}
+          onDelete={async () => {
+            await deleteTask(editingTask.id);
+            setEditingId(null);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -36,12 +36,35 @@ export const DEVELOPER_PALETTE = [
   "#e34948",
 ];
 
+export type EmploymentType = "FULL_TIME" | "PART_TIME" | "CONTRACT" | "INTERN";
+
+export const EMPLOYMENT_TYPES: { value: EmploymentType; label: string }[] = [
+  { value: "FULL_TIME", label: "Full-time" },
+  { value: "PART_TIME", label: "Part-time" },
+  { value: "CONTRACT", label: "Contract" },
+  { value: "INTERN", label: "Intern" },
+];
+
+export const CURRENCIES = ["USD", "EUR", "GBP", "UAH", "PLN"];
+
 export interface Developer {
   id: string;
   name: string;
   color: string;
+  role: string | null;
+  email: string | null;
+  phone: string | null;
+  avatar: string | null;
+  startDate: string | null;
+  salary: number | null;
+  currency: string;
+  employmentType: EmploymentType | null;
+  active: boolean;
+  notes: string | null;
   createdAt: string;
 }
+
+export type DeveloperInput = Omit<Developer, "id" | "createdAt">;
 
 export interface Project {
   id: string;

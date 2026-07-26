@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import { parseDeveloper } from "@/lib/developer-input";
 import { NextRequest, NextResponse } from "next/server";
 
 const notFound = () =>
@@ -21,12 +22,14 @@ export async function PATCH(
   });
   if (!owned) return notFound();
 
+  const parsed = parseDeveloper(body);
+  if ("error" in parsed) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
   const developer = await prisma.developer.update({
     where: { id },
-    data: {
-      name: typeof body.name === "string" ? body.name.trim() : undefined,
-      color: typeof body.color === "string" ? body.color : undefined,
-    },
+    data: parsed.data,
   });
   return NextResponse.json(developer);
 }

@@ -8,7 +8,14 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Developer, Project, Sprint, Task, TaskStatus } from "@/lib/types";
+import {
+  Developer,
+  DeveloperInput,
+  Project,
+  Sprint,
+  Task,
+  TaskStatus,
+} from "@/lib/types";
 
 interface TaskInput {
   title: string;
@@ -16,6 +23,7 @@ interface TaskInput {
   link: string;
   startDate: string;
   endDate: string;
+  status?: TaskStatus;
   developerId: string | null;
 }
 
@@ -46,7 +54,8 @@ interface BoardContextValue {
   createTask: (input: TaskInput) => Promise<void>;
   updateTask: (id: string, data: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
-  createDeveloper: (input: { name: string; color: string }) => Promise<void>;
+  createDeveloper: (input: Partial<DeveloperInput>) => Promise<Developer>;
+  updateDeveloper: (id: string, input: Partial<DeveloperInput>) => Promise<void>;
   deleteDeveloper: (id: string) => Promise<void>;
   updateSprint: (startDate: string, endDate: string) => Promise<void>;
 }
@@ -197,16 +206,36 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   }, [setTasks]);
 
   const createDeveloper = useCallback(
-    async (input: { name: string; color: string }) => {
+    async (input: Partial<DeveloperInput>) => {
       const res = await fetch("/api/developers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      const created = await res.json();
+      const created: Developer = await res.json();
       setDevelopers((prev) => [...prev, created]);
+      return created;
     },
     []
+  );
+
+  const updateDeveloper = useCallback(
+    async (id: string, input: Partial<DeveloperInput>) => {
+      const res = await fetch(`/api/developers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const updated: Developer = await res.json();
+      setDevelopers((prev) => prev.map((d) => (d.id === id ? updated : d)));
+      // Assignee chips on tasks carry a copy of the person, so refresh those.
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.developerId === id ? { ...t, developer: updated } : t
+        )
+      );
+    },
+    [setTasks]
   );
 
   const deleteDeveloper = useCallback(async (id: string) => {
@@ -262,6 +291,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     updateTask,
     deleteTask,
     createDeveloper,
+    updateDeveloper,
     deleteDeveloper,
     updateSprint,
   };

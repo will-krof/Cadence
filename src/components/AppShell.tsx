@@ -7,14 +7,11 @@ import { GanttBoard } from "@/components/GanttBoard";
 import { TrackerBoard } from "@/components/TrackerBoard";
 import { Wordmark } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import {
-  AddTaskModal,
-  CloseIcon,
-  DevelopersModal,
-  NewProjectModal,
-} from "@/components/ui";
+import { CloseIcon, NewProjectModal } from "@/components/ui";
+import { TaskModal } from "@/components/TaskModal";
+import { TeamView } from "@/components/TeamView";
 
-type View = "timeline" | "tracker";
+type View = "timeline" | "tracker" | "team";
 
 const TIMELINE_ICON = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -47,6 +44,24 @@ const TRACKER_ICON = (
   </svg>
 );
 
+const TEAM_ICON = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <circle cx="6" cy="5" r="2.6" stroke="currentColor" strokeWidth="1.5" />
+    <path
+      d="M1.6 13.2c0-2.4 2-4 4.4-4s4.4 1.6 4.4 4"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+    <path
+      d="M11 3.2a2.4 2.4 0 010 4.4M12.2 9.6c1.4.5 2.2 1.8 2.2 3.6"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
 export interface ShellUser {
   id: string;
   email: string;
@@ -72,13 +87,10 @@ function Shell({ user }: { user: ShellUser }) {
     deleteProject,
     developers,
     createTask,
-    createDeveloper,
-    deleteDeveloper,
   } = useBoard();
 
   const [view, setView] = useState<View>("timeline");
   const [showAddTask, setShowAddTask] = useState(false);
-  const [showDevelopers, setShowDevelopers] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
 
   const available: View[] = useMemo(
@@ -87,6 +99,8 @@ function Shell({ user }: { user: ShellUser }) {
         ? [
             ...(activeProject.hasTimeline ? (["timeline"] as View[]) : []),
             ...(activeProject.hasTracker ? (["tracker"] as View[]) : []),
+            // The team roster is shared across projects, so it's always here.
+            "team" as View,
           ]
         : [],
     [activeProject]
@@ -102,41 +116,10 @@ function Shell({ user }: { user: ShellUser }) {
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--hairline)] bg-[var(--surface)] px-3 py-2.5 sm:px-4">
         <Wordmark />
         <div className="flex items-center gap-2">
-          {activeProject && (
-            <>
-              <button
-                onClick={() => setShowDevelopers(true)}
-                className="btn-secondary flex h-8 w-8 items-center justify-center !p-0 sm:h-auto sm:w-auto sm:!px-3.5 sm:!py-[0.4375rem]"
-                aria-label="Developers"
-                title="Developers"
-              >
-                <span className="hidden sm:inline">Developers</span>
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  className="sm:hidden"
-                >
-                  <circle cx="6" cy="5" r="2.6" stroke="currentColor" strokeWidth="1.5" />
-                  <path
-                    d="M1.6 13.2c0-2.4 2-4 4.4-4s4.4 1.6 4.4 4"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M11 3.2a2.4 2.4 0 010 4.4M12.2 9.6c1.4.5 2.2 1.8 2.2 3.6"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
-              <button onClick={() => setShowAddTask(true)} className="btn-primary">
-                New task
-              </button>
-            </>
+          {activeProject && activeView !== "team" && (
+            <button onClick={() => setShowAddTask(true)} className="btn-primary">
+              New task
+            </button>
           )}
           <ThemeToggle />
           <AccountMenu user={user} />
@@ -237,6 +220,12 @@ function Shell({ user }: { user: ShellUser }) {
                   label="Tracker"
                 />
               )}
+              <ViewButton
+                active={activeView === "team"}
+                onClick={() => setView("team")}
+                icon={TEAM_ICON}
+                label="Team"
+              />
             </div>
           )}
         </nav>
@@ -270,7 +259,9 @@ function Shell({ user }: { user: ShellUser }) {
                   </p>
                 )}
               </div>
-              {projectLoading ? (
+              {activeView === "team" ? (
+                <TeamView />
+              ) : projectLoading ? (
                 <Centered>Loading project…</Centered>
               ) : activeView === "timeline" ? (
                 <GanttBoard />
@@ -283,21 +274,13 @@ function Shell({ user }: { user: ShellUser }) {
       </div>
 
       {showAddTask && activeProject && (
-        <AddTaskModal
+        <TaskModal
           developers={developers}
           onClose={() => setShowAddTask(false)}
-          onCreate={async (input) => {
-            await createTask(input);
+          onSubmit={async (values) => {
+            await createTask(values);
             setShowAddTask(false);
           }}
-        />
-      )}
-      {showDevelopers && (
-        <DevelopersModal
-          developers={developers}
-          onClose={() => setShowDevelopers(false)}
-          onCreate={createDeveloper}
-          onDelete={deleteDeveloper}
         />
       )}
       {showNewProject && (
