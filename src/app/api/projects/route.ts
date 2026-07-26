@@ -1,14 +1,22 @@
 import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/api-auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET() {
+  const { user, response } = await requireUser();
+  if (response) return response;
+
   const projects = await prisma.project.findMany({
+    where: { userId: user.id },
     orderBy: { createdAt: "asc" },
   });
   return NextResponse.json(projects);
 }
 
 export async function POST(request: NextRequest) {
+  const { user, response } = await requireUser();
+  if (response) return response;
+
   const body = await request.json();
   const name = typeof body.name === "string" ? body.name.trim() : "";
 
@@ -32,6 +40,7 @@ export async function POST(request: NextRequest) {
       description: body.description?.trim() || null,
       hasTimeline,
       hasTracker,
+      userId: user.id,
     },
   });
   return NextResponse.json(project, { status: 201 });

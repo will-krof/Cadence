@@ -53,6 +53,9 @@ interface BoardContextValue {
 
 const BoardContext = createContext<BoardContextValue | null>(null);
 
+/** Stable identity so consumers don't re-render on every empty state. */
+const EMPTY_TASKS: Task[] = [];
+
 export function useBoard() {
   const ctx = useContext(BoardContext);
   if (!ctx) throw new Error("useBoard must be used inside <BoardProvider>");
@@ -62,11 +65,36 @@ export function useBoard() {
 export function BoardProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [developers, setDevelopers] = useState<Developer[]>([]);
-  const [sprint, setSprint] = useState<Sprint | null>(null);
   const [loading, setLoading] = useState(true);
   const [projectLoading, setProjectLoading] = useState(false);
+
+  // Per-project data is tagged with the project it came from, so switching
+  // projects can never show the previous project's tasks while the next ones
+  // are still loading.
+  const [loaded, setLoaded] = useState<{
+    projectId: string | null;
+    tasks: Task[];
+    sprint: Sprint | null;
+  }>({ projectId: null, tasks: [], sprint: null });
+
+  const tasks = loaded.projectId === activeId ? loaded.tasks : EMPTY_TASKS;
+  const sprint = loaded.projectId === activeId ? loaded.sprint : null;
+
+  const setTasks = useCallback(
+    (update: Task[] | ((prev: Task[]) => Task[])) => {
+      setLoaded((prev) => ({
+        ...prev,
+        tasks: typeof update === "function" ? update(prev.tasks) : update,
+      }));
+    },
+    []
+  );
+
+  const setSprint = useCallback(
+    (next: Sprint | null) => setLoaded((prev) => ({ ...prev, sprint: next })),
+    []
+  );
 
   // Projects and the (shared) developer roster load once.
   useEffect(() => {
@@ -85,11 +113,8 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
 
   // Tasks and sprint are per-project, so they reload on every switch.
   useEffect(() => {
-    if (!activeId) {
-      setTasks([]);
-      setSprint(null);
-      return;
-    }
+    if (!activeId) return;
+
     let cancelled = false;
     (async () => {
       setProjectLoading(true);
@@ -100,8 +125,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       const nextTasks = await taskRes.json();
       const nextSprint = await sprintRes.json();
       if (cancelled) return;
-      setTasks(nextTasks);
-      setSprint(nextSprint);
+      setLoaded({ projectId: activeId, tasks: nextTasks, sprint: nextSprint });
       setProjectLoading(false);
     })();
     return () => {
@@ -153,7 +177,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       const created = await res.json();
       setTasks((prev) => [...prev, created]);
     },
-    [activeId]
+    [activeId, setTasks]
   );
 
   const updateTask = useCallback(async (id: string, data: Partial<Task>) => {
@@ -165,12 +189,12 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     });
     const updated = await res.json();
     setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
-  }, []);
+  }, [setTasks]);
 
   const deleteTask = useCallback(async (id: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
     await fetch(`/api/tasks/${id}`, { method: "DELETE" });
-  }, []);
+  }, [setTasks]);
 
   const createDeveloper = useCallback(
     async (input: { name: string; color: string }) => {
@@ -193,7 +217,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         t.developerId === id ? { ...t, developerId: null, developer: null } : t
       )
     );
-  }, []);
+  }, [setTasks]);
 
   const updateSprint = useCallback(
     async (startDate: string, endDate: string) => {
@@ -205,7 +229,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       });
       setSprint(await res.json());
     },
-    [activeId]
+    [activeId, setSprint]
   );
 
   const stats = useMemo(() => {

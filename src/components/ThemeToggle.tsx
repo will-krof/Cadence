@@ -1,28 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 type Theme = "light" | "dark";
 
-function systemTheme(): Theme {
+const THEME_EVENT = "cadence:themechange";
+
+/**
+ * The active theme lives on <html data-theme>, written by the boot script
+ * before first paint. Subscribing to it rather than mirroring it into state
+ * keeps React and the DOM from disagreeing on the first render.
+ */
+function subscribe(onChange: () => void) {
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  window.addEventListener(THEME_EVENT, onChange);
+  media.addEventListener("change", onChange);
+  return () => {
+    window.removeEventListener(THEME_EVENT, onChange);
+    media.removeEventListener("change", onChange);
+  };
+}
+
+function getSnapshot(): Theme {
+  const stamped = document.documentElement.dataset.theme;
+  if (stamped === "dark" || stamped === "light") return stamped;
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
 }
 
-export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme | null>(null);
+// The server can't know the viewer's theme; the icon appears after hydration.
+function getServerSnapshot(): Theme | null {
+  return null;
+}
 
-  // Resolve the theme the inline boot script already applied, so the button
-  // shows the right icon on first paint without a flash.
-  useEffect(() => {
-    const stored = document.documentElement.dataset.theme as Theme | undefined;
-    setTheme(stored ?? systemTheme());
-  }, []);
+export function ThemeToggle() {
+  const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   function toggle() {
     const next: Theme = theme === "dark" ? "light" : "dark";
-    setTheme(next);
     document.documentElement.dataset.theme = next;
     try {
       localStorage.setItem("theme", next);
@@ -30,6 +46,7 @@ export function ThemeToggle() {
       // Storage can be unavailable (private mode) — the toggle still works
       // for this session.
     }
+    window.dispatchEvent(new Event(THEME_EVENT));
   }
 
   const isDark = theme === "dark";
@@ -41,7 +58,6 @@ export function ThemeToggle() {
       aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
       title={isDark ? "Light theme" : "Dark theme"}
     >
-      {/* Render nothing until the theme is resolved, so the icon never flips. */}
       {theme &&
         (isDark ? (
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none">

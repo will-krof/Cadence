@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { BoardProvider, useBoard } from "@/components/BoardProvider";
 import { GanttBoard } from "@/components/GanttBoard";
 import { TrackerBoard } from "@/components/TrackerBoard";
@@ -46,15 +47,21 @@ const TRACKER_ICON = (
   </svg>
 );
 
-export default function AppShell() {
+export interface ShellUser {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
+export default function AppShell({ user }: { user: ShellUser }) {
   return (
     <BoardProvider>
-      <Shell />
+      <Shell user={user} />
     </BoardProvider>
   );
 }
 
-function Shell() {
+function Shell({ user }: { user: ShellUser }) {
   const {
     loading,
     projectLoading,
@@ -74,20 +81,21 @@ function Shell() {
   const [showDevelopers, setShowDevelopers] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
 
-  const available: View[] = activeProject
-    ? [
-        ...(activeProject.hasTimeline ? (["timeline"] as View[]) : []),
-        ...(activeProject.hasTracker ? (["tracker"] as View[]) : []),
-      ]
-    : [];
+  const available: View[] = useMemo(
+    () =>
+      activeProject
+        ? [
+            ...(activeProject.hasTimeline ? (["timeline"] as View[]) : []),
+            ...(activeProject.hasTracker ? (["tracker"] as View[]) : []),
+          ]
+        : [],
+    [activeProject]
+  );
 
-  // Keep the selected view valid for whichever project is open — a project
-  // may not have both tools enabled.
-  useEffect(() => {
-    if (available.length && !available.includes(view)) {
-      setView(available[0]);
-    }
-  }, [available, view]);
+  // A project may not have both tools enabled, so the shown view is derived
+  // rather than synced — switching projects can never leave it on a view the
+  // project doesn't have.
+  const activeView = available.includes(view) ? view : available[0];
 
   return (
     <div className="flex h-full flex-col bg-[var(--plane)]">
@@ -131,6 +139,7 @@ function Shell() {
             </>
           )}
           <ThemeToggle />
+          <AccountMenu user={user} />
         </div>
       </header>
 
@@ -214,7 +223,7 @@ function Shell() {
               </span>
               {available.includes("timeline") && (
                 <ViewButton
-                  active={view === "timeline"}
+                  active={activeView === "timeline"}
                   onClick={() => setView("timeline")}
                   icon={TIMELINE_ICON}
                   label="Timeline"
@@ -222,7 +231,7 @@ function Shell() {
               )}
               {available.includes("tracker") && (
                 <ViewButton
-                  active={view === "tracker"}
+                  active={activeView === "tracker"}
                   onClick={() => setView("tracker")}
                   icon={TRACKER_ICON}
                   label="Tracker"
@@ -263,7 +272,7 @@ function Shell() {
               </div>
               {projectLoading ? (
                 <Centered>Loading project…</Centered>
-              ) : view === "timeline" ? (
+              ) : activeView === "timeline" ? (
                 <GanttBoard />
               ) : (
                 <TrackerBoard />
@@ -299,6 +308,78 @@ function Shell() {
             setShowNewProject(false);
           }}
         />
+      )}
+    </div>
+  );
+}
+
+function AccountMenu({ user }: { user: ShellUser }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  async function signOut() {
+    setSigningOut(true);
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/");
+    router.refresh();
+  }
+
+  const label = user.name?.trim() || user.email;
+  const initial = label.slice(0, 1).toUpperCase();
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent)] text-[0.75rem] font-semibold text-white transition hover:opacity-85"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Account menu"
+        title={label}
+      >
+        {initial}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-10 z-50 w-56 rounded-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-1.5 shadow-xl"
+        >
+          <div className="border-b border-[var(--hairline)] px-2.5 pb-2 pt-1.5">
+            {user.name && (
+              <p className="truncate text-[0.8125rem] font-medium">{user.name}</p>
+            )}
+            <p className="truncate text-[0.75rem] text-[var(--ink-muted)]">
+              {user.email}
+            </p>
+          </div>
+          <button
+            onClick={signOut}
+            disabled={signingOut}
+            role="menuitem"
+            className="mt-1 w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] disabled:opacity-60"
+          >
+            {signingOut ? "Signing out…" : "Sign out"}
+          </button>
+        </div>
       )}
     </div>
   );

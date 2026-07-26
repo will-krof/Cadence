@@ -76,12 +76,12 @@ export function GanttBoard() {
     };
   }, []);
 
-  function startResize(key: ColKey) {
-    return (e: React.MouseEvent) => {
-      e.preventDefault();
-      userSizedRef.current = true;
-      resizingRef.current = { key, startX: e.clientX, startWidth: colWidths[key] };
-    };
+  // Called from the pointer handler rather than built during render, so the
+  // refs are only ever touched in response to an event.
+  function beginResize(e: React.MouseEvent, key: ColKey) {
+    e.preventDefault();
+    userSizedRef.current = true;
+    resizingRef.current = { key, startX: e.clientX, startWidth: colWidths[key] };
   }
 
   const today = useMemo(() => startOfDay(new Date()), []);
@@ -300,12 +300,12 @@ export function GanttBoard() {
           {!compact && (
             <>
               <div
-                onMouseDown={startResize("task")}
+                onMouseDown={(e) => beginResize(e, "task")}
                 className="absolute top-0 bottom-0 z-30 -ml-[3px] w-1.5 cursor-col-resize transition-colors hover:bg-[var(--accent)]/40"
                 style={{ left: colWidths.task }}
               />
               <div
-                onMouseDown={startResize("status")}
+                onMouseDown={(e) => beginResize(e, "status")}
                 className="absolute top-0 bottom-0 z-30 -ml-[3px] w-1.5 cursor-col-resize transition-colors hover:bg-[var(--accent)]/40"
                 style={{ left: colWidths.task + colWidths.status }}
               />

@@ -19,12 +19,38 @@ enum TaskStatus {
   DONE
 }
 
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime   @default(now())
+  sessions     Session[]
+  projects     Project[]
+  developers   Developer[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
 model Developer {
   id        String   @id @default(cuid())
   name      String
   color     String   @default("#60a5fa")
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   tasks     Task[]
+
+  @@index([userId])
 }
 
 model Project {
@@ -33,9 +59,13 @@ model Project {
   description String?
   hasTimeline Boolean  @default(true)
   hasTracker  Boolean  @default(true)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   tasks       Task[]
   sprint      Sprint?
+
+  @@index([userId])
 }
 
 model Task {

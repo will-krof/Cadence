@@ -1,11 +1,17 @@
 import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/api-auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
+  const { user, response } = await requireUser();
+  if (response) return response;
+
   const projectId = request.nextUrl.searchParams.get("projectId");
 
   const tasks = await prisma.task.findMany({
-    where: projectId ? { projectId } : undefined,
+    // Scoping through the project relation keeps other users' tasks out even
+    // when an arbitrary projectId is supplied.
+    where: { project: { userId: user.id }, ...(projectId ? { projectId } : {}) },
     include: { developer: true },
     orderBy: { order: "asc" },
   });
@@ -13,6 +19,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const { user, response } = await requireUser();
+  if (response) return response;
+
   const body = await request.json();
   const title = typeof body.title === "string" ? body.title.trim() : "";
 
@@ -21,6 +30,28 @@ export async function POST(request: NextRequest) {
       { error: "projectId, title, startDate and endDate are required" },
       { status: 400 }
     );
+  }
+
+  const project = await prisma.project.findFirst({
+    where: { id: body.projectId, userId: user.id },
+    select: { id: true },
+  });
+  if (!project) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+
+  // An assignee must come from the caller's own roster.
+  if (body.developerId) {
+    const developer = await prisma.developer.findFirst({
+      where: { id: body.developerId, userId: user.id },
+      select: { id: true },
+    });
+    if (!developer) {
+      return NextResponse.json(
+        { error: "Developer not found" },
+        { status: 404 }
+      );
+    }
   }
 
   const maxOrder = await prisma.task.aggregate({
