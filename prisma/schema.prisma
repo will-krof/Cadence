@@ -105,6 +105,7 @@ model Sprint {
   id        String   @id @default(cuid())
   projectId String   @unique
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number    Int      @default(1)
   startDate DateTime
   endDate   DateTime
   updatedAt DateTime @updatedAt

@@ -136,6 +136,40 @@ export function Field({
 }
 
 
+/** The per-project tool toggle, shared by the new-project form and the card. */
+export function ToolCheckbox({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-start gap-2.5 rounded-[var(--radius)] border p-2.5 transition ${
+        checked
+          ? "border-[var(--accent)] bg-[var(--accent-wash)]"
+          : "border-[var(--hairline)] hover:bg-[var(--plane)]"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
+      />
+      <span className="flex flex-col gap-0.5">
+        <span className="text-[0.8125rem] font-medium leading-none">{label}</span>
+        <span className="text-[0.6875rem] text-[var(--ink-muted)]">{hint}</span>
+      </span>
+    </label>
+  );
+}
+
 /** Photo when there is one, otherwise a coloured initial. */
 export function Avatar({
   person,

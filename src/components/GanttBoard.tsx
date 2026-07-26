@@ -321,16 +321,13 @@ export function GanttBoard() {
 
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
           <label className="flex flex-col gap-1">
-            <span className="field-label">Sprint start</span>
+            <span className="field-label">
+              Sprint {sprint ? sprint.number : ""} start
+            </span>
             <input
               type="date"
               value={sprint ? toISODate(new Date(sprint.startDate)) : ""}
-              onChange={(e) =>
-                updateSprint(
-                  e.target.value,
-                  sprint ? toISODate(new Date(sprint.endDate)) : e.target.value
-                )
-              }
+              onChange={(e) => updateSprint({ startDate: e.target.value })}
               className="input w-[9.5rem]"
             />
           </label>
@@ -339,12 +336,7 @@ export function GanttBoard() {
             <input
               type="date"
               value={sprint ? toISODate(new Date(sprint.endDate)) : ""}
-              onChange={(e) =>
-                updateSprint(
-                  sprint ? toISODate(new Date(sprint.startDate)) : e.target.value,
-                  e.target.value
-                )
-              }
+              onChange={(e) => updateSprint({ endDate: e.target.value })}
               className="input w-[9.5rem]"
             />
           </label>

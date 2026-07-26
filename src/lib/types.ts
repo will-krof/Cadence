@@ -93,6 +93,7 @@ export interface Task {
 export interface Sprint {
   id: string;
   projectId: string;
+  number: number;
   startDate: string;
   endDate: string;
   updatedAt: string;

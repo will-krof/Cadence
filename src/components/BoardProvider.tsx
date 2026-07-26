@@ -16,6 +16,7 @@ import {
   Task,
   TaskStatus,
 } from "@/lib/types";
+import { toISODate } from "@/lib/dates";
 import { useFeedback } from "@/components/Feedback";
 
 interface TaskInput {
@@ -26,6 +27,12 @@ interface TaskInput {
   endDate: string;
   status?: TaskStatus;
   developerId: string | null;
+}
+
+interface SprintPatch {
+  number?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 interface ProjectInput {
@@ -61,7 +68,7 @@ interface BoardContextValue {
   updateDeveloper: (id: string, input: Partial<DeveloperInput>) => Promise<void>;
   setDeveloperActive: (id: string, active: boolean) => Promise<void>;
   deleteDeveloper: (id: string) => Promise<void>;
-  updateSprint: (startDate: string, endDate: string) => Promise<void>;
+  updateSprint: (patch: SprintPatch) => Promise<void>;
 }
 
 const BoardContext = createContext<BoardContextValue | null>(null);
@@ -374,13 +381,24 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     [developers, setTasks, notify]
   );
 
+  // A patch rather than a full replacement: the sprint number and its dates are
+  // edited from different places, and neither should have to restate the other.
   const updateSprint = useCallback(
-    async (startDate: string, endDate: string) => {
+    async (patch: SprintPatch) => {
       if (!activeId) return;
+      const current = loaded.projectId === activeId ? loaded.sprint : null;
+      const today = toISODate(new Date());
+      const startDate =
+        patch.startDate ??
+        (current ? toISODate(new Date(current.startDate)) : today);
+      const endDate =
+        patch.endDate ?? (current ? toISODate(new Date(current.endDate)) : startDate);
+      const number = patch.number ?? current?.number ?? 1;
+
       const res = await fetch("/api/sprint", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: activeId, startDate, endDate }),
+        body: JSON.stringify({ projectId: activeId, startDate, endDate, number }),
       });
       if (!res.ok) {
         notify("error", await errorMessage(res, "Could not save the sprint."));
@@ -388,9 +406,14 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       }
       const next = await res.json();
       setLoaded((prev) => ({ ...prev, sprint: next }));
-      notify("success", "Sprint dates updated.");
+      notify(
+        "success",
+        patch.number !== undefined && patch.startDate === undefined && patch.endDate === undefined
+          ? `Now on sprint ${next.number}.`
+          : "Sprint updated."
+      );
     },
-    [activeId, notify]
+    [activeId, loaded.projectId, loaded.sprint, notify]
   );
 
   const stats = useMemo(() => {

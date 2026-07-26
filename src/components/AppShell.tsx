@@ -15,11 +15,12 @@ import { Wordmark } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 import { ProjectModal } from "@/components/ProjectModal";
-import { FeedbackProvider, useFeedback } from "@/components/Feedback";
+import { ProjectOverview } from "@/components/ProjectOverview";
+import { FeedbackProvider } from "@/components/Feedback";
 import { TaskModal } from "@/components/TaskModal";
 import { TeamView } from "@/components/TeamView";
 
-type View = "timeline" | "tracker" | "team";
+type View = "overview" | "timeline" | "tracker" | "team";
 
 const SIDEBAR_EVENT = "cadence:sidebarchange";
 
@@ -82,6 +83,26 @@ const TRACKER_ICON = (
   </svg>
 );
 
+const OVERVIEW_ICON = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <rect
+      x="1.8"
+      y="2.4"
+      width="12.4"
+      height="11.2"
+      rx="2"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    />
+    <path
+      d="M4.8 10.6V7.4M8 10.6V5.4M11.2 10.6V8.6"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
 const TEAM_ICON = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
     <circle cx="6" cy="5" r="2.6" stroke="currentColor" strokeWidth="1.5" />
@@ -124,17 +145,13 @@ function Shell({ user }: { user: ShellUser }) {
     activeProject,
     selectProject,
     createProject,
-    updateProject,
-    deleteProject,
     developers,
     createTask,
   } = useBoard();
-  const { confirm } = useFeedback();
 
-  const [view, setView] = useState<View>("timeline");
+  const [view, setView] = useState<View>("overview");
   const [showAddTask, setShowAddTask] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
-  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   // Reading the stored preference through a store (rather than mirroring it
   // into state in an effect) keeps the server render and hydration agreed.
   const collapsed = useSyncExternalStore(
@@ -145,10 +162,13 @@ function Shell({ user }: { user: ShellUser }) {
 
   const wide = !collapsed;
 
+  // Overview is always there — it is the project's own card, not one of its
+  // tools — so a project with no board enabled still has somewhere to land.
   const available: View[] = useMemo(
     () =>
       activeProject
         ? [
+            "overview" as View,
             ...(activeProject.hasTimeline ? (["timeline"] as View[]) : []),
             ...(activeProject.hasTracker ? (["tracker"] as View[]) : []),
           ]
@@ -162,15 +182,18 @@ function Shell({ user }: { user: ShellUser }) {
   const activeView =
     view === "team" ? "team" : available.includes(view) ? view : available[0];
 
-  const editingProject =
-    projects.find((p) => p.id === editingProjectId) ?? null;
+  /** Switching projects opens that project's card. */
+  function openProject(id: string) {
+    selectProject(id);
+    setView("overview");
+  }
 
   return (
     <div className="flex h-full flex-col bg-[var(--plane)]">
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--hairline)] bg-[var(--surface)] px-3 py-2.5 sm:px-4">
         <Wordmark />
         <div className="flex items-center gap-2">
-          {activeProject && activeView !== "team" && (
+          {activeProject && (activeView === "timeline" || activeView === "tracker") && (
             <button onClick={() => setShowAddTask(true)} className="btn-primary">
               New task
             </button>
@@ -219,13 +242,13 @@ function Shell({ user }: { user: ShellUser }) {
             {projects.map((p) => {
               const active = p.id === activeProject?.id;
               return (
-                <div key={p.id} className="group relative">
-                  <button
-                    onClick={() => selectProject(p.id)}
+                <button
+                    key={p.id}
+                    onClick={() => openProject(p.id)}
                     aria-current={active ? "true" : undefined}
                     title={p.description ? `${p.name} — ${p.description}` : p.name}
                     className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
-                      wide ? "pr-7" : "justify-center"
+                      wide ? "" : "justify-center"
                     } ${
                       active
                         ? "bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
@@ -245,17 +268,6 @@ function Shell({ user }: { user: ShellUser }) {
                     </span>
                     {wide && <span className="truncate">{p.name}</span>}
                   </button>
-                  <button
-                    onClick={() => setEditingProjectId(p.id)}
-                    className={`absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100 ${
-                      wide ? "block" : "hidden"
-                    }`}
-                    aria-label={`Settings for ${p.name}`}
-                    title="Project settings"
-                  >
-                    <GearIcon />
-                  </button>
-                </div>
               );
             })}
           </div>
@@ -269,6 +281,14 @@ function Shell({ user }: { user: ShellUser }) {
                   </span>
                 </span>
               )}
+              <ViewButton
+                active={activeView === "overview"}
+                onClick={() => setView("overview")}
+                icon={OVERVIEW_ICON}
+                label="Overview"
+                wide={wide}
+                hint="Details and stats"
+              />
               {available.includes("timeline") && (
                 <ViewButton
                   active={activeView === "timeline"}
@@ -339,6 +359,8 @@ function Shell({ user }: { user: ShellUser }) {
               </div>
               {activeView === "team" ? (
                 <TeamView />
+              ) : activeView === "overview" ? (
+                <ProjectOverview onOpenView={setView} />
               ) : projectLoading ? (
                 <Centered>Loading project…</Centered>
               ) : activeView === "timeline" ? (
@@ -367,27 +389,6 @@ function Shell({ user }: { user: ShellUser }) {
           onSubmit={async (values) => {
             const created = await createProject(values);
             if (created) setShowNewProject(false);
-          }}
-        />
-      )}
-      {editingProject && (
-        <ProjectModal
-          project={editingProject}
-          onClose={() => setEditingProjectId(null)}
-          onSubmit={async (values) => {
-            await updateProject(editingProject.id, values);
-            setEditingProjectId(null);
-          }}
-          onDelete={async () => {
-            const ok = await confirm({
-              title: `Delete “${editingProject.name}”?`,
-              body: "Its tasks and sprint go with it. This cannot be undone.",
-              confirmLabel: "Delete project",
-              destructive: true,
-            });
-            if (!ok) return;
-            await deleteProject(editingProject.id);
-            setEditingProjectId(null);
           }}
         />
       )}
@@ -529,20 +530,6 @@ function CollapseIcon({ pointsLeft }: { pointsLeft: boolean }) {
         strokeWidth="1.4"
         strokeLinecap="round"
         strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function GearIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-      <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.4" />
-      <path
-        d="M8 1.6v1.5M8 12.9v1.5M14.4 8h-1.5M3.1 8H1.6M12.5 3.5l-1 1M4.5 11.5l-1 1M12.5 12.5l-1-1M4.5 4.5l-1-1"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
       />
     </svg>
   );
