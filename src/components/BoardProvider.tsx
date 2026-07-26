@@ -59,6 +59,7 @@ interface BoardContextValue {
   deleteTask: (id: string) => Promise<void>;
   createDeveloper: (input: Partial<DeveloperInput>) => Promise<Developer | null>;
   updateDeveloper: (id: string, input: Partial<DeveloperInput>) => Promise<void>;
+  setDeveloperActive: (id: string, active: boolean) => Promise<void>;
   deleteDeveloper: (id: string) => Promise<void>;
   updateSprint: (startDate: string, endDate: string) => Promise<void>;
 }
@@ -323,6 +324,37 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     [setTasks, notify]
   );
 
+  /** Archiving keeps the person and their history; it just files them away. */
+  const setDeveloperActive = useCallback(
+    async (id: string, active: boolean) => {
+      const res = await fetch(`/api/developers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active }),
+      });
+      if (!res.ok) {
+        notify(
+          "error",
+          await errorMessage(
+            res,
+            active ? "Could not restore them." : "Could not archive them."
+          )
+        );
+        return;
+      }
+      const updated: Developer = await res.json();
+      setDevelopers((prev) => prev.map((d) => (d.id === id ? updated : d)));
+      setTasks((prev) =>
+        prev.map((t) => (t.developerId === id ? { ...t, developer: updated } : t))
+      );
+      notify(
+        "success",
+        active ? `${updated.name} restored.` : `${updated.name} archived.`
+      );
+    },
+    [setTasks, notify]
+  );
+
   const deleteDeveloper = useCallback(
     async (id: string) => {
       const name = developers.find((d) => d.id === id)?.name ?? "Person";
@@ -393,6 +425,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     deleteTask,
     createDeveloper,
     updateDeveloper,
+    setDeveloperActive,
     deleteDeveloper,
     updateSprint,
   };

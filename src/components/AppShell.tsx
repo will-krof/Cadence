@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useRouter } from "next/navigation";
 import { BoardProvider, useBoard } from "@/components/BoardProvider";
 import { GanttBoard } from "@/components/GanttBoard";
@@ -14,6 +20,36 @@ import { TaskModal } from "@/components/TaskModal";
 import { TeamView } from "@/components/TeamView";
 
 type View = "timeline" | "tracker" | "team";
+
+const SIDEBAR_EVENT = "cadence:sidebarchange";
+
+function subscribeSidebar(onChange: () => void) {
+  window.addEventListener(SIDEBAR_EVENT, onChange);
+  return () => window.removeEventListener(SIDEBAR_EVENT, onChange);
+}
+
+// Falls back to memory so the toggle still works where storage is blocked
+// (private browsing), it just won't survive a reload.
+let sidebarFallback = false;
+
+function getSidebarCollapsed() {
+  try {
+    return localStorage.getItem("sidebar") === "collapsed";
+  } catch {
+    return sidebarFallback;
+  }
+}
+
+function toggleSidebar() {
+  const next = !getSidebarCollapsed();
+  sidebarFallback = next;
+  try {
+    localStorage.setItem("sidebar", next ? "collapsed" : "expanded");
+  } catch {
+    // Storage unavailable — the in-memory value carries this session.
+  }
+  window.dispatchEvent(new Event(SIDEBAR_EVENT));
+}
 
 const TIMELINE_ICON = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -99,6 +135,15 @@ function Shell({ user }: { user: ShellUser }) {
   const [showAddTask, setShowAddTask] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  // Reading the stored preference through a store (rather than mirroring it
+  // into state in an effect) keeps the server render and hydration agreed.
+  const collapsed = useSyncExternalStore(
+    subscribeSidebar,
+    getSidebarCollapsed,
+    () => false
+  );
+
+  const wide = !collapsed;
 
   const available: View[] = useMemo(
     () =>
@@ -106,7 +151,6 @@ function Shell({ user }: { user: ShellUser }) {
         ? [
             ...(activeProject.hasTimeline ? (["timeline"] as View[]) : []),
             ...(activeProject.hasTracker ? (["tracker"] as View[]) : []),
-            ...(activeProject.hasTeam ? (["team"] as View[]) : []),
           ]
         : [],
     [activeProject]
@@ -115,7 +159,8 @@ function Shell({ user }: { user: ShellUser }) {
   // A project may not have both tools enabled, so the shown view is derived
   // rather than synced — switching projects can never leave it on a view the
   // project doesn't have.
-  const activeView = available.includes(view) ? view : available[0];
+  const activeView =
+    view === "team" ? "team" : available.includes(view) ? view : available[0];
 
   const editingProject =
     projects.find((p) => p.id === editingProjectId) ?? null;
@@ -137,28 +182,38 @@ function Shell({ user }: { user: ShellUser }) {
 
       <div className="flex min-h-0 flex-1">
         <nav
-          className="thin-scroll flex w-14 shrink-0 flex-col gap-4 overflow-y-auto border-r border-[var(--hairline)] bg-[var(--surface)] p-2 lg:w-56"
+          className={`thin-scroll flex shrink-0 flex-col gap-4 overflow-y-auto border-r border-[var(--hairline)] bg-[var(--surface)] p-2 ${
+            wide ? "w-56" : "w-14"
+          }`}
           aria-label="Projects and views"
         >
           <div className="flex flex-col gap-1">
-            <div className="hidden items-center justify-between px-2 pt-1 pb-1 lg:flex">
-              <span className="field-label">Projects</span>
+            <div
+              className={`flex items-center pt-1 pb-1 ${
+                wide ? "justify-between px-2" : "justify-center"
+              }`}
+            >
+              {wide && <span className="field-label">Projects</span>}
               <button
-                onClick={() => setShowNewProject(true)}
-                className="rounded p-0.5 text-[var(--ink-muted)] transition hover:text-[var(--ink)]"
-                aria-label="New project"
-                title="New project"
+                onClick={toggleSidebar}
+                className="rounded p-1 text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+                aria-label={wide ? "Collapse sidebar" : "Expand sidebar"}
+                aria-expanded={wide}
+                title={wide ? "Collapse sidebar" : "Expand sidebar"}
               >
-                <PlusIcon />
+                <CollapseIcon pointsLeft={wide} />
               </button>
             </div>
             <button
               onClick={() => setShowNewProject(true)}
-              className="flex items-center justify-center rounded-[var(--radius)] p-2 text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] lg:hidden"
+              className={`flex items-center gap-2 rounded-[var(--radius)] p-2 text-[0.8125rem] text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] ${
+                wide ? "" : "justify-center"
+              }`}
               aria-label="New project"
               title="New project"
             >
               <PlusIcon />
+              {wide && <span>New project</span>}
             </button>
 
             {projects.map((p) => {
@@ -169,7 +224,9 @@ function Shell({ user }: { user: ShellUser }) {
                     onClick={() => selectProject(p.id)}
                     aria-current={active ? "true" : undefined}
                     title={p.description ? `${p.name} — ${p.description}` : p.name}
-                    className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition lg:pr-7 ${
+                    className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
+                      wide ? "pr-7" : "justify-center"
+                    } ${
                       active
                         ? "bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
                         : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
@@ -186,11 +243,13 @@ function Shell({ user }: { user: ShellUser }) {
                     >
                       {p.name.slice(0, 1)}
                     </span>
-                    <span className="hidden truncate lg:inline">{p.name}</span>
+                    {wide && <span className="truncate">{p.name}</span>}
                   </button>
                   <button
                     onClick={() => setEditingProjectId(p.id)}
-                    className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 rounded p-1 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100 lg:block"
+                    className={`absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100 ${
+                      wide ? "block" : "hidden"
+                    }`}
                     aria-label={`Settings for ${p.name}`}
                     title="Project settings"
                   >
@@ -203,15 +262,20 @@ function Shell({ user }: { user: ShellUser }) {
 
           {available.length > 0 && (
             <div className="flex flex-col gap-1 border-t border-[var(--hairline)] pt-3">
-              <span className="hidden px-2 pb-1 lg:block">
-                <span className="field-label">Views</span>
-              </span>
+              {wide && (
+                <span className="px-2 pb-1">
+                  <span className="field-label">
+                    {activeProject ? `${activeProject.name} views` : "Views"}
+                  </span>
+                </span>
+              )}
               {available.includes("timeline") && (
                 <ViewButton
                   active={activeView === "timeline"}
                   onClick={() => setView("timeline")}
                   icon={TIMELINE_ICON}
                   label="Timeline"
+                  wide={wide}
                 />
               )}
               {available.includes("tracker") && (
@@ -220,18 +284,28 @@ function Shell({ user }: { user: ShellUser }) {
                   onClick={() => setView("tracker")}
                   icon={TRACKER_ICON}
                   label="Tracker"
-                />
-              )}
-              {available.includes("team") && (
-                <ViewButton
-                  active={activeView === "team"}
-                  onClick={() => setView("team")}
-                  icon={TEAM_ICON}
-                  label="Team"
+                  wide={wide}
                 />
               )}
             </div>
           )}
+
+          {/* Separate section: the roster is shared by every project. */}
+          <div className="flex flex-col gap-1 border-t border-[var(--hairline)] pt-3">
+            {wide && (
+              <span className="px-2 pb-1">
+                <span className="field-label">Workspace</span>
+              </span>
+            )}
+            <ViewButton
+              active={activeView === "team"}
+              onClick={() => setView("team")}
+              icon={TEAM_ICON}
+              label="Team"
+              wide={wide}
+              hint="All projects"
+            />
+          </div>
         </nav>
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--surface)]">
@@ -398,26 +472,65 @@ function ViewButton({
   onClick,
   icon,
   label,
+  wide,
+  hint,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  wide: boolean;
+  hint?: string;
 }) {
   return (
     <button
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      title={label}
-      className={`flex items-center justify-center gap-2.5 rounded-[var(--radius)] px-2 py-2 text-[0.8125rem] font-medium transition lg:justify-start lg:px-3 ${
+      title={hint ? `${label} — ${hint}` : label}
+      className={`flex items-center gap-2.5 rounded-[var(--radius)] py-2 text-[0.8125rem] font-medium transition ${
+        wide ? "px-3" : "justify-center px-2"
+      } ${
         active
           ? "bg-[var(--accent-wash)] text-[var(--accent)]"
           : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
       }`}
     >
-      {icon}
-      <span className="hidden lg:inline">{label}</span>
+      <span className="shrink-0">{icon}</span>
+      {wide && (
+        <span className="min-w-0 flex-1 text-left">
+          <span className="block truncate">{label}</span>
+          {hint && (
+            <span className="block truncate text-[0.625rem] font-normal text-[var(--ink-muted)]">
+              {hint}
+            </span>
+          )}
+        </span>
+      )}
     </button>
+  );
+}
+
+function CollapseIcon({ pointsLeft }: { pointsLeft: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <rect
+        x="1.6"
+        y="2.6"
+        width="12.8"
+        height="10.8"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <path d="M6.2 2.6v10.8" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d={pointsLeft ? "M11.4 6.4L9.4 8l2 1.6" : "M9.4 6.4L11.4 8l-2 1.6"}
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

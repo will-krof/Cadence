@@ -56,28 +56,91 @@ async function fileToAvatar(file: File): Promise<string> {
 }
 
 export function TeamView() {
-  const { developers, createDeveloper, updateDeveloper, deleteDeveloper } =
-    useBoard();
+  const {
+    developers,
+    projects,
+    createDeveloper,
+    updateDeveloper,
+    setDeveloperActive,
+    deleteDeveloper,
+  } = useBoard();
   const { confirm } = useFeedback();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+
+  // Who works on what lives in the tasks, which span every project — the board
+  // itself only holds the active one.
+  const [assignments, setAssignments] = useState<TaskWithProject[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/tasks?scope=all");
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) setAssignments(data);
+      } catch {
+        if (!cancelled) setAssignments([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [developers.length]);
 
   const selected = useMemo(
     () => developers.find((d) => d.id === selectedId) ?? null,
     [developers, selectedId]
   );
 
-  // Editing is opt-in: selecting someone shows their card, and the Edit
-  // button is what turns it into a form.
-  const editing = creating || (selected != null && editingId === selected.id);
+  const active = useMemo(() => developers.filter((d) => d.active), [developers]);
+  const archived = useMemo(
+    () => developers.filter((d) => !d.active),
+    [developers]
+  );
+
+  /** Active people bucketed by the projects they have tasks in. */
+  const groups = useMemo(() => {
+    const byProject = new Map<string, Set<string>>();
+    for (const task of assignments ?? []) {
+      if (!task.developerId || !task.project) continue;
+      const set = byProject.get(task.project.id) ?? new Set<string>();
+      set.add(task.developerId);
+      byProject.set(task.project.id, set);
+    }
+
+    const assignedAnywhere = new Set<string>();
+    for (const set of byProject.values()) {
+      for (const id of set) assignedAnywhere.add(id);
+    }
+
+    const result = projects
+      .filter((project) => project.hasTeam)
+      .map((project) => ({
+        id: project.id,
+        name: project.name,
+        people: active.filter((d) => byProject.get(project.id)?.has(d.id)),
+      }))
+      .filter((g) => g.people.length > 0);
+
+    const unassigned = active.filter((d) => !assignedAnywhere.has(d.id));
+    if (unassigned.length) {
+      result.push({ id: "__none__", name: "No project yet", people: unassigned });
+    }
+    return result;
+  }, [assignments, projects, active]);
+
   const showingDetail = creating || selected != null;
+  const editing = creating || (selected != null && editingId === selected.id);
 
   async function removePerson(person: Developer) {
     const ok = await confirm({
-      title: `Remove ${person.name}?`,
-      body: "Their tasks stay, but become unassigned.",
-      confirmLabel: "Remove",
+      title: `Delete ${person.name}?`,
+      body: "This erases their profile for good. Archive them instead if you only want them out of the way.",
+      confirmLabel: "Delete",
       destructive: true,
     });
     if (!ok) return;
@@ -86,10 +149,16 @@ export function TeamView() {
     setEditingId(null);
   }
 
+  function openPerson(id: string) {
+    setCreating(false);
+    setEditingId(null);
+    setSelectedId(id);
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <div
-        className={`thin-scroll flex flex-col gap-2 overflow-y-auto border-b border-[var(--hairline)] p-4 lg:w-80 lg:shrink-0 lg:border-b-0 lg:border-r lg:p-5 ${
+        className={`thin-scroll flex flex-col gap-4 overflow-y-auto border-b border-[var(--hairline)] p-4 lg:w-80 lg:shrink-0 lg:border-b-0 lg:border-r lg:p-5 ${
           showingDetail ? "hidden lg:flex" : ""
         }`}
       >
@@ -97,7 +166,7 @@ export function TeamView() {
           <h2 className="text-[0.8125rem] font-semibold tracking-tight">
             Team
             <span className="ml-2 font-normal text-[var(--ink-muted)]">
-              {developers.length}
+              {active.length}
             </span>
           </h2>
           <button
@@ -113,43 +182,65 @@ export function TeamView() {
         </div>
 
         {developers.length === 0 && (
-          <p className="py-4 text-[0.8125rem] text-[var(--ink-muted)]">
+          <p className="text-[0.8125rem] text-[var(--ink-muted)]">
             No one on the team yet.
           </p>
         )}
 
-        {developers.map((d) => (
-          <button
-            key={d.id}
-            onClick={() => {
-              setCreating(false);
-              setEditingId(null);
-              setSelectedId(d.id);
-            }}
-            className={`flex items-center gap-3 rounded-[var(--radius)] border p-2.5 text-left transition ${
-              d.id === selectedId
-                ? "border-[var(--accent)] bg-[var(--accent-wash)]"
-                : "border-[var(--hairline)] hover:bg-[var(--plane)]"
-            }`}
-          >
-            <Avatar person={d} size={36} />
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-1.5">
-                <span className="truncate text-[0.8125rem] font-medium">
-                  {d.name}
-                </span>
-                {!d.active && (
-                  <span className="shrink-0 rounded-full bg-[var(--gridline)] px-1.5 py-0.5 text-[0.5625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
-                    Inactive
-                  </span>
-                )}
-              </span>
-              <span className="block truncate text-[0.75rem] text-[var(--ink-muted)]">
-                {d.role || d.email || "—"}
-              </span>
-            </span>
-          </button>
+        {groups.map((group) => (
+          <section key={group.id} className="flex flex-col gap-1.5">
+            <h3 className="field-label">{group.name}</h3>
+            {group.people.map((d) => (
+              <PersonRow
+                key={d.id}
+                person={d}
+                selected={d.id === selectedId}
+                onClick={() => openPerson(d.id)}
+              />
+            ))}
+          </section>
         ))}
+
+        {archived.length > 0 && (
+          <section className="flex flex-col gap-1.5 border-t border-[var(--hairline)] pt-3">
+            <button
+              onClick={() => setShowArchived((v) => !v)}
+              className="flex items-center gap-1.5 text-left"
+              aria-expanded={showArchived}
+            >
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
+                fill="none"
+                className={`shrink-0 text-[var(--ink-muted)] transition-transform ${
+                  showArchived ? "rotate-90" : ""
+                }`}
+              >
+                <path
+                  d="M3.5 1.5L7 5l-3.5 3.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span className="field-label">Archived</span>
+              <span className="text-[0.6875rem] text-[var(--ink-muted)]">
+                {archived.length}
+              </span>
+            </button>
+            {showArchived &&
+              archived.map((d) => (
+                <PersonRow
+                  key={d.id}
+                  person={d}
+                  selected={d.id === selectedId}
+                  onClick={() => openPerson(d.id)}
+                />
+              ))}
+          </section>
+        )}
       </div>
 
       <div className="thin-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
@@ -184,6 +275,9 @@ export function TeamView() {
             onEdit={() => setEditingId(selected.id)}
             onBack={() => setSelectedId(null)}
             onDelete={() => removePerson(selected)}
+            onToggleArchive={() =>
+              setDeveloperActive(selected.id, !selected.active)
+            }
           />
         ) : (
           <p className="text-[0.8125rem] text-[var(--ink-muted)]">
@@ -195,16 +289,56 @@ export function TeamView() {
   );
 }
 
+function PersonRow({
+  person,
+  selected,
+  onClick,
+}: {
+  person: Developer;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-3 rounded-[var(--radius)] border p-2.5 text-left transition ${
+        selected
+          ? "border-[var(--accent)] bg-[var(--accent-wash)]"
+          : "border-[var(--hairline)] hover:bg-[var(--plane)]"
+      } ${person.active ? "" : "opacity-60"}`}
+    >
+      <Avatar person={person} size={36} />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-[0.8125rem] font-medium">
+            {person.name}
+          </span>
+          {!person.active && (
+            <span className="shrink-0 rounded-full bg-[var(--gridline)] px-1.5 py-0.5 text-[0.5625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
+              Archived
+            </span>
+          )}
+        </span>
+        <span className="block truncate text-[0.75rem] text-[var(--ink-muted)]">
+          {person.role || person.email || "—"}
+        </span>
+      </span>
+    </button>
+  );
+}
+
 function ProfileCard({
   person,
   onEdit,
   onBack,
   onDelete,
+  onToggleArchive,
 }: {
   person: Developer;
   onEdit: () => void;
   onBack: () => void;
   onDelete: () => void;
+  onToggleArchive: () => void;
 }) {
   const [tasks, setTasks] = useState<TaskWithProject[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -237,7 +371,7 @@ function ProfileCard({
             <h2 className="text-lg font-semibold tracking-tight">{person.name}</h2>
             {!person.active && (
               <span className="rounded-full bg-[var(--gridline)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
-                Inactive
+                Archived
               </span>
             )}
           </div>
@@ -350,9 +484,12 @@ function ProfileCard({
         </ul>
       </section>
 
-      <div className="border-t border-[var(--hairline)] pt-4">
+      <div className="flex flex-wrap gap-2 border-t border-[var(--hairline)] pt-4">
+        <button onClick={onToggleArchive} className="btn-secondary">
+          {person.active ? "Archive" : "Restore to team"}
+        </button>
         <button onClick={onDelete} className="btn-secondary !text-[#d03b3b]">
-          Remove from team
+          Delete permanently
         </button>
       </div>
     </div>

@@ -6,13 +6,24 @@ export async function GET(request: NextRequest) {
   const { user, response } = await requireUser();
   if (response) return response;
 
-  const projectId = request.nextUrl.searchParams.get("projectId");
+  const params = request.nextUrl.searchParams;
+  const projectId = params.get("projectId");
+  // scope=all powers the Team view, which spans every project.
+  const allProjects = params.get("scope") === "all";
 
   const tasks = await prisma.task.findMany({
     // Scoping through the project relation keeps other users' tasks out even
     // when an arbitrary projectId is supplied.
-    where: { project: { userId: user.id }, ...(projectId ? { projectId } : {}) },
-    include: { developer: true },
+    where: {
+      project: { userId: user.id },
+      ...(projectId && !allProjects ? { projectId } : {}),
+    },
+    include: {
+      developer: true,
+      ...(allProjects
+        ? { project: { select: { id: true, name: true } } }
+        : {}),
+    },
     orderBy: { order: "asc" },
   });
   return NextResponse.json(tasks);
