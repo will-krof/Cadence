@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { STATUS_OPTIONS, TaskStatus, statusMeta } from "@/lib/types";
+import { Developer, STATUS_OPTIONS, TaskStatus, statusMeta } from "@/lib/types";
 
 export function Stat({
   label,
@@ -135,3 +135,39 @@ export function Field({
   );
 }
 
+
+/** Photo when there is one, otherwise a coloured initial. */
+export function Avatar({
+  person,
+  size = 32,
+}: {
+  person: Pick<Developer, "name" | "avatar" | "color">;
+  size?: number;
+}) {
+  if (person.avatar) {
+    return (
+      // Data URLs can't go through next/image, and these are already downscaled.
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={person.avatar}
+        alt=""
+        className="shrink-0 rounded-full object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-full font-semibold text-white"
+      style={{
+        width: size,
+        height: size,
+        background: person.color,
+        fontSize: Math.max(9, size * 0.4),
+      }}
+      aria-hidden="true"
+    >
+      {person.name.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}

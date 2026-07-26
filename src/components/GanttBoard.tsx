@@ -12,7 +12,7 @@ import {
 import { contrastText } from "@/lib/color";
 import { STATUS_OPTIONS, statusMeta } from "@/lib/types";
 import { useBoard } from "@/components/BoardProvider";
-import { Stat, StatusPill } from "@/components/ui";
+import { Avatar, Stat, StatusPill } from "@/components/ui";
 import { TaskModal } from "@/components/TaskModal";
 
 const ROW_HEIGHT = 44;
@@ -282,13 +282,18 @@ export function GanttBoard() {
                 />
               </div>
 
-              <div className="px-2">
+              <div className="relative flex items-center px-2">
+                {task.developer && (
+                  <span className="pointer-events-none absolute left-3.5 z-10">
+                    <Avatar person={task.developer} size={18} />
+                  </span>
+                )}
                 <select
                   value={task.developerId ?? ""}
                   onChange={(e) =>
                     updateTask(task.id, { developerId: e.target.value || null })
                   }
-                  className="select truncate"
+                  className={`select truncate ${task.developer ? "pl-7" : ""}`}
                   aria-label={`Assignee for ${task.title}`}
                 >
                   <option value="">—</option>
@@ -406,9 +411,18 @@ export function GanttBoard() {
                         background: color,
                         color: contrastText(color),
                       }}
-                      title={task.description || task.title}
+                      title={
+                        task.developer
+                          ? `${task.title} — ${task.developer.name}`
+                          : task.title
+                      }
                     >
-                      {task.title}
+                      {task.developer && (
+                        <span className="mr-1.5 -ml-0.5 shrink-0">
+                          <Avatar person={task.developer} size={16} />
+                        </span>
+                      )}
+                      <span className="truncate">{task.title}</span>
                     </button>
                   )}
                 </div>

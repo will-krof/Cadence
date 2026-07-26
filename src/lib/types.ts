@@ -97,3 +97,8 @@ export interface Sprint {
   endDate: string;
   updatedAt: string;
 }
+
+/** A task as returned by the per-person endpoint, which names its project. */
+export interface TaskWithProject extends Task {
+  project: { id: string; name: string };
+}

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
-import { Field } from "@/components/ui";
+import { Avatar, Field } from "@/components/ui";
 import { useFeedback } from "@/components/Feedback";
 import {
   CURRENCIES,
@@ -11,6 +11,8 @@ import {
   DEVELOPER_PALETTE,
   EMPLOYMENT_TYPES,
   EmploymentType,
+  statusMeta,
+  TaskWithProject,
 } from "@/lib/types";
 import { toISODate } from "@/lib/dates";
 
@@ -59,19 +61,36 @@ export function TeamView() {
   const { confirm } = useFeedback();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const selected = useMemo(
     () => developers.find((d) => d.id === selectedId) ?? null,
     [developers, selectedId]
   );
 
-  const editing = creating || Boolean(selected);
+  // Editing is opt-in: selecting someone shows their card, and the Edit
+  // button is what turns it into a form.
+  const editing = creating || (selected != null && editingId === selected.id);
+  const showingDetail = creating || selected != null;
+
+  async function removePerson(person: Developer) {
+    const ok = await confirm({
+      title: `Remove ${person.name}?`,
+      body: "Their tasks stay, but become unassigned.",
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
+    await deleteDeveloper(person.id);
+    setSelectedId(null);
+    setEditingId(null);
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <div
         className={`thin-scroll flex flex-col gap-2 overflow-y-auto border-b border-[var(--hairline)] p-4 lg:w-80 lg:shrink-0 lg:border-b-0 lg:border-r lg:p-5 ${
-          editing ? "hidden lg:flex" : ""
+          showingDetail ? "hidden lg:flex" : ""
         }`}
       >
         <div className="flex items-center justify-between">
@@ -84,6 +103,7 @@ export function TeamView() {
           <button
             onClick={() => {
               setSelectedId(null);
+              setEditingId(null);
               setCreating(true);
             }}
             className="btn-primary"
@@ -103,6 +123,7 @@ export function TeamView() {
             key={d.id}
             onClick={() => {
               setCreating(false);
+              setEditingId(null);
               setSelectedId(d.id);
             }}
             className={`flex items-center gap-3 rounded-[var(--radius)] border p-2.5 text-left transition ${
@@ -139,11 +160,13 @@ export function TeamView() {
             existingCount={developers.length}
             onCancel={() => {
               setCreating(false);
-              setSelectedId(null);
+              setEditingId(null);
+              if (creating) setSelectedId(null);
             }}
             onSave={async (values) => {
               if (selected) {
                 await updateDeveloper(selected.id, values);
+                setEditingId(null);
               } else {
                 const created = await createDeveloper(values);
                 if (created) {
@@ -152,21 +175,15 @@ export function TeamView() {
                 }
               }
             }}
-            onDelete={
-              selected
-                ? async () => {
-                    const ok = await confirm({
-                      title: `Remove ${selected.name}?`,
-                      body: "Their tasks stay, but become unassigned.",
-                      confirmLabel: "Remove",
-                      destructive: true,
-                    });
-                    if (!ok) return;
-                    await deleteDeveloper(selected.id);
-                    setSelectedId(null);
-                  }
-                : undefined
-            }
+            onDelete={selected ? () => removePerson(selected) : undefined}
+          />
+        ) : selected ? (
+          <ProfileCard
+            key={selected.id}
+            person={selected}
+            onEdit={() => setEditingId(selected.id)}
+            onBack={() => setSelectedId(null)}
+            onDelete={() => removePerson(selected)}
           />
         ) : (
           <p className="text-[0.8125rem] text-[var(--ink-muted)]">
@@ -178,39 +195,196 @@ export function TeamView() {
   );
 }
 
-export function Avatar({
+function ProfileCard({
   person,
-  size = 32,
+  onEdit,
+  onBack,
+  onDelete,
 }: {
-  person: Pick<Developer, "name" | "avatar" | "color">;
-  size?: number;
+  person: Developer;
+  onEdit: () => void;
+  onBack: () => void;
+  onDelete: () => void;
 }) {
-  if (person.avatar) {
-    return (
-      // Data URLs can't go through next/image, and these are already downscaled.
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={person.avatar}
-        alt=""
-        width={size}
-        height={size}
-        className="shrink-0 rounded-full object-cover"
-        style={{ width: size, height: size }}
-      />
-    );
-  }
+  const [tasks, setTasks] = useState<TaskWithProject[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/developers/${person.id}/tasks`);
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) setTasks(data);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [person.id]);
+
+  const openCount = tasks?.filter((t) => t.status !== "DONE").length ?? 0;
+
   return (
-    <span
-      className="flex shrink-0 items-center justify-center rounded-full font-semibold text-white"
-      style={{
-        width: size,
-        height: size,
-        background: person.color,
-        fontSize: size * 0.4,
-      }}
-    >
-      {person.name.slice(0, 1).toUpperCase()}
-    </span>
+    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      <header className="flex flex-wrap items-start gap-4">
+        <Avatar person={person} size={72} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold tracking-tight">{person.name}</h2>
+            {!person.active && (
+              <span className="rounded-full bg-[var(--gridline)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
+                Inactive
+              </span>
+            )}
+          </div>
+          {person.role && (
+            <p className="mt-0.5 text-[0.875rem] text-[var(--ink-secondary)]">
+              {person.role}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onBack} className="btn-secondary lg:hidden">
+            Back
+          </button>
+          <button onClick={onEdit} className="btn-primary">
+            Edit profile
+          </button>
+        </div>
+      </header>
+
+      <section className="grid gap-x-6 gap-y-4 rounded-[var(--radius-lg)] border border-[var(--hairline)] p-4 sm:grid-cols-2">
+        <Detail label="Email" value={person.email} href={person.email ? `mailto:${person.email}` : undefined} />
+        <Detail label="Phone" value={person.phone} href={person.phone ? `tel:${person.phone}` : undefined} />
+        <Detail
+          label="Started"
+          value={person.startDate ? toISODate(new Date(person.startDate)) : null}
+        />
+        <Detail
+          label="Employment"
+          value={
+            EMPLOYMENT_TYPES.find((t) => t.value === person.employmentType)
+              ?.label ?? null
+          }
+        />
+        <Detail
+          label="Salary"
+          value={
+            person.salary != null
+              ? `${person.salary.toLocaleString()} ${person.currency}`
+              : null
+          }
+        />
+        <Detail label="Open tasks" value={tasks ? String(openCount) : null} />
+      </section>
+
+      {person.notes && (
+        <section>
+          <h3 className="field-label mb-1.5">Notes</h3>
+          <p className="whitespace-pre-wrap text-[0.8125rem] leading-relaxed text-[var(--ink-secondary)]">
+            {person.notes}
+          </p>
+        </section>
+      )}
+
+      <section>
+        <h3 className="mb-2 text-[0.8125rem] font-semibold tracking-tight">
+          Assigned tasks
+          {tasks && (
+            <span className="ml-2 font-normal text-[var(--ink-muted)]">
+              {tasks.length}
+            </span>
+          )}
+        </h3>
+
+        {failed && (
+          <p className="text-[0.8125rem] text-[#d03b3b]">
+            Could not load their tasks.
+          </p>
+        )}
+        {!failed && tasks === null && (
+          <p className="text-[0.8125rem] text-[var(--ink-muted)]">Loading…</p>
+        )}
+        {tasks?.length === 0 && (
+          <p className="text-[0.8125rem] text-[var(--ink-muted)]">
+            Nothing assigned right now.
+          </p>
+        )}
+
+        <ul className="flex flex-col gap-1.5">
+          {tasks?.map((task) => {
+            const meta = statusMeta(task.status);
+            return (
+              <li
+                key={task.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
+              >
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
+                  {task.title}
+                </span>
+                <span className="shrink-0 rounded-full bg-[var(--plane)] px-2 py-0.5 text-[0.6875rem] text-[var(--ink-secondary)]">
+                  {task.project.name}
+                </span>
+                <span
+                  className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium"
+                  style={{
+                    background: `color-mix(in srgb, ${meta.color} 14%, var(--surface-raised))`,
+                  }}
+                >
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ background: meta.color }}
+                  />
+                  {meta.label}
+                </span>
+                <span className="shrink-0 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
+                  {toISODate(new Date(task.endDate))}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
+      <div className="border-t border-[var(--hairline)] pt-4">
+        <button onClick={onDelete} className="btn-secondary !text-[#d03b3b]">
+          Remove from team
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Detail({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value: string | null;
+  href?: string;
+}) {
+  return (
+    <div>
+      <p className="field-label">{label}</p>
+      <p className="mt-0.5 text-[0.8125rem]">
+        {value ? (
+          href ? (
+            <a href={href} className="text-[var(--accent)] hover:underline">
+              {value}
+            </a>
+          ) : (
+            value
+          )
+        ) : (
+          <span className="text-[var(--ink-muted)]">—</span>
+        )}
+      </p>
+    </div>
   );
 }
 

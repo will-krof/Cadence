@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
-import { StatusPill } from "@/components/ui";
+import { Avatar, StatusPill } from "@/components/ui";
 import { TaskModal } from "@/components/TaskModal";
 import { STATUS_OPTIONS, Task, TaskStatus } from "@/lib/types";
 import { toISODate } from "@/lib/dates";
@@ -208,9 +208,14 @@ export function TrackerBoard() {
             width: drag.width,
           }}
         >
-          <p className="text-[0.8125rem] font-medium leading-snug">
-            {draggedTask.title}
-          </p>
+          <div className="flex items-center gap-2">
+            {draggedTask.developer && (
+              <Avatar person={draggedTask.developer} size={18} />
+            )}
+            <p className="text-[0.8125rem] font-medium leading-snug">
+              {draggedTask.title}
+            </p>
+          </div>
         </div>
       )}
 
@@ -331,15 +336,14 @@ function TaskCard({
         </div>
         <div className="relative flex min-w-0 flex-1 items-center">
           {task.developer && (
-            <span
-              className="pointer-events-none absolute left-2 h-1.5 w-1.5 shrink-0 rounded-full"
-              style={{ background: task.developer.color }}
-            />
+            <span className="pointer-events-none absolute left-1.5 z-10">
+              <Avatar person={task.developer} size={18} />
+            </span>
           )}
           <select
             value={task.developerId ?? ""}
             onChange={(e) => onAssign(e.target.value || null)}
-            className={`select truncate ${task.developer ? "pl-[1.375rem]" : ""}`}
+            className={`select truncate ${task.developer ? "pl-7" : ""}`}
             aria-label={`Assignee for ${task.title}`}
           >
             <option value="">Unassigned</option>
