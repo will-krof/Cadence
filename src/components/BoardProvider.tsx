@@ -12,6 +12,7 @@ import {
   Developer,
   DeveloperInput,
   Project,
+  ProjectRole,
   Sprint,
   Task,
   TaskStatus,
@@ -27,6 +28,13 @@ interface TaskInput {
   endDate: string;
   status?: TaskStatus;
   developerId: string | null;
+}
+
+interface RolePatch {
+  name?: string;
+  canViewTimeline?: boolean;
+  canViewTracker?: boolean;
+  canViewTeam?: boolean;
 }
 
 interface SprintPatch {
@@ -50,6 +58,14 @@ interface BoardContextValue {
   createProject: (input: ProjectInput) => Promise<Project | null>;
   updateProject: (id: string, input: Partial<ProjectInput>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
+
+  createRole: (projectId: string, name: string) => Promise<ProjectRole | null>;
+  updateRole: (
+    projectId: string,
+    roleId: string,
+    input: RolePatch
+  ) => Promise<void>;
+  deleteRole: (projectId: string, roleId: string) => Promise<void>;
 
   tasks: Task[];
   developers: Developer[];
@@ -230,6 +246,85 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       notify("success", `“${name}” deleted.`);
     },
     [projects, notify]
+  );
+
+  /** Roles live on the project, so every change writes back into that list. */
+  const patchRoles = useCallback(
+    (projectId: string, update: (roles: ProjectRole[]) => ProjectRole[]) => {
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === projectId ? { ...p, roles: update(p.roles) } : p
+        )
+      );
+    },
+    []
+  );
+
+  const createRole = useCallback(
+    async (projectId: string, name: string) => {
+      const res = await fetch(`/api/projects/${projectId}/roles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not add this role."));
+        return null;
+      }
+      const created: ProjectRole = await res.json();
+      patchRoles(projectId, (roles) => [...roles, created]);
+      notify("success", `Role “${created.name}” added.`);
+      return created;
+    },
+    [patchRoles, notify]
+  );
+
+  const updateRole = useCallback(
+    async (projectId: string, roleId: string, input: RolePatch) => {
+      // A checkbox that waits for the network before it moves feels broken, so
+      // the tick lands right away and is put back if the save fails.
+      const previous = projects
+        .find((p) => p.id === projectId)
+        ?.roles.find((r) => r.id === roleId);
+      patchRoles(projectId, (roles) =>
+        roles.map((r) => (r.id === roleId ? { ...r, ...input } : r))
+      );
+
+      const res = await fetch(`/api/projects/${projectId}/roles/${roleId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        if (previous) {
+          patchRoles(projectId, (roles) =>
+            roles.map((r) => (r.id === roleId ? previous : r))
+          );
+        }
+        notify("error", await errorMessage(res, "Could not save this role."));
+        return;
+      }
+      const updated: ProjectRole = await res.json();
+      patchRoles(projectId, (roles) =>
+        roles.map((r) => (r.id === roleId ? updated : r))
+      );
+    },
+    [projects, patchRoles, notify]
+  );
+
+  const deleteRole = useCallback(
+    async (projectId: string, roleId: string) => {
+      const res = await fetch(`/api/projects/${projectId}/roles/${roleId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not remove this role."));
+        return;
+      }
+      patchRoles(projectId, (roles) => roles.filter((r) => r.id !== roleId));
+      notify("success", "Role removed.");
+    },
+    [patchRoles, notify]
   );
 
   const createTask = useCallback(
@@ -437,6 +532,9 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     createProject,
     updateProject,
     deleteProject,
+    createRole,
+    updateRole,
+    deleteRole,
     tasks,
     developers,
     sprint,

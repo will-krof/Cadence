@@ -150,6 +150,7 @@ function Shell({ user }: { user: ShellUser }) {
   } = useBoard();
 
   const [view, setView] = useState<View>("overview");
+  const [roleId, setRoleId] = useState<string | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
   // Reading the stored preference through a store (rather than mirroring it
@@ -162,29 +163,52 @@ function Shell({ user }: { user: ShellUser }) {
 
   const wide = !collapsed;
 
-  // Overview is always there — it is the project's own card, not one of its
-  // tools — so a project with no board enabled still has somewhere to land.
-  const available: View[] = useMemo(
-    () =>
-      activeProject
-        ? [
-            "overview" as View,
-            ...(activeProject.hasTimeline ? (["timeline"] as View[]) : []),
-            ...(activeProject.hasTracker ? (["tracker"] as View[]) : []),
-          ]
-        : [],
-    [activeProject]
-  );
+  // Roles belong to a project, so the chosen one is looked up rather than
+  // stored — switching projects falls back to that project's admin.
+  const role = useMemo(() => {
+    if (!activeProject) return null;
+    return (
+      activeProject.roles.find((r) => r.id === roleId) ??
+      activeProject.roles.find((r) => r.isAdmin) ??
+      activeProject.roles[0] ??
+      null
+    );
+  }, [activeProject, roleId]);
+
+  const isAdmin = role?.isAdmin ?? true;
+
+  // A tool has to be enabled on the project *and* visible to the role. Overview
+  // is always there — it is the project's own card, not one of its tools — so a
+  // project with no board enabled still has somewhere to land.
+  const available: View[] = useMemo(() => {
+    if (!activeProject) return [];
+    const admin = role?.isAdmin ?? true;
+    const sees = (
+      tool: boolean,
+      key: "canViewTimeline" | "canViewTracker" | "canViewTeam"
+    ) => tool && (admin || role?.[key] === true);
+
+    return [
+      "overview" as View,
+      ...(sees(activeProject.hasTimeline, "canViewTimeline")
+        ? (["timeline"] as View[])
+        : []),
+      ...(sees(activeProject.hasTracker, "canViewTracker")
+        ? (["tracker"] as View[])
+        : []),
+      ...(sees(activeProject.hasTeam, "canViewTeam") ? (["team"] as View[]) : []),
+    ];
+  }, [activeProject, role]);
 
   // A project may not have both tools enabled, so the shown view is derived
-  // rather than synced — switching projects can never leave it on a view the
-  // project doesn't have.
-  const activeView =
-    view === "team" ? "team" : available.includes(view) ? view : available[0];
+  // rather than synced — switching projects or roles can never leave it on a
+  // view that isn't available.
+  const activeView = available.includes(view) ? view : available[0];
 
-  /** Switching projects opens that project's card. */
+  /** Switching projects opens that project's card, as its admin. */
   function openProject(id: string) {
     selectProject(id);
+    setRoleId(null);
     setView("overview");
   }
 
@@ -307,25 +331,42 @@ function Shell({ user }: { user: ShellUser }) {
                   wide={wide}
                 />
               )}
+              {/* The roster itself is shared by every project, but whether this
+                  project's people can open it is the role's call. */}
+              {available.includes("team") && (
+                <ViewButton
+                  active={activeView === "team"}
+                  onClick={() => setView("team")}
+                  icon={TEAM_ICON}
+                  label="Team"
+                  wide={wide}
+                  hint="All projects"
+                />
+              )}
             </div>
           )}
 
-          {/* Separate section: the roster is shared by every project. */}
-          <div className="flex flex-col gap-1 border-t border-[var(--hairline)] pt-3">
-            {wide && (
-              <span className="px-2 pb-1">
-                <span className="field-label">Workspace</span>
-              </span>
-            )}
-            <ViewButton
-              active={activeView === "team"}
-              onClick={() => setView("team")}
-              icon={TEAM_ICON}
-              label="Team"
-              wide={wide}
-              hint="All projects"
-            />
-          </div>
+          {activeProject && activeProject.roles.length > 0 && wide && (
+            <label className="flex flex-col gap-1 border-t border-[var(--hairline)] px-2 pt-3">
+              <span className="field-label">Viewing as</span>
+              <select
+                value={role?.id ?? ""}
+                onChange={(e) => setRoleId(e.target.value)}
+                className="select"
+              >
+                {activeProject.roles.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+              {!isAdmin && (
+                <span className="text-[0.625rem] text-[var(--ink-muted)]">
+                  Showing what this role sees.
+                </span>
+              )}
+            </label>
+          )}
         </nav>
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--surface)]">
@@ -360,7 +401,13 @@ function Shell({ user }: { user: ShellUser }) {
               {activeView === "team" ? (
                 <TeamView />
               ) : activeView === "overview" ? (
-                <ProjectOverview onOpenView={setView} />
+                <ProjectOverview
+                  onOpenView={setView}
+                  visibleViews={available.filter(
+                    (v): v is "timeline" | "tracker" | "team" => v !== "overview"
+                  )}
+                  canEdit={isAdmin}
+                />
               ) : projectLoading ? (
                 <Centered>Loading project…</Centered>
               ) : activeView === "timeline" ? (

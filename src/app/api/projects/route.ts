@@ -9,6 +9,7 @@ export async function GET() {
   const projects = await prisma.project.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "asc" },
+    include: { roles: { orderBy: { createdAt: "asc" } } },
   });
   return NextResponse.json(projects);
 }
@@ -35,6 +36,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Every project starts with the two roles most teams need; developers get
+  // the boards but not the roster until an admin says otherwise.
   const project = await prisma.project.create({
     data: {
       name,
@@ -43,7 +46,25 @@ export async function POST(request: NextRequest) {
       hasTracker,
       hasTeam,
       userId: user.id,
+      roles: {
+        create: [
+          {
+            name: "admin",
+            isAdmin: true,
+            canViewTimeline: true,
+            canViewTracker: true,
+            canViewTeam: true,
+          },
+          {
+            name: "developer",
+            canViewTimeline: true,
+            canViewTracker: true,
+            canViewTeam: false,
+          },
+        ],
+      },
     },
+    include: { roles: { orderBy: { createdAt: "asc" } } },
   });
   return NextResponse.json(project, { status: 201 });
 }

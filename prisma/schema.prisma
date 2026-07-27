@@ -78,8 +78,27 @@ model Project {
   createdAt   DateTime @default(now())
   tasks       Task[]
   sprint      Sprint?
+  roles       ProjectRole[]
 
   @@index([userId])
+}
+
+/// What a group of people is allowed to see on one project. Every project has
+/// an admin role, which always sees everything and is the one that edits these.
+model ProjectRole {
+  id              String  @id @default(cuid())
+  name            String
+  isAdmin         Boolean @default(false)
+  canViewTimeline Boolean @default(true)
+  canViewTracker  Boolean @default(true)
+  canViewTeam     Boolean @default(true)
+
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, name])
+  @@index([projectId])
 }
 
 model Task {

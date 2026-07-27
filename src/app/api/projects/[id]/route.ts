@@ -36,6 +36,7 @@ export async function PATCH(
         typeof body.hasTracker === "boolean" ? body.hasTracker : undefined,
       hasTeam: typeof body.hasTeam === "boolean" ? body.hasTeam : undefined,
     },
+    include: { roles: { orderBy: { createdAt: "asc" } } },
   });
   return NextResponse.json(project);
 }

@@ -66,6 +66,29 @@ export interface Developer {
 
 export type DeveloperInput = Omit<Developer, "id" | "createdAt">;
 
+export interface ProjectRole {
+  id: string;
+  projectId: string;
+  name: string;
+  isAdmin: boolean;
+  canViewTimeline: boolean;
+  canViewTracker: boolean;
+  canViewTeam: boolean;
+  createdAt: string;
+}
+
+/** The three tools a role's visibility is described in terms of. */
+export const ROLE_VIEWS: {
+  key: "canViewTimeline" | "canViewTracker" | "canViewTeam";
+  label: string;
+  /** The project toggle this view depends on. */
+  tool: "hasTimeline" | "hasTracker" | "hasTeam";
+}[] = [
+  { key: "canViewTimeline", label: "Timeline", tool: "hasTimeline" },
+  { key: "canViewTracker", label: "Tracker", tool: "hasTracker" },
+  { key: "canViewTeam", label: "Team", tool: "hasTeam" },
+];
+
 export interface Project {
   id: string;
   name: string;
@@ -73,6 +96,7 @@ export interface Project {
   hasTimeline: boolean;
   hasTracker: boolean;
   hasTeam: boolean;
+  roles: ProjectRole[];
   createdAt: string;
 }
 
