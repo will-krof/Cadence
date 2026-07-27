@@ -59,9 +59,13 @@ async function fileToAvatar(file: File): Promise<string> {
 }
 
 /**
- * The roster: who is on the team, and what each of them is like. Adding somebody
- * here gives them a profile and nothing else — inviting them is a project's
- * business, and it happens on the project card once they have a role there.
+ * The roster of the project being viewed: who works on it, and what each of
+ * them is like. Adding somebody here gives them a profile and puts them on this
+ * project — inviting them still waits for a role on the project card.
+ *
+ * People elsewhere in the workspace aren't this project's team, so they are
+ * kept out of the list and folded away under it, where the owner can still open
+ * a profile or put someone on this project.
  *
  * A signed-in team member reads this where a role lets them; changing the team
  * stays with the workspace's owner.
@@ -70,6 +74,8 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
   const {
     developers,
     projects,
+    activeProject,
+    projectTasks,
     memberships,
     setMemberRoles,
     removeMember,
@@ -83,6 +89,7 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [showElsewhere, setShowElsewhere] = useState(false);
 
   // Who works on what lives in the tasks, which span every project — the board
   // itself only holds the active one.
@@ -137,10 +144,34 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
     return counts;
   }, [memberships]);
 
-  const active = useMemo(() => developers.filter((d) => d.active), [developers]);
-  const archived = useMemo(
-    () => developers.filter((d) => !d.active),
-    [developers]
+  /**
+   * Who counts as this project's team: everyone put on it, plus anyone carrying
+   * its work — being handed a task puts you on the project as surely as being
+   * named does, which is how the project card reads it too.
+   */
+  const onProject = useMemo(() => {
+    const ids = new Set<string>();
+    if (!activeProject) return ids;
+    for (const m of memberships) {
+      if (m.projectId === activeProject.id) ids.add(m.developerId);
+    }
+    for (const t of projectTasks) if (t.developerId) ids.add(t.developerId);
+    return ids;
+  }, [activeProject, memberships, projectTasks]);
+
+  const here = useMemo(
+    () => developers.filter((d) => onProject.has(d.id)),
+    [developers, onProject]
+  );
+
+  const active = useMemo(() => here.filter((d) => d.active), [here]);
+  const archived = useMemo(() => here.filter((d) => !d.active), [here]);
+
+  // Everyone else in the workspace: not this project's team, but still the
+  // owner's to open — a person on no project would be out of reach otherwise.
+  const elsewhere = useMemo(
+    () => developers.filter((d) => !onProject.has(d.id)),
+    [developers, onProject]
   );
 
   const showingDetail = creating || selected != null;
@@ -193,9 +224,11 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
           )}
         </div>
 
-        {developers.length === 0 && (
+        {here.length === 0 && (
           <p className="text-[0.8125rem] text-[var(--ink-muted)]">
-            No one on the team yet.
+            {canEdit
+              ? "No one on this project yet."
+              : "No one is on this project yet."}
           </p>
         )}
 
@@ -212,45 +245,30 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
         </section>
 
         {archived.length > 0 && (
-          <section className="flex flex-col gap-1.5 border-t border-[var(--hairline)] pt-3">
-            <button
-              onClick={() => setShowArchived((v) => !v)}
-              className="flex items-center gap-1.5 text-left"
-              aria-expanded={showArchived}
-            >
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 10 10"
-                fill="none"
-                className={`shrink-0 text-[var(--ink-muted)] transition-transform ${
-                  showArchived ? "rotate-90" : ""
-                }`}
-              >
-                <path
-                  d="M3.5 1.5L7 5l-3.5 3.5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <span className="field-label">Archived</span>
-              <span className="text-[0.6875rem] text-[var(--ink-muted)]">
-                {archived.length}
-              </span>
-            </button>
-            {showArchived &&
-              archived.map((d) => (
-                <PersonRow
-                  key={d.id}
-                  person={d}
-                  projectCount={projectCounts.get(d.id) ?? 0}
-                  selected={d.id === selectedId}
-                  onClick={() => openPerson(d.id)}
-                />
-              ))}
-          </section>
+          <FoldedPeople
+            label="Archived"
+            people={archived}
+            open={showArchived}
+            onToggle={() => setShowArchived((v) => !v)}
+            projectCounts={projectCounts}
+            selectedId={selectedId}
+            onOpenPerson={openPerson}
+          />
+        )}
+
+        {/* The rest of the workspace, folded away: these people aren't on this
+            project, so they are not part of its team until someone puts them
+            on it. Only the owner has any business browsing them. */}
+        {canEdit && elsewhere.length > 0 && (
+          <FoldedPeople
+            label="Elsewhere in the workspace"
+            people={elsewhere}
+            open={showElsewhere}
+            onToggle={() => setShowElsewhere((v) => !v)}
+            projectCounts={projectCounts}
+            selectedId={selectedId}
+            onOpenPerson={openPerson}
+          />
         )}
       </div>
 
@@ -262,6 +280,9 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
             existingCount={developers.length}
             projects={teamProjects}
             memberships={memberships}
+            // Somebody added from this project's Team starts on this project:
+            // that is the list they were being added to.
+            defaultProjectId={activeProject?.id ?? null}
             onCancel={() => {
               setCreating(false);
               setEditingId(null);
@@ -306,6 +327,67 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** A list of people kept out of the way behind its own heading. */
+function FoldedPeople({
+  label,
+  people,
+  open,
+  onToggle,
+  projectCounts,
+  selectedId,
+  onOpenPerson,
+}: {
+  label: string;
+  people: Developer[];
+  open: boolean;
+  onToggle: () => void;
+  projectCounts: Map<string, number>;
+  selectedId: string | null;
+  onOpenPerson: (id: string) => void;
+}) {
+  return (
+    <section className="flex flex-col gap-1.5 border-t border-[var(--hairline)] pt-3">
+      <button
+        onClick={onToggle}
+        className="flex items-center gap-1.5 text-left"
+        aria-expanded={open}
+      >
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          fill="none"
+          className={`shrink-0 text-[var(--ink-muted)] transition-transform ${
+            open ? "rotate-90" : ""
+          }`}
+        >
+          <path
+            d="M3.5 1.5L7 5l-3.5 3.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="field-label">{label}</span>
+        <span className="text-[0.6875rem] text-[var(--ink-muted)]">
+          {people.length}
+        </span>
+      </button>
+      {open &&
+        people.map((d) => (
+          <PersonRow
+            key={d.id}
+            person={d}
+            projectCount={projectCounts.get(d.id) ?? 0}
+            selected={d.id === selectedId}
+            onClick={() => onOpenPerson(d.id)}
+          />
+        ))}
+    </section>
   );
 }
 
@@ -479,6 +561,7 @@ function ProfileForm({
   existingCount,
   projects,
   memberships,
+  defaultProjectId,
   onSave,
   onCancel,
   onDelete,
@@ -487,6 +570,8 @@ function ProfileForm({
   existingCount: number;
   projects: Project[];
   memberships: Membership[];
+  /** Which project a brand-new person lands on, if any. */
+  defaultProjectId?: string | null;
   /** Profile and project roles are saved together, on one press of Save. */
   onSave: (
     values: Partial<DeveloperInput>,
@@ -526,6 +611,11 @@ function ProfileForm({
       for (const m of memberships) {
         if (m.developerId === person.id) map.set(m.projectId, m.roleIds);
       }
+    } else if (
+      defaultProjectId &&
+      projects.some((p) => p.id === defaultProjectId)
+    ) {
+      map.set(defaultProjectId, []);
     }
     return map;
   });

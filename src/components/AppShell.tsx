@@ -346,9 +346,8 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                           wide={wide}
                         />
                       )}
-                      {/* The roster itself is shared by every project, but
-                          whether this project's people can open it is the
-                          role's call. */}
+                      {/* This project's people, and whether they can open the
+                          list at all is the role's call. */}
                       {available.includes("team") && (
                         <ViewButton
                           active={activeView === "team"}
@@ -356,7 +355,6 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                           icon={TEAM_ICON}
                           label="Team"
                           wide={wide}
-                          hint="All projects"
                         />
                       )}
                     </div>
