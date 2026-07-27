@@ -17,8 +17,14 @@ export function TaskEditModal({
   task: Task;
   onClose: () => void;
 }) {
-  const { projectTasks, developers, createTask, updateTask, deleteTask } =
-    useBoard();
+  const {
+    projectTasks,
+    developers,
+    createTask,
+    updateTask,
+    deleteTask,
+    clearPause,
+  } = useBoard();
 
   // Every step of this task, wherever its board is: a step planned into another
   // sprint is still a step of this task.
@@ -57,6 +63,7 @@ export function TaskEditModal({
         updateTask(id, patch)
       }
       onDeleteSubtask={(id) => deleteTask(id)}
+      onClearPause={(breakId) => clearPause(task.id, breakId)}
     />
   );
 }

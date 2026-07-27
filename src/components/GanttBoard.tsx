@@ -20,7 +20,7 @@ import {
   statusMeta,
 } from "@/lib/types";
 import { useBoard } from "@/components/BoardProvider";
-import { useHiddenStatuses } from "@/lib/prefs";
+import { useFoldedSteps, useHiddenStatuses } from "@/lib/prefs";
 import {
   AssigneeSelect,
   Avatar,
@@ -79,9 +79,11 @@ export function GanttBoard() {
     selectSprint,
     stats,
     updateTask,
+    pauseTask,
   } = useBoard();
 
   const [hiddenStatuses] = useHiddenStatuses();
+  const [folded, setFolded] = useFoldedSteps();
 
   // How far along each task's steps are, counted once for the whole board
   // rather than per row: a row only needs its own pair of numbers.
@@ -96,6 +98,22 @@ export function GanttBoard() {
     }
     return counts;
   }, [tasks]);
+
+  /**
+   * What the chart draws. Folded, it is whole tasks only — their steps are
+   * folded into the count beside the title. A step whose task is on another
+   * board stays: nothing here would account for it.
+   */
+  const rows = useMemo(() => {
+    if (!folded) return tasks;
+    const whole = new Set(tasks.filter((t) => !t.parentId).map((t) => t.id));
+    return tasks.filter((t) => !(t.parentId && whole.has(t.parentId)));
+  }, [tasks, folded]);
+
+  const foldable = useMemo(
+    () => tasks.some((t) => t.parentId),
+    [tasks]
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const barDragRef = useRef<BarDrag | null>(null);
   // Bars and their tooltips are addressed directly while dragging.
@@ -312,28 +330,74 @@ export function GanttBoard() {
       Math.floor((window_.top - ROW_HEIGHT) / ROW_HEIGHT) - ROW_OVERSCAN
     );
     const visible = Math.ceil(window_.height / ROW_HEIGHT) + ROW_OVERSCAN * 2;
-    const last = Math.min(tasks.length, first + visible);
+    const last = Math.min(rows.length, first + visible);
     return {
       first,
       last,
       before: first * ROW_HEIGHT,
-      after: Math.max(0, (tasks.length - last) * ROW_HEIGHT),
-      rows: tasks.slice(first, last),
+      after: Math.max(0, (rows.length - last) * ROW_HEIGHT),
+      rows: rows.slice(first, last),
     };
-  }, [tasks, window_]);
+  }, [rows, window_]);
 
-  /** Where each task's bar sits, recomputed only when the calendar moves. */
+  /**
+   * Where each task's bar sits, and where the work stopped inside it.
+   *
+   * A pause doesn't move a task — it ran from the day it started to the day it
+   * ended, whatever happened in between — so the span stays whole and the
+   * stretches that were worked are cut out of it. They are held as fractions of
+   * the bar, which is what keeps them in place while it is being dragged.
+   */
   const spans = useMemo(() => {
-    const map = new Map<string, { left: number; width: number }>();
-    for (const task of tasks) {
-      const span = columnSpan(
-        startOfDay(new Date(task.startDate)),
-        startOfDay(new Date(task.endDate))
-      );
-      if (span) map.set(task.id, span);
+    type Run = { from: number; to: number };
+    const map = new Map<
+      string,
+      { left: number; width: number; worked: Run[]; waited: Run[] }
+    >();
+
+    for (const task of rows) {
+      const from = startOfDay(new Date(task.startDate));
+      const to = startOfDay(new Date(task.endDate));
+      const span = columnSpan(from, to);
+      if (!span) continue;
+
+      // Each pause, clamped to the task and measured across its span.
+      const total = diffDays(from, to) + 1;
+      const gaps: Run[] = [];
+      for (const pause of task.breaks) {
+        const gapStart = startOfDay(new Date(pause.startDate));
+        // An open pause runs to the end: the work has not been picked up.
+        const gapEnd = pause.endDate
+          ? addDays(startOfDay(new Date(pause.endDate)), -1)
+          : to;
+        const a = Math.max(0, diffDays(from, gapStart));
+        const b = Math.min(total - 1, diffDays(from, gapEnd));
+        if (b < a || a > total - 1 || b < 0) continue;
+        gaps.push({ from: a / total, to: (b + 1) / total });
+      }
+      gaps.sort((x, y) => x.from - y.from);
+
+      // Overlapping pauses read as one stretch of standing still.
+      const waited: Run[] = [];
+      for (const gap of gaps) {
+        const last = waited[waited.length - 1];
+        if (last && gap.from <= last.to) last.to = Math.max(last.to, gap.to);
+        else waited.push({ ...gap });
+      }
+
+      // What is left is what was worked.
+      const worked: Run[] = [];
+      let at = 0;
+      for (const gap of waited) {
+        if (gap.from > at) worked.push({ from: at, to: gap.from });
+        at = Math.max(at, gap.to);
+      }
+      if (at < 1) worked.push({ from: at, to: 1 });
+
+      map.set(task.id, { ...span, worked, waited });
     }
     return map;
-  }, [tasks, columnSpan]);
+  }, [rows, columnSpan]);
 
   /** Column indices a drag would land on, given how far the pointer moved. */
   function draggedTo(d: BarDrag, shift: number) {
@@ -511,6 +575,17 @@ export function GanttBoard() {
             />
             Hide weekends
           </label>
+          {foldable && (
+            <label className="flex cursor-pointer select-none items-center gap-2 pb-2 text-xs text-[var(--ink-secondary)]">
+              <input
+                type="checkbox"
+                checked={folded}
+                onChange={(e) => setFolded(e.target.checked)}
+                className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
+              />
+              Fold subtasks
+            </label>
+          )}
         </div>
       </div>
 
@@ -552,6 +627,7 @@ export function GanttBoard() {
               gridTemplateColumns={gridTemplateColumns}
               onEdit={openEditor}
               onChange={updateTask}
+              onPause={pauseTask}
             />
           ))}
           <div style={{ height: rowWindow.after }} />
@@ -678,12 +754,19 @@ export function GanttBoard() {
                           setEditingId(task.id);
                         }
                       }}
-                      className="group/bar absolute top-2 bottom-2 flex cursor-grab touch-none select-none items-center rounded-md px-2 text-left text-[0.6875rem] font-medium leading-none shadow-sm ring-2 ring-[var(--surface)] hover:brightness-95"
+                      /* A step is drawn thinner than the task it belongs to, so
+                         a plan reads as its shape before it reads as its
+                         labels. */
+                      className={`group/bar absolute flex cursor-grab touch-none select-none items-center rounded-md px-2 text-left text-[0.6875rem] font-medium leading-none ${
+                        task.parentId ? "top-3.5 bottom-3.5" : "top-2 bottom-2"
+                      }`}
                       style={{
                         left: bar.left + 2,
                         width: bar.width - 4,
-                        background: color,
-                        color: contrastText(color),
+                        // A bar that is all pause has no fill under its label.
+                        color: bar.worked.length
+                          ? contrastText(color)
+                          : "var(--ink)",
                       }}
                       title={
                         task.developer
@@ -691,26 +774,59 @@ export function GanttBoard() {
                           : task.title
                       }
                     >
+                      {/* The stretches that were worked. A pause leaves a gap
+                          rather than shortening the bar: the work ran as long
+                          as it ran, and this is where it waited. */}
+                      {bar.worked.map((run, i) => (
+                        <span
+                          key={i}
+                          className="pointer-events-none absolute inset-y-0 rounded-md shadow-sm ring-2 ring-[var(--surface)]"
+                          style={{
+                            left: `${run.from * 100}%`,
+                            width: `${(run.to - run.from) * 100}%`,
+                            background: color,
+                          }}
+                          aria-hidden="true"
+                        />
+                      ))}
+                      {/* And the stretches it stood still for, drawn as the
+                          same bar waiting: an outline where the work would have
+                          been, so a task that is entirely on hold still has a
+                          place on the chart rather than vanishing from it. */}
+                      {bar.waited.map((run, i) => (
+                        <span
+                          key={`w${i}`}
+                          className="pointer-events-none absolute inset-y-0 rounded-md border border-dashed"
+                          style={{
+                            left: `${run.from * 100}%`,
+                            width: `${(run.to - run.from) * 100}%`,
+                            borderColor: color,
+                            background: `color-mix(in srgb, ${color} 12%, transparent)`,
+                          }}
+                          aria-hidden="true"
+                        />
+                      ))}
+
                       {/* Grab either end to reschedule just that date. */}
                       <span
                         onPointerDown={(e) => beginBarDrag(e, task, "start", bar)}
-                        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md opacity-0 transition group-hover/bar:opacity-100"
+                        className="absolute left-0 top-0 bottom-0 z-10 w-2 cursor-ew-resize rounded-l-md opacity-0 transition group-hover/bar:opacity-100"
                         style={{ background: "rgba(255,255,255,0.45)" }}
                         aria-hidden="true"
                       />
                       <span
                         onPointerDown={(e) => beginBarDrag(e, task, "end", bar)}
-                        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-r-md opacity-0 transition group-hover/bar:opacity-100"
+                        className="absolute right-0 top-0 bottom-0 z-10 w-2 cursor-ew-resize rounded-r-md opacity-0 transition group-hover/bar:opacity-100"
                         style={{ background: "rgba(255,255,255,0.45)" }}
                         aria-hidden="true"
                       />
 
-                      {task.developer && (
-                        <span className="mr-1.5 -ml-0.5 shrink-0">
+                      {task.developer && !task.parentId && (
+                        <span className="relative mr-1.5 -ml-0.5 shrink-0">
                           <Avatar person={task.developer} size={16} />
                         </span>
                       )}
-                      <span className="truncate">{task.title}</span>
+                      <span className="relative truncate">{task.title}</span>
 
                       <span
                         ref={(el) => {
@@ -751,6 +867,7 @@ const TableRow = memo(function TableRow({
   gridTemplateColumns,
   onEdit,
   onChange,
+  onPause,
 }: {
   task: Task;
   /** How many of this task's steps are done, when it has any. */
@@ -761,7 +878,10 @@ const TableRow = memo(function TableRow({
   gridTemplateColumns: string;
   onEdit: (id: string) => void;
   onChange: (id: string, data: Partial<TaskRow>) => void;
+  /** Stops the work where it stands, or picks it up again. */
+  onPause: (id: string, paused: boolean) => void;
 }) {
+  const paused = task.breaks.some((b) => b.endDate == null);
   // Checked here as well as on the way in: a title is a link to whatever the
   // row holds, and only http and https belong in one.
   const link = isHttpUrl(task.link) ? task.link : null;
@@ -808,9 +928,27 @@ const TableRow = memo(function TableRow({
             {steps.done}/{steps.total}
           </span>
         )}
+        {/* Stopping and starting the work is a timeline gesture, so it sits on
+            the row rather than behind the form. Putting a task on hold does the
+            same thing from the status pill. */}
+        <button
+          onClick={() => onPause(task.id, !paused)}
+          className={`ml-auto shrink-0 rounded p-0.5 transition focus-visible:opacity-100 group-hover:opacity-100 ${
+            paused
+              ? "text-[var(--accent)] opacity-100"
+              : "text-[var(--ink-muted)] opacity-0 hover:text-[var(--ink)]"
+          }`}
+          title={paused ? "Pick this back up today" : "Pause this from today"}
+          aria-label={
+            paused ? `Resume ${task.title}` : `Pause ${task.title}`
+          }
+          aria-pressed={paused}
+        >
+          {paused ? <ResumeIcon /> : <PauseIcon />}
+        </button>
         <button
           onClick={() => onEdit(task.id)}
-          className="ml-auto shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100"
+          className="shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100"
           title="Edit task"
           aria-label={`Edit ${task.title}`}
         >
@@ -846,3 +984,30 @@ const TableRow = memo(function TableRow({
     </div>
   );
 });
+
+function PauseIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path
+        d="M5 2.5v9M9 2.5v9"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ResumeIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path
+        d="M4 2.6l7 4.4-7 4.4V2.6z"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

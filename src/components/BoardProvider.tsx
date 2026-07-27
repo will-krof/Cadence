@@ -109,6 +109,10 @@ interface BoardContextValue {
   };
   createTask: (input: TaskInput) => Promise<void>;
   updateTask: (id: string, data: Partial<TaskRow>) => Promise<void>;
+  /** Stops a task where it stands, or picks it up again, as of today. */
+  pauseTask: (id: string, paused: boolean) => Promise<void>;
+  /** Forgets a pause, as though the work never stopped. */
+  clearPause: (taskId: string, breakId: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   createDeveloper: (input: Partial<DeveloperInput>) => Promise<Developer | null>;
   updateDeveloper: (id: string, input: Partial<DeveloperInput>) => Promise<void>;
@@ -499,6 +503,38 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     [activeId, setTasks, notify]
   );
 
+  /**
+   * A pause on the timeline. The server answers with the whole task, because a
+   * bar is drawn from its dates and its gaps together and the two must agree.
+   */
+  const writeBreak = useCallback(
+    async (id: string, method: "POST" | "PATCH" | "DELETE", body?: object) => {
+      const res = await fetch(`/api/tasks/${id}/breaks`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body ?? {}),
+      });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not change that pause."));
+        return;
+      }
+      const updated: TaskRow = await res.json();
+      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    },
+    [setTasks, notify]
+  );
+
+  const pauseTask = useCallback(
+    (id: string, paused: boolean) => writeBreak(id, paused ? "POST" : "PATCH"),
+    [writeBreak]
+  );
+
+  const clearPause = useCallback(
+    (taskId: string, breakId: string) =>
+      writeBreak(taskId, "DELETE", { breakId }),
+    [writeBreak]
+  );
+
   const updateTask = useCallback(
     async (id: string, data: Partial<TaskRow>) => {
       const previous = rowsRef.current;
@@ -515,10 +551,21 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         notify("error", await errorMessage(res, "Could not save the task."));
         return;
       }
-      const updated = await res.json();
+      const updated: TaskRow = await res.json();
       setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+
+      // Putting work on hold is what a pause *is*, so the timeline follows the
+      // status rather than asking for the same fact twice: it stops the day it
+      // goes on hold and picks up the day it comes off. A pause put in by hand
+      // is left alone — the task is already standing still, and this would
+      // start a second one.
+      if (data.status !== undefined) {
+        const paused = updated.breaks.some((b) => b.endDate == null);
+        if (data.status === "ON_HOLD" && !paused) await writeBreak(id, "POST");
+        if (data.status !== "ON_HOLD" && paused) await writeBreak(id, "PATCH");
+      }
     },
-    [setTasks, notify]
+    [setTasks, notify, writeBreak]
   );
 
   const deleteTask = useCallback(
@@ -860,6 +907,8 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     stats,
     createTask,
     updateTask,
+    pauseTask,
+    clearPause,
     deleteTask,
     createDeveloper,
     updateDeveloper,
@@ -898,6 +947,8 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       stats,
       createTask,
       updateTask,
+      pauseTask,
+      clearPause,
       deleteTask,
       createDeveloper,
       updateDeveloper,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { toISODate } from "@/lib/dates";
+import { formatDay, toISODate } from "@/lib/dates";
 import { Developer, Task, TaskStatus } from "@/lib/types";
 import { offeredStatuses, useHiddenStatuses } from "@/lib/prefs";
 import { CloseIcon, Field, Modal } from "@/components/ui";
@@ -32,6 +32,7 @@ export function TaskModal({
   onAddSubtask,
   onUpdateSubtask,
   onDeleteSubtask,
+  onClearPause,
 }: {
   task?: Task;
   /** The steps this task already has, when there is a task to have them. */
@@ -44,6 +45,8 @@ export function TaskModal({
   onAddSubtask?: (title: string) => Promise<void>;
   onUpdateSubtask?: (id: string, patch: { status?: TaskStatus; title?: string }) => Promise<void>;
   onDeleteSubtask?: (id: string) => Promise<void>;
+  /** Forgets a pause, as though the work never stopped. */
+  onClearPause?: (breakId: string) => Promise<void>;
 }) {
   const today = toISODate(new Date());
   const isEdit = Boolean(task);
@@ -177,6 +180,45 @@ export function TaskModal({
             </select>
           </Field>
         </div>
+
+        {task && task.breaks.length > 0 && onClearPause && (
+          <fieldset className="flex flex-col gap-2 border-t border-[var(--hairline)] pt-3">
+            <legend className="field-label mb-1.5">
+              Pauses
+              <span className="ml-1.5 text-[var(--ink-muted)]">
+                {task.breaks.length}
+              </span>
+            </legend>
+            {task.breaks.map((pause) => (
+              <div
+                key={pause.id}
+                className="flex items-center gap-2 text-[0.8125rem]"
+              >
+                <span className="flex-1 tabular-nums">
+                  {formatDay(pause.startDate)} →{" "}
+                  {pause.endDate ? (
+                    formatDay(pause.endDate)
+                  ) : (
+                    <span className="text-[var(--accent)]">still paused</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onClearPause(pause.id)}
+                  className="shrink-0 rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
+                  aria-label="Forget this pause"
+                  title="Forget this pause — the work never stopped"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+            ))}
+            <p className="text-[0.6875rem] text-[var(--ink-muted)]">
+              A pause breaks the bar on the timeline without moving the dates.
+              Putting the task on hold starts one; picking it up ends it.
+            </p>
+          </fieldset>
+        )}
 
         {takesSteps && (
           <fieldset className="flex flex-col gap-2 border-t border-[var(--hairline)] pt-3">

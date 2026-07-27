@@ -84,6 +84,17 @@ function useStoredSet<T extends string>(
   return [list, set];
 }
 
+/** A remembered yes or no, stored as the same kind of list as the sets above. */
+function useStoredFlag(key: string): [boolean, (on: boolean) => void] {
+  const raw = useSyncExternalStore(
+    subscribe,
+    () => snapshot(key),
+    () => EMPTY
+  );
+  const set = useCallback((on: boolean) => store(key, on ? ["on"] : []), [key]);
+  return [raw.includes("on"), set];
+}
+
 const STATUS_KEY = "hidden-statuses";
 const VIEW_KEY = "hidden-views";
 
@@ -135,6 +146,15 @@ export function useHiddenViews(): [
     [hidden, set]
   );
   return [hidden, { hide, show }];
+}
+
+/**
+ * Whether the timeline is folded down to whole tasks, with their steps put
+ * away. A long plan reads as its shape when the parts are folded in, and this
+ * is the reader's own choice, so it is remembered like the rest of them.
+ */
+export function useFoldedSteps() {
+  return useStoredFlag("folded-steps");
 }
 
 /**
