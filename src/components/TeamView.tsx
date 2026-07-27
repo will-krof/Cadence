@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
 import { Avatar, Field, RoleChips } from "@/components/ui";
 import { useFeedback } from "@/components/Feedback";
+import { ProfileResume, ResumeProject } from "@/components/ProfileResume";
+import { ShareProfile } from "@/components/ShareProfile";
 import {
   CURRENCIES,
   Membership,
@@ -12,11 +14,10 @@ import {
   DEVELOPER_PALETTE,
   EMPLOYMENT_TYPES,
   EmploymentType,
-  statusMeta,
   DeveloperTask,
   Project,
 } from "@/lib/types";
-import { formatDay, toISODate } from "@/lib/dates";
+import { toISODate } from "@/lib/dates";
 
 /** Avatars are stored inline in the row, so downscale before upload. */
 const AVATAR_SIZE = 256;
@@ -365,7 +366,7 @@ function ProfileCard({
   onBack: () => void;
   onDelete: () => void;
   onToggleArchive: () => void;
-  /** Guests read a profile; the owner changes it and hands out the links. */
+  /** Team members read a profile; the owner changes it. */
   canEdit: boolean;
 }) {
   const [tasks, setTasks] = useState<DeveloperTask[] | null>(null);
@@ -376,14 +377,8 @@ function ProfileCard({
    * carry tasks for. Holding no role is still being on a project, so
    * membership decides the first list, not whether a role happens to be set.
    */
-  const onProjects = useMemo(() => {
-    const rows: {
-      id: string;
-      name: string;
-      roles: { id: string; name: string }[];
-      viaTasks: boolean;
-      hasLogin: boolean;
-    }[] = [];
+  const onProjects = useMemo<ResumeProject[]>(() => {
+    const rows: ResumeProject[] = [];
     const seen = new Set<string>();
 
     for (const project of projects) {
@@ -433,62 +428,18 @@ function ProfileCard({
     };
   }, [person.id]);
 
-  const openCount = tasks?.filter((t) => t.status !== "DONE").length ?? 0;
-
-  const details = [
-    person.email
-      ? { label: "Email", value: person.email, href: `mailto:${person.email}` }
-      : null,
-    person.phone
-      ? { label: "Phone", value: person.phone, href: `tel:${person.phone}` }
-      : null,
-    person.startDate
-      ? { label: "Started", value: formatDay(person.startDate) }
-      : null,
-    person.employmentType
-      ? {
-          label: "Employment",
-          value:
-            EMPLOYMENT_TYPES.find((t) => t.value === person.employmentType)
-              ?.label ?? null,
-        }
-      : null,
-    person.salary != null
-      ? {
-          label: "Salary",
-          value: `${person.salary.toLocaleString()} ${person.currency}`,
-        }
-      : null,
-  ].filter((d): d is { label: string; value: string; href?: string } =>
-    Boolean(d?.value)
-  );
-
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-5">
-      <header className="flex flex-wrap items-center gap-4">
-        <Avatar person={person} size={56} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate text-lg font-semibold tracking-tight">
-              {person.name}
-            </h2>
-            {!person.active && (
-              <span className="rounded-full bg-[var(--gridline)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
-                Archived
-              </span>
-            )}
-          </div>
-          <p className="mt-0.5 truncate text-[0.8125rem] text-[var(--ink-secondary)]">
-            {person.role || "No job title yet"}
-            <span className="text-[var(--ink-muted)]">
-              {" · "}
-              {openCount} open task{openCount === 1 ? "" : "s"}
-              {onProjects.length > 0 &&
-                ` · ${onProjects.length} project${onProjects.length === 1 ? "" : "s"}`}
-            </span>
-          </p>
-        </div>
-        <div className="flex shrink-0 gap-2">
+    <ProfileResume
+      person={person}
+      projects={onProjects}
+      tasks={tasks}
+      tasksFailed={failed}
+      // A member is served the working half of a profile and nothing else, so
+      // there is no private half here to show.
+      showPrivate={canEdit}
+      actions={
+        <>
+          <ShareProfile developerId={person.id} />
           <button onClick={onBack} className="btn-secondary lg:hidden">
             Back
           </button>
@@ -497,208 +448,26 @@ function ProfileCard({
               Edit profile
             </button>
           )}
-        </div>
-      </header>
-
-      {/* Empty fields say nothing worth the room, so they aren't shown. */}
-      {details.length > 0 && (
-        <section className="grid gap-x-6 gap-y-3 rounded-[var(--radius-lg)] border border-[var(--hairline)] p-4 sm:grid-cols-2">
-          {details.map((detail) => (
-            <Detail
-              key={detail.label}
-              label={detail.label}
-              value={detail.value}
-              href={detail.href}
-            />
-          ))}
-        </section>
-      )}
-
-      <Panel
-        title="Projects"
-        count={onProjects.length > 0 ? onProjects.length : undefined}
-      >
-        {onProjects.length === 0 ? (
-          <Empty>
-            {tasks === null
-              ? "Loading…"
-              : canEdit
-                ? "Not on any project yet — “Edit profile” puts them on one."
-                : "Not on any project yet."}
-          </Empty>
-        ) : (
-          <ul className="divide-y divide-[var(--hairline)]">
-            {onProjects.map((row) => (
-              <li
-                key={row.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5"
-              >
-                <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
-                  {row.name}
-                </span>
-                {row.hasLogin && (
-                  <span className="shrink-0 text-[0.6875rem] text-[var(--ink-muted)]">
-                    Login set up
-                  </span>
-                )}
-                {row.roles.length > 0 ? (
-                  <span className="flex flex-wrap gap-1">
-                    {row.roles.map((role) => (
-                      <span
-                        key={role.id}
-                        className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--accent)]"
-                      >
-                        {role.name}
-                      </span>
-                    ))}
-                  </span>
-                ) : (
-                  <span className="text-[0.75rem] text-[var(--ink-muted)]">
-                    {row.viaTasks ? "Has tasks, no role" : "No role"}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
-
-      <Panel title="Assigned tasks" count={tasks?.length}>
-        {failed && (
-          <Empty tone="error">Could not load their tasks.</Empty>
-        )}
-        {!failed && tasks === null && <Empty>Loading…</Empty>}
-        {tasks?.length === 0 && <Empty>Nothing assigned right now.</Empty>}
-        {tasks && tasks.length > 0 && (
-          <ul className="thin-scroll max-h-72 divide-y divide-[var(--hairline)] overflow-y-auto">
-            {tasks.map((task) => {
-              const meta = statusMeta(task.status);
-              return (
-                <li
-                  key={task.id}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2"
-                >
-                  <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
-                    {task.title}
-                  </span>
-                  <span className="shrink-0 rounded-full bg-[var(--plane)] px-2 py-0.5 text-[0.6875rem] text-[var(--ink-secondary)]">
-                    {task.project.name}
-                  </span>
-                  <span
-                    className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium"
-                    style={{
-                      background: `color-mix(in srgb, ${meta.color} 14%, var(--surface-raised))`,
-                    }}
-                  >
-                    <span
-                      className="h-1.5 w-1.5 rounded-full"
-                      style={{ background: meta.color }}
-                    />
-                    {meta.label}
-                  </span>
-                  <span className="shrink-0 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
-                    {formatDay(task.endDate)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Panel>
-
-      {person.notes && (
-        <Panel title="Notes">
-          <p className="whitespace-pre-wrap px-3 py-2.5 text-[0.8125rem] leading-relaxed text-[var(--ink-secondary)]">
-            {person.notes}
-          </p>
-        </Panel>
-      )}
-
-      {canEdit && (
-        <div className="flex flex-wrap gap-2 border-t border-[var(--hairline)] pt-4">
-          <button onClick={onToggleArchive} className="btn-secondary">
-            {person.active ? "Archive" : "Restore to team"}
-          </button>
-          <button onClick={onDelete} className="btn-secondary !text-[#d03b3b]">
-            Delete permanently
-          </button>
-        </div>
-      )}
-    </div>
+        </>
+      }
+      footer={
+        canEdit ? (
+          <div className="flex flex-wrap gap-2">
+            <button onClick={onToggleArchive} className="btn-secondary">
+              {person.active ? "Archive" : "Restore to team"}
+            </button>
+            <button onClick={onDelete} className="btn-secondary !text-[#d03b3b]">
+              Delete permanently
+            </button>
+          </div>
+        ) : undefined
+      }
+    />
   );
 }
 
-/** A titled box. Every section of the card is one, so they line up. */
-function Panel({
-  title,
-  count,
-  children,
-}: {
-  title: string;
-  count?: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline)]">
-      <h3 className="border-b border-[var(--hairline)] bg-[var(--plane)] px-3 py-2 text-[0.75rem] font-semibold tracking-tight">
-        {title}
-        {count !== undefined && (
-          <span className="ml-2 font-normal text-[var(--ink-muted)]">
-            {count}
-          </span>
-        )}
-      </h3>
-      {children}
-    </section>
-  );
-}
 
-function Empty({
-  children,
-  tone,
-}: {
-  children: React.ReactNode;
-  tone?: "error";
-}) {
-  return (
-    <p
-      className={`px-3 py-3 text-[0.8125rem] ${
-        tone === "error" ? "text-[#d03b3b]" : "text-[var(--ink-muted)]"
-      }`}
-    >
-      {children}
-    </p>
-  );
-}
 
-function Detail({
-  label,
-  value,
-  href,
-}: {
-  label: string;
-  value: string | null;
-  href?: string;
-}) {
-  return (
-    <div>
-      <p className="field-label">{label}</p>
-      <p className="mt-0.5 text-[0.8125rem]">
-        {value ? (
-          href ? (
-            <a href={href} className="text-[var(--accent)] hover:underline">
-              {value}
-            </a>
-          ) : (
-            value
-          )
-        ) : (
-          <span className="text-[var(--ink-muted)]">—</span>
-        )}
-      </p>
-    </div>
-  );
-}
 
 function ProfileForm({
   person,

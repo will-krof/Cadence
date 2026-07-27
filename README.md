@@ -59,6 +59,22 @@ link rather than an expired one. Once somebody has set their login up, their lin
 is spent and the row says so; taking them off the project is what ends their
 access after that.
 
+## Sharing a profile
+
+Every profile has an address of its own — `/people/<id>` — and a **Share** button
+in the corner of the card that copies it. The link is an address, not a key:
+opening it takes a session, and a project shared with that person. Any role will
+do, so a colleague who can't open the Team view can still read a teammate's
+profile. Anybody else is told the page doesn't exist, which is also the answer to
+somebody trying ids.
+
+Colleagues see the working half of a profile: name, job title, the projects they
+have in common and the roles held there, and the work on those projects. Pay,
+contact details and notes are the workspace's own, and only its owner sees them —
+on the shared page as well as in the roster.
+
+## Who reaches what
+
 A signed-in member reaches the projects they are on, through the roles they hold
 on each. They can move the work on the boards those roles open; everything else —
 the project's settings, its roles, the roster, the links themselves — stays with
