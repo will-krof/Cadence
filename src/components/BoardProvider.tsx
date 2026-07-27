@@ -66,10 +66,10 @@ interface BoardContextValue {
   memberships: Membership[];
   addMember: (projectId: string, developerId: string) => Promise<void>;
   removeMember: (projectId: string, developerId: string) => Promise<void>;
-  setMemberRole: (
+  setMemberRoles: (
     projectId: string,
     developerId: string,
-    roleId: string | null
+    roleIds: string[]
   ) => Promise<void>;
 
   createRole: (projectId: string, name: string) => Promise<ProjectRole | null>;
@@ -655,21 +655,21 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
 
   const selectSprint = useCallback((id: string | null) => setSprintId(id), []);
 
-  /** Puts someone on a project, in one of its roles or in none yet. */
-  const putMember = useCallback(
-    async (projectId: string, developerId: string, roleId: string | null) => {
+  /** Puts someone on a project, holding the roles given — none, one or several. */
+  const setMemberRoles = useCallback(
+    async (projectId: string, developerId: string, roleIds: string[]) => {
       const previous = membershipsRef.current;
       setMemberships((prev) => [
         ...prev.filter(
           (m) => !(m.projectId === projectId && m.developerId === developerId)
         ),
-        { projectId, developerId, roleId },
+        { projectId, developerId, roleIds },
       ]);
 
       const res = await fetch(`/api/projects/${projectId}/members`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ developerId, roleId }),
+        body: JSON.stringify({ developerId, roleIds }),
       });
       if (!res.ok) {
         setMemberships(previous);
@@ -679,16 +679,10 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     [notify]
   );
 
-  const setMemberRole = useCallback(
-    (projectId: string, developerId: string, roleId: string | null) =>
-      putMember(projectId, developerId, roleId),
-    [putMember]
-  );
-
   const addMember = useCallback(
     (projectId: string, developerId: string) =>
-      putMember(projectId, developerId, null),
-    [putMember]
+      setMemberRoles(projectId, developerId, []),
+    [setMemberRoles]
   );
 
   const removeMember = useCallback(
@@ -741,7 +735,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     memberships,
     addMember,
     removeMember,
-    setMemberRole,
+    setMemberRoles,
     createRole,
     updateRole,
     deleteRole,
@@ -777,7 +771,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       memberships,
       addMember,
       removeMember,
-      setMemberRole,
+      setMemberRoles,
       createRole,
       updateRole,
       deleteRole,

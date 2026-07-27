@@ -8,6 +8,7 @@ import {
   CloseIcon,
   Field,
   LazySelect,
+  RoleChips,
   ToolCheckbox,
 } from "@/components/ui";
 import {
@@ -54,7 +55,7 @@ export function ProjectOverview({
     memberships,
     addMember,
     removeMember,
-    setMemberRole,
+    setMemberRoles,
     sprints,
     sprint,
     projectLoading,
@@ -269,7 +270,7 @@ export function ProjectOverview({
           canEdit={canEdit}
           onAdd={addMember}
           onRemove={removeMember}
-          onRoleChange={setMemberRole}
+          onRolesChange={setMemberRoles}
           onOpenTeam={
             visibleViews.includes("team") ? () => onOpenView("team") : undefined
           }
@@ -345,7 +346,7 @@ function PeopleSection({
   canEdit,
   onAdd,
   onRemove,
-  onRoleChange,
+  onRolesChange,
   onOpenTeam,
 }: {
   project: Project;
@@ -357,20 +358,20 @@ function PeopleSection({
   canEdit: boolean;
   onAdd: (projectId: string, developerId: string) => Promise<void>;
   onRemove: (projectId: string, developerId: string) => Promise<void>;
-  onRoleChange: (
+  onRolesChange: (
     projectId: string,
     developerId: string,
-    roleId: string | null
+    roleIds: string[]
   ) => Promise<void>;
   onOpenTeam?: () => void;
 }) {
   const { confirm } = useFeedback();
   const [adding, setAdding] = useState("");
 
-  const roleOf = (developerId: string) =>
+  const rolesOf = (developerId: string) =>
     memberships.find(
       (m) => m.projectId === project.id && m.developerId === developerId
-    )?.roleId ?? null;
+    )?.roleIds ?? [];
 
   const onProject = new Set(people.map((p) => p.id));
   const available = developers.filter((d) => d.active && !onProject.has(d.id));
@@ -418,10 +419,7 @@ function PeopleSection({
             const open = tasks.filter(
               (t) => t.developerId === person.id && t.status !== "DONE"
             ).length;
-            const held = roleOf(person.id);
-            const current = project.roles.some((r) => r.id === held)
-              ? held ?? ""
-              : "";
+            const held = rolesOf(person.id);
             return (
               <li
                 key={person.id}
@@ -440,28 +438,19 @@ function PeopleSection({
                   {open} open
                 </span>
 
-                {canEdit ? (
-                  <LazySelect
-                    value={current}
-                    onChange={(roleId) =>
-                      onRoleChange(project.id, person.id, roleId || null)
-                    }
-                    options={[
-                      { value: "", label: "No role" },
-                      ...project.roles.map((role) => ({
-                        value: role.id,
-                        label: role.name,
-                      })),
-                    ]}
-                    className="select w-36"
-                    ariaLabel={`${person.name}’s role on ${project.name}`}
-                  />
-                ) : (
-                  <span className="text-[0.75rem] text-[var(--ink-secondary)]">
-                    {project.roles.find((r) => r.id === current)?.name ??
-                      "No role"}
-                  </span>
-                )}
+                <RoleChips
+                  roles={project.roles}
+                  held={held}
+                  editable={canEdit}
+                  label={`${person.name} on ${project.name}`}
+                  onToggle={(roleId, on) =>
+                    onRolesChange(
+                      project.id,
+                      person.id,
+                      on ? [...held, roleId] : held.filter((r) => r !== roleId)
+                    )
+                  }
+                />
 
                 {canEdit && (
                   <button

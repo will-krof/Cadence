@@ -3,8 +3,9 @@ import { requireUser } from "@/lib/api-auth";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Puts someone on this project, in one of its roles or in none yet. The role
- * has to be one the project actually has; taking someone off is a DELETE.
+ * Puts someone on this project in the roles given — none, one, or several. The
+ * list replaces whatever they held, and every role has to be one this project
+ * actually has. Taking someone off is a DELETE.
  */
 export async function PUT(
   request: NextRequest,
@@ -17,7 +18,10 @@ export async function PUT(
   const body = await request.json();
   const developerId =
     typeof body.developerId === "string" ? body.developerId : "";
-  const roleId = typeof body.roleId === "string" ? body.roleId : null;
+  const asked: unknown[] = Array.isArray(body.roleIds) ? body.roleIds : [];
+  const roleIds = [
+    ...new Set(asked.filter((r): r is string => typeof r === "string")),
+  ];
 
   if (!developerId) {
     return NextResponse.json(
@@ -26,7 +30,7 @@ export async function PUT(
     );
   }
 
-  // Project, person and role all have to belong to the caller.
+  // Project, person and roles all have to belong to the caller.
   const [project, developer] = await Promise.all([
     prisma.project.findFirst({
       where: { id, userId: user.id },
@@ -44,12 +48,11 @@ export async function PUT(
     return NextResponse.json({ error: "Person not found" }, { status: 404 });
   }
 
-  if (roleId !== null) {
-    const role = await prisma.projectRole.findFirst({
-      where: { id: roleId, projectId: id },
-      select: { id: true },
+  if (roleIds.length > 0) {
+    const known = await prisma.projectRole.count({
+      where: { id: { in: roleIds }, projectId: id },
     });
-    if (!role) {
+    if (known !== roleIds.length) {
       return NextResponse.json(
         { error: "That role is not on this project" },
         { status: 404 }
@@ -59,11 +62,31 @@ export async function PUT(
 
   const member = await prisma.projectMember.upsert({
     where: { projectId_developerId: { projectId: id, developerId } },
-    create: { projectId: id, developerId, roleId },
-    update: { roleId },
-    select: { projectId: true, developerId: true, roleId: true },
+    create: {
+      projectId: id,
+      developerId,
+      roles: { create: roleIds.map((roleId) => ({ roleId })) },
+    },
+    // Replacing the set outright keeps this the single description of what
+    // they hold, rather than something callers have to diff.
+    update: {
+      roles: {
+        deleteMany: {},
+        create: roleIds.map((roleId) => ({ roleId })),
+      },
+    },
+    select: {
+      projectId: true,
+      developerId: true,
+      roles: { select: { roleId: true } },
+    },
   });
-  return NextResponse.json(member);
+
+  return NextResponse.json({
+    projectId: member.projectId,
+    developerId: member.developerId,
+    roleIds: member.roles.map((r) => r.roleId),
+  });
 }
 
 /** Takes someone off the project. Their tasks are untouched. */

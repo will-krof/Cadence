@@ -13,7 +13,18 @@ export async function GET(request: NextRequest) {
 
   const members = await prisma.projectMember.findMany({
     where: { project: { userId: user.id } },
-    select: { projectId: true, developerId: true, roleId: true },
+    select: {
+      projectId: true,
+      developerId: true,
+      roles: { select: { roleId: true } },
+    },
   });
-  return jsonResponse(request, members);
+  return jsonResponse(
+    request,
+    members.map((m) => ({
+      projectId: m.projectId,
+      developerId: m.developerId,
+      roleIds: m.roles.map((r) => r.roleId),
+    }))
+  );
 }

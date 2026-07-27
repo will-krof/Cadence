@@ -98,14 +98,16 @@ model ProjectRole {
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
-  members   ProjectMember[]
+  members   MemberRole[]
 
   @@unique([projectId, name])
   @@index([projectId])
 }
 
-/// Which role someone holds on a project. Roles are per project, so the same
-/// person can be an admin on one and a developer on another.
+/// Someone's place on a project. Roles are per project, so the same person can
+/// be an admin on one and a designer on another — and can hold more than one
+/// role on the same project, which is why they hang off this rather than
+/// sitting on it.
 model ProjectMember {
   id String @id @default(cuid())
 
@@ -115,14 +117,23 @@ model ProjectMember {
   developerId String
   developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
 
-  // Kept nullable so deleting a role leaves the person on the project.
-  roleId String?
-  role   ProjectRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
-
-  createdAt DateTime @default(now())
+  roles     MemberRole[]
+  createdAt DateTime     @default(now())
 
   @@unique([projectId, developerId])
   @@index([developerId])
+}
+
+/// One role a member holds. Deleting the role or the membership takes the
+/// pairing with it; the person and the project are untouched.
+model MemberRole {
+  memberId String
+  member   ProjectMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  roleId String
+  role   ProjectRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([memberId, roleId])
   @@index([roleId])
 }
 

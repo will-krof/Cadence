@@ -111,6 +111,75 @@ export function SprintPicker({
   );
 }
 
+/**
+ * The roles someone holds on a project, as chips. A person can hold several,
+ * so this is a set of toggles rather than a pick-one — and it reads the same
+ * whether it can be changed or not.
+ */
+export function RoleChips({
+  roles,
+  held,
+  editable,
+  label,
+  onToggle,
+}: {
+  roles: { id: string; name: string }[];
+  held: string[];
+  editable: boolean;
+  /** Names the group for screen readers, e.g. "Ada on Alpha". */
+  label: string;
+  onToggle: (roleId: string, on: boolean) => void;
+}) {
+  if (!editable) {
+    const names = roles.filter((r) => held.includes(r.id));
+    if (names.length === 0) {
+      return (
+        <span className="text-[0.75rem] text-[var(--ink-muted)]">No role</span>
+      );
+    }
+    return (
+      <span className="flex flex-wrap gap-1">
+        {names.map((role) => (
+          <span
+            key={role.id}
+            className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--accent)]"
+          >
+            {role.name}
+          </span>
+        ))}
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex flex-wrap gap-1" role="group" aria-label={label}>
+      {roles.length === 0 && (
+        <span className="text-[0.75rem] text-[var(--ink-muted)]">
+          No roles on this project yet
+        </span>
+      )}
+      {roles.map((role) => {
+        const on = held.includes(role.id);
+        return (
+          <button
+            key={role.id}
+            type="button"
+            onClick={() => onToggle(role.id, !on)}
+            aria-pressed={on}
+            className={`rounded-full border px-2 py-0.5 text-[0.6875rem] transition ${
+              on
+                ? "border-[var(--accent)] bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
+                : "border-[var(--hairline)] text-[var(--ink-muted)] hover:text-[var(--ink)]"
+            }`}
+          >
+            {role.name}
+          </button>
+        );
+      })}
+    </span>
+  );
+}
+
 /** The assignee picker shared by both boards. */
 export const AssigneeSelect = memo(function AssigneeSelect({
   developerId,

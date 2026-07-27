@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
-import { Avatar, Field } from "@/components/ui";
+import { Avatar, Field, RoleChips } from "@/components/ui";
 import { useFeedback } from "@/components/Feedback";
 import {
   CURRENCIES,
@@ -17,9 +17,6 @@ import {
   Project,
 } from "@/lib/types";
 import { formatDay, toISODate } from "@/lib/dates";
-
-/** Distinguishes "not on this project" from "on it, but no role yet". */
-const OFF_PROJECT = "__off__";
 
 /** Avatars are stored inline in the row, so downscale before upload. */
 const AVATAR_SIZE = 256;
@@ -65,7 +62,7 @@ export function TeamView() {
     developers,
     projects,
     memberships,
-    setMemberRole,
+    setMemberRoles,
     removeMember,
     createDeveloper,
     updateDeveloper,
@@ -90,11 +87,14 @@ export function TeamView() {
    * saving a profile doesn't churn every membership the person has.
    */
   const applyPlaces = useCallback(
-    async (developerId: string, places: Map<string, string | null>) => {
-      const before = new Map<string, string | null>();
+    async (developerId: string, places: Map<string, string[]>) => {
+      const before = new Map<string, string[]>();
       for (const m of memberships) {
-        if (m.developerId === developerId) before.set(m.projectId, m.roleId);
+        if (m.developerId === developerId) before.set(m.projectId, m.roleIds);
       }
+
+      const same = (a: string[] = [], b: string[] = []) =>
+        a.length === b.length && a.every((id) => b.includes(id));
 
       const work: Promise<void>[] = [];
       for (const project of teamProjects) {
@@ -103,15 +103,15 @@ export function TeamView() {
         if (!was && !now) continue;
         if (was && !now) {
           work.push(removeMember(project.id, developerId));
-        } else if (before.get(project.id) !== places.get(project.id)) {
+        } else if (!same(before.get(project.id), places.get(project.id))) {
           work.push(
-            setMemberRole(project.id, developerId, places.get(project.id) ?? null)
+            setMemberRoles(project.id, developerId, places.get(project.id) ?? [])
           );
         }
       }
       await Promise.all(work);
     },
-    [memberships, teamProjects, removeMember, setMemberRole]
+    [memberships, teamProjects, removeMember, setMemberRoles]
   );
 
   const selected = useMemo(
@@ -364,7 +364,7 @@ function ProfileCard({
     const rows: {
       id: string;
       name: string;
-      roleName: string | null;
+      roles: { id: string; name: string }[];
       viaTasks: boolean;
     }[] = [];
     const seen = new Set<string>();
@@ -378,8 +378,7 @@ function ProfileCard({
       rows.push({
         id: project.id,
         name: project.name,
-        roleName:
-          project.roles.find((r) => r.id === membership.roleId)?.name ?? null,
+        roles: project.roles.filter((r) => membership.roleIds.includes(r.id)),
         viaTasks: false,
       });
     }
@@ -390,7 +389,7 @@ function ProfileCard({
       rows.push({
         id: task.project.id,
         name: task.project.name,
-        roleName: null,
+        roles: [],
         viaTasks: true,
       });
     }
@@ -417,26 +416,60 @@ function ProfileCard({
 
   const openCount = tasks?.filter((t) => t.status !== "DONE").length ?? 0;
 
+  const details = [
+    person.email
+      ? { label: "Email", value: person.email, href: `mailto:${person.email}` }
+      : null,
+    person.phone
+      ? { label: "Phone", value: person.phone, href: `tel:${person.phone}` }
+      : null,
+    person.startDate
+      ? { label: "Started", value: formatDay(person.startDate) }
+      : null,
+    person.employmentType
+      ? {
+          label: "Employment",
+          value:
+            EMPLOYMENT_TYPES.find((t) => t.value === person.employmentType)
+              ?.label ?? null,
+        }
+      : null,
+    person.salary != null
+      ? {
+          label: "Salary",
+          value: `${person.salary.toLocaleString()} ${person.currency}`,
+        }
+      : null,
+  ].filter((d): d is { label: string; value: string; href?: string } =>
+    Boolean(d?.value)
+  );
+
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <header className="flex flex-wrap items-start gap-4">
-        <Avatar person={person} size={72} />
+    <div className="mx-auto flex max-w-2xl flex-col gap-5">
+      <header className="flex flex-wrap items-center gap-4">
+        <Avatar person={person} size={56} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold tracking-tight">{person.name}</h2>
+            <h2 className="truncate text-lg font-semibold tracking-tight">
+              {person.name}
+            </h2>
             {!person.active && (
               <span className="rounded-full bg-[var(--gridline)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
                 Archived
               </span>
             )}
           </div>
-          {person.role && (
-            <p className="mt-0.5 text-[0.875rem] text-[var(--ink-secondary)]">
-              {person.role}
-            </p>
-          )}
+          <p className="mt-0.5 truncate text-[0.8125rem] text-[var(--ink-secondary)]">
+            {person.role || "No job title yet"}
+            <span className="text-[var(--ink-muted)]">
+              {" · "}
+              {openCount} open task{openCount === 1 ? "" : "s"}
+              {onProjects.length > 0 &&
+                ` · ${onProjects.length} project${onProjects.length === 1 ? "" : "s"}`}
+            </span>
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           <button onClick={onBack} className="btn-secondary lg:hidden">
             Back
           </button>
@@ -446,64 +479,50 @@ function ProfileCard({
         </div>
       </header>
 
-      <section className="grid gap-x-6 gap-y-4 rounded-[var(--radius-lg)] border border-[var(--hairline)] p-4 sm:grid-cols-2">
-        <Detail label="Email" value={person.email} href={person.email ? `mailto:${person.email}` : undefined} />
-        <Detail label="Phone" value={person.phone} href={person.phone ? `tel:${person.phone}` : undefined} />
-        <Detail
-          label="Started"
-          value={person.startDate ? formatDay(person.startDate) : null}
-        />
-        <Detail
-          label="Employment"
-          value={
-            EMPLOYMENT_TYPES.find((t) => t.value === person.employmentType)
-              ?.label ?? null
-          }
-        />
-        <Detail
-          label="Salary"
-          value={
-            person.salary != null
-              ? `${person.salary.toLocaleString()} ${person.currency}`
-              : null
-          }
-        />
-        <Detail label="Open tasks" value={tasks ? String(openCount) : null} />
-      </section>
-
-      {person.notes && (
-        <section>
-          <h3 className="field-label mb-1.5">Notes</h3>
-          <p className="whitespace-pre-wrap text-[0.8125rem] leading-relaxed text-[var(--ink-secondary)]">
-            {person.notes}
-          </p>
+      {/* Empty fields say nothing worth the room, so they aren't shown. */}
+      {details.length > 0 && (
+        <section className="grid gap-x-6 gap-y-3 rounded-[var(--radius-lg)] border border-[var(--hairline)] p-4 sm:grid-cols-2">
+          {details.map((detail) => (
+            <Detail
+              key={detail.label}
+              label={detail.label}
+              value={detail.value}
+              href={detail.href}
+            />
+          ))}
         </section>
       )}
 
-      <section>
-        <h3 className="mb-2 text-[0.8125rem] font-semibold tracking-tight">
-          Project roles
-        </h3>
-
+      <Panel
+        title="Projects"
+        count={onProjects.length > 0 ? onProjects.length : undefined}
+      >
         {onProjects.length === 0 ? (
-          <p className="text-[0.8125rem] text-[var(--ink-muted)]">
+          <Empty>
             {tasks === null
               ? "Loading…"
               : "Not on any project yet — “Edit profile” puts them on one."}
-          </p>
+          </Empty>
         ) : (
-          <ul className="flex flex-col gap-1.5">
+          <ul className="divide-y divide-[var(--hairline)]">
             {onProjects.map((row) => (
               <li
                 key={row.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
+                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5"
               >
                 <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
                   {row.name}
                 </span>
-                {row.roleName ? (
-                  <span className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--accent)]">
-                    {row.roleName}
+                {row.roles.length > 0 ? (
+                  <span className="flex flex-wrap gap-1">
+                    {row.roles.map((role) => (
+                      <span
+                        key={role.id}
+                        className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--accent)]"
+                      >
+                        {role.name}
+                      </span>
+                    ))}
                   </span>
                 ) : (
                   <span className="text-[0.75rem] text-[var(--ink-muted)]">
@@ -514,66 +533,58 @@ function ProfileCard({
             ))}
           </ul>
         )}
-      </section>
+      </Panel>
 
-      <section>
-        <h3 className="mb-2 text-[0.8125rem] font-semibold tracking-tight">
-          Assigned tasks
-          {tasks && (
-            <span className="ml-2 font-normal text-[var(--ink-muted)]">
-              {tasks.length}
-            </span>
-          )}
-        </h3>
-
+      <Panel title="Assigned tasks" count={tasks?.length}>
         {failed && (
-          <p className="text-[0.8125rem] text-[#d03b3b]">
-            Could not load their tasks.
-          </p>
+          <Empty tone="error">Could not load their tasks.</Empty>
         )}
-        {!failed && tasks === null && (
-          <p className="text-[0.8125rem] text-[var(--ink-muted)]">Loading…</p>
-        )}
-        {tasks?.length === 0 && (
-          <p className="text-[0.8125rem] text-[var(--ink-muted)]">
-            Nothing assigned right now.
-          </p>
-        )}
-
-        <ul className="flex flex-col gap-1.5">
-          {tasks?.map((task) => {
-            const meta = statusMeta(task.status);
-            return (
-              <li
-                key={task.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
-              >
-                <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
-                  {task.title}
-                </span>
-                <span className="shrink-0 rounded-full bg-[var(--plane)] px-2 py-0.5 text-[0.6875rem] text-[var(--ink-secondary)]">
-                  {task.project.name}
-                </span>
-                <span
-                  className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium"
-                  style={{
-                    background: `color-mix(in srgb, ${meta.color} 14%, var(--surface-raised))`,
-                  }}
+        {!failed && tasks === null && <Empty>Loading…</Empty>}
+        {tasks?.length === 0 && <Empty>Nothing assigned right now.</Empty>}
+        {tasks && tasks.length > 0 && (
+          <ul className="thin-scroll max-h-72 divide-y divide-[var(--hairline)] overflow-y-auto">
+            {tasks.map((task) => {
+              const meta = statusMeta(task.status);
+              return (
+                <li
+                  key={task.id}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2"
                 >
+                  <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
+                    {task.title}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-[var(--plane)] px-2 py-0.5 text-[0.6875rem] text-[var(--ink-secondary)]">
+                    {task.project.name}
+                  </span>
                   <span
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{ background: meta.color }}
-                  />
-                  {meta.label}
-                </span>
-                <span className="shrink-0 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
-                  {formatDay(task.endDate)}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+                    className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium"
+                    style={{
+                      background: `color-mix(in srgb, ${meta.color} 14%, var(--surface-raised))`,
+                    }}
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ background: meta.color }}
+                    />
+                    {meta.label}
+                  </span>
+                  <span className="shrink-0 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
+                    {formatDay(task.endDate)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Panel>
+
+      {person.notes && (
+        <Panel title="Notes">
+          <p className="whitespace-pre-wrap px-3 py-2.5 text-[0.8125rem] leading-relaxed text-[var(--ink-secondary)]">
+            {person.notes}
+          </p>
+        </Panel>
+      )}
 
       <div className="flex flex-wrap gap-2 border-t border-[var(--hairline)] pt-4">
         <button onClick={onToggleArchive} className="btn-secondary">
@@ -584,6 +595,49 @@ function ProfileCard({
         </button>
       </div>
     </div>
+  );
+}
+
+/** A titled box. Every section of the card is one, so they line up. */
+function Panel({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline)]">
+      <h3 className="border-b border-[var(--hairline)] bg-[var(--plane)] px-3 py-2 text-[0.75rem] font-semibold tracking-tight">
+        {title}
+        {count !== undefined && (
+          <span className="ml-2 font-normal text-[var(--ink-muted)]">
+            {count}
+          </span>
+        )}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+function Empty({
+  children,
+  tone,
+}: {
+  children: React.ReactNode;
+  tone?: "error";
+}) {
+  return (
+    <p
+      className={`px-3 py-3 text-[0.8125rem] ${
+        tone === "error" ? "text-[#d03b3b]" : "text-[var(--ink-muted)]"
+      }`}
+    >
+      {children}
+    </p>
   );
 }
 
@@ -632,7 +686,7 @@ function ProfileForm({
   /** Profile and project roles are saved together, on one press of Save. */
   onSave: (
     values: Partial<DeveloperInput>,
-    places: Map<string, string | null>
+    places: Map<string, string[]>
   ) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => void;
@@ -660,12 +714,13 @@ function ProfileForm({
     person?.color ?? DEVELOPER_PALETTE[existingCount % DEVELOPER_PALETTE.length]
   );
 
-  // projectId -> roleId, "" for "on it, no role yet". Absent means not on it.
-  const [places, setPlaces] = useState<Map<string, string | null>>(() => {
-    const map = new Map<string, string | null>();
+  // projectId -> the roles held there. An empty list is still "on the
+  // project"; a project that isn't in the map is one they aren't on.
+  const [places, setPlaces] = useState<Map<string, string[]>>(() => {
+    const map = new Map<string, string[]>();
     if (person) {
       for (const m of memberships) {
-        if (m.developerId === person.id) map.set(m.projectId, m.roleId);
+        if (m.developerId === person.id) map.set(m.projectId, m.roleIds);
       }
     }
     return map;
@@ -674,11 +729,23 @@ function ProfileForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  function setPlace(projectId: string, value: string) {
+  function setOnProject(projectId: string, on: boolean) {
     setPlaces((prev) => {
       const next = new Map(prev);
-      if (value === OFF_PROJECT) next.delete(projectId);
-      else next.set(projectId, value || null);
+      if (on) next.set(projectId, next.get(projectId) ?? []);
+      else next.delete(projectId);
+      return next;
+    });
+  }
+
+  function toggleRole(projectId: string, roleId: string, on: boolean) {
+    setPlaces((prev) => {
+      const next = new Map(prev);
+      const held = next.get(projectId) ?? [];
+      next.set(
+        projectId,
+        on ? [...held, roleId] : held.filter((id) => id !== roleId)
+      );
       return next;
     });
   }
@@ -875,30 +942,44 @@ function ProfileForm({
             No projects with a team yet.
           </p>
         ) : (
-          projects.map((project) => (
-            <label
-              key={project.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
-            >
-              <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
-                {project.name}
-              </span>
-              <select
-                value={places.has(project.id) ? places.get(project.id) ?? "" : OFF_PROJECT}
-                onChange={(e) => setPlace(project.id, e.target.value)}
-                className="select w-44"
-                aria-label={`Role on ${project.name}`}
+          projects.map((project) => {
+            const on = places.has(project.id);
+            return (
+              <div
+                key={project.id}
+                className={`flex flex-col gap-2 rounded-[var(--radius)] border p-2.5 transition ${
+                  on
+                    ? "border-[var(--accent)] bg-[var(--accent-wash)]"
+                    : "border-[var(--hairline)]"
+                }`}
               >
-                <option value={OFF_PROJECT}>Not on this project</option>
-                <option value="">On it, no role yet</option>
-                {project.roles.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))
+                <label className="flex cursor-pointer items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) => setOnProject(project.id, e.target.checked)}
+                    className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
+                  />
+                  <span className="text-[0.8125rem] font-medium">
+                    {project.name}
+                  </span>
+                </label>
+                {on && (
+                  <span className="pl-6">
+                    <RoleChips
+                      roles={project.roles}
+                      held={places.get(project.id) ?? []}
+                      editable
+                      label={`Roles on ${project.name}`}
+                      onToggle={(roleId, next) =>
+                        toggleRole(project.id, roleId, next)
+                      }
+                    />
+                  </span>
+                )}
+              </div>
+            );
+          })
         )}
       </fieldset>
 

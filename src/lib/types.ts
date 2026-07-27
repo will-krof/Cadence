@@ -149,9 +149,9 @@ export interface Assignment {
   projectId: string;
 }
 
-/** Someone's place on a project: which of its roles they hold. */
+/** Someone's place on a project: which of its roles they hold, if any. */
 export interface Membership {
   projectId: string;
   developerId: string;
-  roleId: string | null;
+  roleIds: string[];
 }
