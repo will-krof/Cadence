@@ -136,7 +136,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
     activeProject,
     selectProject,
     createProject,
-    developers,
+    assignable,
     createTask,
   } = useBoard();
 
@@ -605,7 +605,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
 
       {showAddTask && activeProject && (
         <TaskModal
-          developers={developers}
+          developers={assignable}
           onClose={() => setShowAddTask(false)}
           onSubmit={async (values) => {
             await createTask(values);

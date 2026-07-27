@@ -76,7 +76,7 @@ const COL_WIDTHS_COMPACT: ColWidths = { task: 132, status: 104, developer: 96 };
 export function GanttBoard() {
   const {
     tasks,
-    developers,
+    assignable: developers,
     sprints,
     sprint,
     sprintId,

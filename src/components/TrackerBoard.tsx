@@ -36,7 +36,7 @@ interface DragState {
 export function TrackerBoard() {
   const {
     tasks,
-    developers,
+    assignable: developers,
     sprints,
     sprint,
     sprintId,

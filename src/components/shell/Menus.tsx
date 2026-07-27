@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShellMember, ShellUser } from "@/components/AppShell";
+import { AccountPanel } from "@/components/shell/AccountPanel";
 
 export function AccountMenu({ user }: { user: ShellUser }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [profile, setProfile] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -63,14 +65,32 @@ export function AccountMenu({ user }: { user: ShellUser }) {
             </p>
           </div>
           <button
+            onClick={() => {
+              setOpen(false);
+              setProfile(true);
+            }}
+            role="menuitem"
+            className="mt-1 w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+          >
+            Your profile
+          </button>
+          <button
             onClick={signOut}
             disabled={signingOut}
             role="menuitem"
-            className="mt-1 w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] disabled:opacity-60"
+            className="w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] disabled:opacity-60"
           >
             {signingOut ? "Signing out…" : "Sign out"}
           </button>
         </div>
+      )}
+
+      {profile && (
+        <AccountPanel
+          onClose={() => setProfile(false)}
+          onSignOut={signOut}
+          signingOut={signingOut}
+        />
       )}
     </div>
   );
@@ -80,6 +100,7 @@ export function AccountMenu({ user }: { user: ShellUser }) {
 export function MemberMenu({ member }: { member: ShellMember }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [profile, setProfile] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -133,14 +154,32 @@ export function MemberMenu({ member }: { member: ShellMember }) {
             </p>
           </div>
           <button
+            onClick={() => {
+              setOpen(false);
+              setProfile(true);
+            }}
+            role="menuitem"
+            className="mt-1 w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+          >
+            Your profile
+          </button>
+          <button
             onClick={signOut}
             disabled={signingOut}
             role="menuitem"
-            className="mt-1 w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] disabled:opacity-60"
+            className="w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] disabled:opacity-60"
           >
             {signingOut ? "Signing out…" : "Sign out"}
           </button>
         </div>
+      )}
+
+      {profile && (
+        <AccountPanel
+          onClose={() => setProfile(false)}
+          onSignOut={signOut}
+          signingOut={signingOut}
+        />
       )}
     </div>
   );

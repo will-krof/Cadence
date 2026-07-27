@@ -19,7 +19,7 @@ export function TaskEditModal({
 }) {
   const {
     projectTasks,
-    developers,
+    assignable,
     createTask,
     updateTask,
     deleteTask,
@@ -36,7 +36,7 @@ export function TaskEditModal({
     <TaskModal
       task={task}
       subtasks={subtasks}
-      developers={developers}
+      developers={assignable}
       onClose={onClose}
       onSubmit={async (values) => {
         await updateTask(task.id, values);

@@ -21,11 +21,26 @@ export async function PATCH(
   const parsed = parseDeveloper(body);
   if ("error" in parsed) return badRequest(parsed.error);
 
-  const developer = await prisma.developer.update({
-    where: { id },
-    data: parsed.data,
-    select: DEVELOPER_FIELDS,
-  });
+  // Archiving somebody takes them off the work as well as out of the roster:
+  // an archived person is nobody to hand a task to, so what they were holding
+  // goes back to unassigned rather than sitting with a name nobody can pick.
+  const archiving = parsed.data.active === false;
+
+  const [developer] = await prisma.$transaction([
+    prisma.developer.update({
+      where: { id },
+      data: parsed.data,
+      select: DEVELOPER_FIELDS,
+    }),
+    ...(archiving
+      ? [
+          prisma.task.updateMany({
+            where: { developerId: id },
+            data: { developerId: null },
+          }),
+        ]
+      : []),
+  ]);
   return NextResponse.json(developer);
 }
 

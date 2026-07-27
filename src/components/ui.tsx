@@ -225,8 +225,14 @@ export const AssigneeSelect = memo(function AssigneeSelect({
       <LazySelect
         value={developerId ?? ""}
         onChange={(next) => onChange(next || null)}
+        // Whoever is on the task is always among the options, even if they have
+        // since been archived in another tab: a picker that can't show its own
+        // value would read as unassigned when it isn't.
         options={[
           { value: "", label: emptyLabel },
+          ...(developer && !developers.some((d) => d.id === developer.id)
+            ? [{ value: developer.id, label: `${developer.name} (archived)` }]
+            : []),
           ...developers.map((d) => ({ value: d.id, label: d.name })),
         ]}
         className={`select truncate ${developer ? "pl-7" : ""}`}

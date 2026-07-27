@@ -95,6 +95,8 @@ interface BoardContextValue {
   /** Every task in the project, not just the sprint on show. */
   projectTasks: Task[];
   developers: Developer[];
+  /** Who a task may be handed to: the roster, minus anybody archived. */
+  assignable: Developer[];
   sprints: Sprint[];
   sprint: Sprint | null;
   /** The chosen board: a sprint id, UNPLANNED, or null to follow the dates. */
@@ -245,6 +247,16 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       developer: row.developerId ? byId.get(row.developerId) ?? null : null,
     }));
   }, [boardRows, developers]);
+
+  /**
+   * Who is left to hand work to. An archived person is off the team — their
+   * tasks were handed back when they were filed away — so they are not somebody
+   * a picker should still be offering.
+   */
+  const assignable = useMemo(
+    () => developers.filter((d) => d.active),
+    [developers]
+  );
 
   /** Every task in the project, for the card's project-wide numbers. */
   const projectTasks = useMemo(() => {
@@ -612,7 +624,11 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     [notify]
   );
 
-  /** Archiving keeps the person and their history; it just files them away. */
+  /**
+   * Archiving keeps the person and their history; it files them away, and hands
+   * back whatever they were holding — the server unassigns their tasks, and the
+   * boards drop the name in the same breath rather than after a reload.
+   */
   const setDeveloperActive = useCallback(
     async (id: string, active: boolean) => {
       const res = await fetch(`/api/developers/${id}`, {
@@ -632,12 +648,19 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       }
       const updated: Developer = await res.json();
       setDevelopers((prev) => prev.map((d) => (d.id === id ? updated : d)));
+      if (!active) {
+        setTasks((prev) =>
+          prev.map((t) => (t.developerId === id ? { ...t, developerId: null } : t))
+        );
+      }
       notify(
         "success",
-        active ? `${updated.name} restored.` : `${updated.name} archived.`
+        active
+          ? `${updated.name} restored.`
+          : `${updated.name} archived — their tasks are unassigned.`
       );
     },
-    [notify]
+    [setTasks, notify]
   );
 
   const deleteDeveloper = useCallback(
@@ -886,6 +909,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     tasks,
     projectTasks,
     developers,
+    assignable,
     sprints,
     sprint,
     sprintId,
@@ -925,6 +949,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       tasks,
       projectTasks,
       developers,
+      assignable,
       sprints,
       sprint,
       sprintId,
