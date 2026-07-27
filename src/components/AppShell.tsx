@@ -21,7 +21,8 @@ import { TaskModal } from "@/components/TaskModal";
 import { TeamView } from "@/components/TeamView";
 import { InstallStats } from "@/components/InstallStats";
 
-type View = "overview" | "timeline" | "tracker" | "team";
+/** The views a project carries. Team isn't one: it belongs to the workspace. */
+type View = "overview" | "timeline" | "tracker";
 
 const SIDEBAR_EVENT = "cadence:sidebarchange";
 
@@ -150,6 +151,9 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   } = useBoard();
 
   const [view, setView] = useState<View>("overview");
+  // The roster sits beside the projects, not inside one, so which of the two is
+  // on show is its own answer — a project stays chosen underneath it.
+  const [onTeam, setOnTeam] = useState(false);
   const [roleId, setRoleId] = useState<string | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
@@ -199,7 +203,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
       : role?.isAdmin ?? true;
     const sees = (
       tool: boolean,
-      key: "canViewTimeline" | "canViewTracker" | "canViewTeam"
+      key: "canViewTimeline" | "canViewTracker"
     ) =>
       tool &&
       (admin ||
@@ -213,20 +217,41 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
       ...(sees(activeProject.hasTracker, "canViewTracker")
         ? (["tracker"] as View[])
         : []),
-      ...(sees(activeProject.hasTeam, "canViewTeam") ? (["team"] as View[]) : []),
     ];
   }, [activeProject, role, member, heldRoles]);
+
+  /**
+   * The roster is the workspace's, so it isn't a project's to grant: the owner
+   * always has it. A member is let in by any project that carries the tool and
+   * a role there that opens it — one project saying yes is enough, since what
+   * they'd read is the same list either way.
+   */
+  const canSeeTeam = useMemo(() => {
+    if (!member) return true;
+    return projects.some((p) => {
+      if (!p.hasTeam) return false;
+      const held =
+        member.places.find((place) => place.projectId === p.id)?.roleIds ?? [];
+      const roles = p.roles.filter((r) => held.includes(r.id));
+      return roles.some((r) => r.isAdmin || r.canViewTeam);
+    });
+  }, [member, projects]);
 
   // A project may not have both tools enabled, so the shown view is derived
   // rather than synced — switching projects or roles can never leave it on a
   // view that isn't available.
   const activeView = available.includes(view) ? view : available[0];
 
+  // Losing the right to the roster (a role change, a project switched off) puts
+  // the projects back on show rather than leaving an empty pane.
+  const showingTeam = onTeam && canSeeTeam;
+
   /** Switching projects opens that project's card, as its admin. */
   function openProject(id: string) {
     selectProject(id);
     setRoleId(null);
     setView("overview");
+    setOnTeam(false);
   }
 
   return (
@@ -346,23 +371,40 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                           wide={wide}
                         />
                       )}
-                      {/* This project's people, and whether they can open the
-                          list at all is the role's call. */}
-                      {available.includes("team") && (
-                        <ViewButton
-                          active={activeView === "team"}
-                          onClick={() => setView("team")}
-                          icon={TEAM_ICON}
-                          label="Team"
-                          wide={wide}
-                        />
-                      )}
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
+
+          {/* The roster stands on its own, level with the projects rather than
+              under one of them: someone can be on the team — an HR person, say —
+              without being on any project at all. */}
+          {canSeeTeam && (
+            <div className="flex flex-col gap-1 border-t border-[var(--hairline)] pt-3">
+              {wide && (
+                <span className="field-label px-2 pb-1">Workspace</span>
+              )}
+              <button
+                onClick={() => setOnTeam(true)}
+                aria-current={showingTeam ? "page" : undefined}
+                title="Team — everyone in the workspace"
+                className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
+                  wide ? "" : "justify-center"
+                } ${
+                  showingTeam
+                    ? "bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
+                    : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+                }`}
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                  {TEAM_ICON}
+                </span>
+                {wide && <span className="truncate">Team</span>}
+              </button>
+            </div>
+          )}
 
           {/* A member can't try other roles on: theirs are what they hold. */}
           {member && wide && (
@@ -416,6 +458,18 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
         <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--surface)]">
           {loading ? (
             <Centered>Loading…</Centered>
+          ) : showingTeam ? (
+            <>
+              <div className="flex items-baseline gap-2 border-b border-[var(--hairline)] px-4 py-2.5 sm:px-6">
+                <h2 className="text-[0.8125rem] font-semibold tracking-tight">
+                  Team
+                </h2>
+                <p className="truncate text-[0.75rem] text-[var(--ink-muted)]">
+                  Everyone in the workspace, across every project.
+                </p>
+              </div>
+              <TeamView canEdit={!member} />
+            </>
           ) : !activeProject ? (
             <Centered>
               {member ? (
@@ -449,14 +503,17 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                   </p>
                 )}
               </div>
-              {activeView === "team" ? (
-                <TeamView canEdit={!member} />
-              ) : activeView === "overview" ? (
+              {activeView === "overview" ? (
                 <ProjectOverview
-                  onOpenView={setView}
-                  visibleViews={available.filter(
-                    (v): v is "timeline" | "tracker" | "team" => v !== "overview"
-                  )}
+                  onOpenView={(v) =>
+                    v === "team" ? setOnTeam(true) : setView(v)
+                  }
+                  visibleViews={[
+                    ...available.filter(
+                      (v): v is "timeline" | "tracker" => v !== "overview"
+                    ),
+                    ...(canSeeTeam ? (["team"] as const) : []),
+                  ]}
                   canEdit={isAdmin}
                 />
               ) : projectLoading ? (
@@ -642,20 +699,18 @@ function ViewButton({
   icon,
   label,
   wide,
-  hint,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
   wide: boolean;
-  hint?: string;
 }) {
   return (
     <button
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      title={hint ? `${label} — ${hint}` : label}
+      title={label}
       className={`flex items-center gap-2.5 rounded-[var(--radius)] py-2 text-[0.8125rem] font-medium transition ${
         wide ? "px-3" : "justify-center px-2"
       } ${
@@ -666,14 +721,7 @@ function ViewButton({
     >
       <span className="shrink-0">{icon}</span>
       {wide && (
-        <span className="min-w-0 flex-1 text-left">
-          <span className="block truncate">{label}</span>
-          {hint && (
-            <span className="block truncate text-[0.625rem] font-normal text-[var(--ink-muted)]">
-              {hint}
-            </span>
-          )}
-        </span>
+        <span className="min-w-0 flex-1 truncate text-left">{label}</span>
       )}
     </button>
   );

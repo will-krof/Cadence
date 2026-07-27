@@ -82,7 +82,7 @@ export function ProjectModal({
             checked={hasTeam}
             onChange={setHasTeam}
             label="Team"
-            hint="People profiles and roster"
+            hint="Lets this project's people open the workspace roster"
           />
           {noTool && (
             <p className="text-[0.6875rem] text-[#d03b3b]">Pick at least one.</p>

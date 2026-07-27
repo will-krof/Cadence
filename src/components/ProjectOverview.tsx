@@ -1134,7 +1134,7 @@ function DetailsForm({
           checked={hasTeam}
           onChange={setHasTeam}
           label="Team"
-          hint="People profiles and roster"
+          hint="Lets this project's people open the workspace roster"
         />
       </fieldset>
       {noTool && (
