@@ -25,12 +25,18 @@ const SECURITY_HEADERS: Record<string, string> = {
   "strict-transport-security": "max-age=31536000; includeSubDomains",
 };
 
-function contentSecurityPolicy(nonce: string, isDev: boolean) {
+const IS_DEV = process.env.NODE_ENV === "development";
+
+/**
+ * The policy, built once. Only the nonce changes per request, so the rest is
+ * assembled at module load rather than on every page view.
+ */
+function policyTemplate(isDev: boolean) {
   return [
     "default-src 'self'",
     // 'strict-dynamic' lets a trusted script load its own chunks; nothing else
     // gets in. React needs eval in development for its error overlay.
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${
+    `script-src 'self' 'nonce-NONCE' 'strict-dynamic'${
       isDev ? " 'unsafe-eval'" : ""
     }`,
     // The app styles elements inline — a colour here, a grid there — which is
@@ -50,6 +56,11 @@ function contentSecurityPolicy(nonce: string, isDev: boolean) {
     ...(isDev ? [] : ["upgrade-insecure-requests"]),
   ].join("; ");
 }
+
+const POLICY = policyTemplate(IS_DEV);
+
+const contentSecurityPolicy = (nonce: string) =>
+  POLICY.replace("NONCE", nonce);
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -83,10 +94,7 @@ export function proxy(request: NextRequest) {
   }
 
   const nonce = crypto.randomUUID();
-  const csp = contentSecurityPolicy(
-    nonce,
-    process.env.NODE_ENV === "development"
-  );
+  const csp = contentSecurityPolicy(nonce);
 
   // Next reads the policy off the request to nonce its own script tags.
   const headers = new Headers(request.headers);

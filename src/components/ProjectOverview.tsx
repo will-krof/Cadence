@@ -389,19 +389,30 @@ function PeopleSection({
   const { confirm } = useFeedback();
   const [adding, setAdding] = useState("");
 
-  const membershipOf = (developerId: string) =>
-    memberships.find(
-      (m) => m.projectId === project.id && m.developerId === developerId
-    );
+  // One pass each rather than a scan per row: with a busy project this ran the
+  // whole membership list and the whole task list once for every person on it.
+  const membershipOf = useMemo(() => {
+    const byDeveloper = new Map<string, Membership>();
+    for (const m of memberships) {
+      if (m.projectId === project.id) byDeveloper.set(m.developerId, m);
+    }
+    return byDeveloper;
+  }, [memberships, project.id]);
 
+  const openCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const task of tasks) {
+      if (!task.developerId || task.status === "DONE") continue;
+      counts.set(task.developerId, (counts.get(task.developerId) ?? 0) + 1);
+    }
+    return counts;
+  }, [tasks]);
 
   const onProject = new Set(people.map((p) => p.id));
   const available = developers.filter((d) => d.active && !onProject.has(d.id));
 
   async function remove(person: Developer) {
-    const open = tasks.filter(
-      (t) => t.developerId === person.id && t.status !== "DONE"
-    ).length;
+    const open = openCounts.get(person.id) ?? 0;
     const ok = await confirm({
       title: `Take ${person.name} off ${project.name}?`,
       body: open
@@ -438,10 +449,8 @@ function PeopleSection({
       ) : (
         <ul className="flex flex-col gap-1.5">
           {people.map((person) => {
-            const open = tasks.filter(
-              (t) => t.developerId === person.id && t.status !== "DONE"
-            ).length;
-            const membership = membershipOf(person.id);
+            const open = openCounts.get(person.id) ?? 0;
+            const membership = membershipOf.get(person.id);
             const held = membership?.roleIds ?? [];
             return (
               <li

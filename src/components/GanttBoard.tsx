@@ -10,7 +10,7 @@ import {
   weekdayLetter,
 } from "@/lib/dates";
 import { contrastText } from "@/lib/color";
-import { safeHttpUrl } from "@/lib/sanitize";
+import { isHttpUrl } from "@/lib/sanitize";
 import { Developer, STATUS_OPTIONS, Task, TaskRow, statusMeta } from "@/lib/types";
 import { useBoard } from "@/components/BoardProvider";
 import {
@@ -739,7 +739,7 @@ const TableRow = memo(function TableRow({
 }) {
   // Checked here as well as on the way in: a title is a link to whatever the
   // row holds, and only http and https belong in one.
-  const link = safeHttpUrl(task.link);
+  const link = isHttpUrl(task.link) ? task.link : null;
 
   return (
     <div

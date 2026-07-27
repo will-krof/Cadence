@@ -128,6 +128,15 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
     [developers, selectedId]
   );
 
+  // Counted once instead of scanning every membership for every row drawn.
+  const projectCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const m of memberships) {
+      counts.set(m.developerId, (counts.get(m.developerId) ?? 0) + 1);
+    }
+    return counts;
+  }, [memberships]);
+
   const active = useMemo(() => developers.filter((d) => d.active), [developers]);
   const archived = useMemo(
     () => developers.filter((d) => !d.active),
@@ -195,9 +204,7 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
             <PersonRow
               key={d.id}
               person={d}
-              projectCount={
-                memberships.filter((m) => m.developerId === d.id).length
-              }
+              projectCount={projectCounts.get(d.id) ?? 0}
               selected={d.id === selectedId}
               onClick={() => openPerson(d.id)}
             />
@@ -238,9 +245,7 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
                 <PersonRow
                   key={d.id}
                   person={d}
-                  projectCount={
-                    memberships.filter((m) => m.developerId === d.id).length
-                  }
+                  projectCount={projectCounts.get(d.id) ?? 0}
                   selected={d.id === selectedId}
                   onClick={() => openPerson(d.id)}
                 />

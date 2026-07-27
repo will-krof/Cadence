@@ -41,6 +41,16 @@ export function safeHttpUrl(value: unknown): string | null {
   }
 }
 
+/**
+ * The same question, asked cheaply: does this string begin as an http or https
+ * URL? Boards draw hundreds of rows, and parsing a URL per row per render is
+ * work for nothing when the server already stored a parsed one. What this has
+ * to catch is a scheme that would run on click, and a prefix test does that.
+ */
+export function isHttpUrl(value: string | null | undefined): value is string {
+  return value != null && /^https?:\/\//i.test(value);
+}
+
 /** `#rgb` or `#rrggbb`. Colours reach a `style`, so nothing else goes in one. */
 export function safeColor(value: unknown): string | null {
   if (typeof value !== "string") return null;

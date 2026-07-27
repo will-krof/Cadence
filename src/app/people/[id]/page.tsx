@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { canReadProfile, getViewer, memberProjectIds } from "@/lib/viewer";
+import { getViewer, memberProjectIds } from "@/lib/viewer";
+import { developerScope } from "@/lib/api-auth";
 import { Wordmark } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProfileResume, ResumeProject } from "@/components/ProfileResume";
@@ -31,15 +32,17 @@ export default async function ProfilePage({
   if (!viewer) redirect("/login");
 
   const { id } = await params;
-  if (!(await canReadProfile(viewer, id))) notFound();
-
   const isOwner = viewer.kind === "owner";
   // A member sees this person through the projects they have in common; the
   // owner sees the workspace, so every project counts.
   const shared = isOwner ? null : memberProjectIds(viewer);
 
-  const person = await prisma.developer.findUnique({
-    where: { id },
+  // `developerScope` is the same rule the roster endpoint reads by: the owner's
+  // whole workspace, or the people a member shares a project with — themselves
+  // included, since they are on their own projects. Asking it here rather than
+  // in a check of its own means one query, and one place where the rule lives.
+  const person = await prisma.developer.findFirst({
+    where: { id, ...developerScope(viewer) },
     select: {
       id: true,
       name: true,

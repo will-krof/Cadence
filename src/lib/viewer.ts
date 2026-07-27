@@ -123,44 +123,6 @@ export function memberProjectIds(member: MemberViewer) {
   return member.places.map((p) => p.projectId);
 }
 
-/**
- * Whether this viewer may read one person's profile.
- *
- * For the owner, anybody in their workspace. For a member, anybody they share a
- * project with — being on the same project is the whole of it, whatever role
- * either of them holds, because a colleague is a colleague. Somebody who shares
- * nothing gets the same answer as somebody who doesn't exist.
- */
-export async function canReadProfile(viewer: Viewer, developerId: string) {
-  if (viewer.kind === "owner") {
-    const own = await prisma.developer.findFirst({
-      where: { id: developerId, userId: viewer.user.id },
-      select: { id: true },
-    });
-    return own != null;
-  }
-
-  // Their own profile always, and otherwise a shared project — named on it, or
-  // carrying work on it.
-  if (viewer.developerId === developerId) return true;
-
-  const projectIds = memberProjectIds(viewer);
-  if (projectIds.length === 0) return false;
-
-  const shared = await prisma.developer.findFirst({
-    where: {
-      id: developerId,
-      userId: viewer.ownerId,
-      OR: [
-        { memberships: { some: { projectId: { in: projectIds } } } },
-        { tasks: { some: { projectId: { in: projectIds } } } },
-      ],
-    },
-    select: { id: true },
-  });
-  return shared != null;
-}
-
 /** Their standing on one project, or null if they aren't on it. */
 export function placeOn(member: MemberViewer, projectId: string) {
   return member.places.find((p) => p.projectId === projectId) ?? null;
