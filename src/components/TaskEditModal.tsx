@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { TaskModal } from "@/components/TaskModal";
 import { useBoard } from "@/components/BoardProvider";
-import { Task, TaskStatus } from "@/lib/types";
+import { Task } from "@/lib/types";
 
 /**
  * Editing one task, with its steps. Both boards open the same thing from the
@@ -46,21 +46,20 @@ export function TaskEditModal({
         await deleteTask(task.id);
         onClose();
       }}
-      // A step starts where its task does, and with the same person on it.
-      onAddSubtask={(title) =>
+      // A step starts where its task does, and with whoever was picked beside
+      // it — which is nobody when the picker says nobody.
+      onAddSubtask={(step) =>
         createTask({
-          title,
+          title: step.title,
           description: "",
           link: "",
           startDate: task.startDate,
           endDate: task.endDate,
-          developerId: task.developerId,
+          developerId: step.developerId,
           parentId: task.id,
         })
       }
-      onUpdateSubtask={(id, patch: { status?: TaskStatus; title?: string }) =>
-        updateTask(id, patch)
-      }
+      onUpdateSubtask={(id, patch) => updateTask(id, patch)}
       onDeleteSubtask={(id) => deleteTask(id)}
     />
   );

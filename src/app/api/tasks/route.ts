@@ -101,17 +101,39 @@ export async function POST(request: NextRequest) {
   });
 
   // Steps the task is being made with. They are tasks in their own right —
-  // same dates, same board, same person — so they are written here, in one
-  // round trip and one transaction, rather than a request each.
-  const steps = Array.isArray(body.subtasks)
-    ? body.subtasks
-        .filter((t: unknown): t is string => typeof t === "string")
-        .map((t: string) => t.trim())
-        .filter(Boolean)
-        .slice(0, MAX_STEPS)
-    : [];
-  if (steps.some((t: string) => t.length > LIMITS.title)) {
-    return badRequest(`A step's title is ${LIMITS.title} characters or fewer`);
+  // same dates, same board, and each with whoever is to do it — so they are
+  // written here, in one round trip and one transaction, rather than a request
+  // each.
+  const steps: { title: string; developerId: string | null }[] = [];
+  if (Array.isArray(body.subtasks)) {
+    for (const raw of body.subtasks.slice(0, MAX_STEPS)) {
+      const step = typeof raw === "string" ? { title: raw } : raw;
+      if (!step || typeof step !== "object") continue;
+      const title = typeof step.title === "string" ? step.title.trim() : "";
+      if (!title) continue;
+      if (title.length > LIMITS.title) {
+        return badRequest(`A step's title is ${LIMITS.title} characters or fewer`);
+      }
+      steps.push({
+        title,
+        developerId:
+          typeof step.developerId === "string" && step.developerId
+            ? step.developerId
+            : null,
+      });
+    }
+  }
+
+  // Whoever they were handed to has to be on this workspace's roster, the same
+  // as the person on the task itself.
+  const stepPeople = [
+    ...new Set(steps.map((s) => s.developerId).filter((id): id is string => !!id)),
+  ];
+  if (stepPeople.length > 0) {
+    const known = await prisma.developer.count({
+      where: { id: { in: stepPeople }, userId: ownerId },
+    });
+    if (known !== stepPeople.length) return notFound("Developer");
   }
   if (parentId && steps.length > 0) {
     return badRequest("A subtask can’t have subtasks of its own");
@@ -148,11 +170,14 @@ export async function POST(request: NextRequest) {
   if (steps.length === 0) return NextResponse.json(task, { status: 201 });
 
   await prisma.$transaction(
-    steps.map((stepTitle: string, i: number) =>
+    steps.map((step, i) =>
       prisma.task.create({
         data: {
           ...common,
-          title: stepTitle,
+          // Whoever was picked beside it, and nobody when nobody was: the
+          // form shows that answer, so it is the one that is stored.
+          developerId: step.developerId,
+          title: step.title,
           parentId: task.id,
           order: from + i + 1,
           events: { create: { status: "TODO", by: viewerName(viewer) } },

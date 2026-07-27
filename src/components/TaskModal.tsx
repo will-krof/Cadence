@@ -15,8 +15,14 @@ export interface TaskFormValues {
   endDate: string;
   status: TaskStatus;
   developerId: string | null;
-  /** Steps to create along with a new task, as titles. */
-  subtasks: string[];
+  /** Steps to create along with a new task, each with whoever will do it. */
+  subtasks: NewStep[];
+}
+
+/** A step staged for a task that doesn't exist yet. */
+export interface NewStep {
+  title: string;
+  developerId: string | null;
 }
 
 /**
@@ -42,8 +48,11 @@ export function TaskModal({
   onSubmit: (values: TaskFormValues) => void | Promise<void>;
   onDelete?: () => void;
   /** Editing a task writes its steps as they are changed, not on save. */
-  onAddSubtask?: (title: string) => Promise<void>;
-  onUpdateSubtask?: (id: string, patch: { status?: TaskStatus; title?: string }) => Promise<void>;
+  onAddSubtask?: (step: NewStep) => Promise<void>;
+  onUpdateSubtask?: (
+    id: string,
+    patch: { status?: TaskStatus; title?: string; developerId?: string | null }
+  ) => Promise<void>;
   onDeleteSubtask?: (id: string) => Promise<void>;
 }) {
   const today = toISODate(new Date());
@@ -65,8 +74,11 @@ export function TaskModal({
 
   // A task being created has nowhere to hang its steps yet, so they are staged
   // here and made with it. One being edited writes them as they are typed.
-  const [staged, setStaged] = useState<string[]>([]);
+  const [staged, setStaged] = useState<NewStep[]>([]);
   const [stepTitle, setStepTitle] = useState("");
+  // Whoever the next step is for. It stays put after adding one, so a run of
+  // steps for the same person is typed rather than picked over and over.
+  const [stepWho, setStepWho] = useState("");
 
   // A step of a step is a task in its own right, so a subtask's form doesn't
   // offer any.
@@ -75,9 +87,10 @@ export function TaskModal({
   async function addStep() {
     const title = stepTitle.trim();
     if (!title) return;
+    const step: NewStep = { title, developerId: stepWho || null };
     setStepTitle("");
-    if (isEdit && onAddSubtask) await onAddSubtask(title);
-    else setStaged((prev) => [...prev, title]);
+    if (isEdit && onAddSubtask) await onAddSubtask(step);
+    else setStaged((prev) => [...prev, step]);
   }
 
   async function submit(e: React.FormEvent) {
@@ -179,8 +192,6 @@ export function TaskModal({
           </Field>
         </div>
 
-        {isEdit && task && <TaskHistory taskId={task.id} />}
-
         {takesSteps && (
           <fieldset className="flex flex-col gap-2 border-t border-[var(--hairline)] pt-3">
             <legend className="field-label mb-1.5">
@@ -217,13 +228,30 @@ export function TaskModal({
                       e.target.value = step.title;
                     }
                   }}
-                  className={`input flex-1 ${
+                  className={`input min-w-0 flex-1 ${
                     step.status === "DONE"
                       ? "text-[var(--ink-muted)] line-through"
                       : ""
                   }`}
                   aria-label={`Title of ${step.title}`}
                 />
+                <select
+                  value={step.developerId ?? ""}
+                  onChange={(e) =>
+                    onUpdateSubtask?.(step.id, {
+                      developerId: e.target.value || null,
+                    })
+                  }
+                  className="select w-32 shrink-0"
+                  aria-label={`Assignee for ${step.title}`}
+                >
+                  <option value="">Unassigned</option>
+                  {developers.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   onClick={() => onDeleteSubtask?.(step.id)}
@@ -236,17 +264,40 @@ export function TaskModal({
               </div>
             ))}
 
-            {staged.map((title, i) => (
-              <div key={`${title}-${i}`} className="flex items-center gap-2">
+            {staged.map((step, i) => (
+              <div key={`${step.title}-${i}`} className="flex items-center gap-2">
                 <span className="h-3.5 w-3.5 shrink-0 rounded-[3px] border border-[var(--baseline)]" />
-                <span className="flex-1 truncate text-[0.8125rem]">{title}</span>
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
+                  {step.title}
+                </span>
+                <select
+                  value={step.developerId ?? ""}
+                  onChange={(e) =>
+                    setStaged((prev) =>
+                      prev.map((s, n) =>
+                        n === i
+                          ? { ...s, developerId: e.target.value || null }
+                          : s
+                      )
+                    )
+                  }
+                  className="select w-32 shrink-0"
+                  aria-label={`Assignee for ${step.title}`}
+                >
+                  <option value="">Unassigned</option>
+                  {developers.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   onClick={() =>
                     setStaged((prev) => prev.filter((_, n) => n !== i))
                   }
                   className="shrink-0 rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
-                  aria-label={`Remove ${title}`}
+                  aria-label={`Remove ${step.title}`}
                 >
                   <CloseIcon />
                 </button>
@@ -265,10 +316,23 @@ export function TaskModal({
                     addStep();
                   }
                 }}
-                className="input flex-1"
+                className="input min-w-0 flex-1"
                 placeholder="Add a step…"
                 aria-label="New subtask"
               />
+              <select
+                value={stepWho}
+                onChange={(e) => setStepWho(e.target.value)}
+                className="select w-32 shrink-0"
+                aria-label="Assignee for the new subtask"
+              >
+                <option value="">Unassigned</option>
+                {developers.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
                 onClick={addStep}
@@ -279,11 +343,15 @@ export function TaskModal({
               </button>
             </div>
             <p className="text-[0.6875rem] text-[var(--ink-muted)]">
-              Each step is a task of its own — it starts with this task’s dates
-              and assignee, and appears under it on both boards.
+              Each step is a task of its own — it starts with this task’s dates,
+              goes to whoever is picked beside it, and appears under it on both
+              boards.
             </p>
           </fieldset>
         )}
+
+        {/* What happened to this task, under the work it is made of. */}
+        {isEdit && task && <TaskHistory taskId={task.id} />}
 
         <div className="mt-1 flex items-center justify-end gap-2">
           {isEdit && onDelete && (

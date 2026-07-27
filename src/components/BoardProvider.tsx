@@ -34,8 +34,9 @@ interface TaskInput {
   developerId: string | null;
   /** The task this one is a step of, if it is one. */
   parentId?: string | null;
-  /** Steps to create with it, as titles — they inherit its dates and board. */
-  subtasks?: string[];
+  /** Steps to create with it. They take its dates and board, and their own
+   *  person — a step is somebody's to do, and not always the same somebody. */
+  subtasks?: { title: string; developerId: string | null }[];
 }
 
 interface RolePatch {
