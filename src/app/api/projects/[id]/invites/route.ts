@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
-import { newInviteToken } from "@/lib/invite";
+import { freshInvite } from "@/lib/invite";
 import { MEMBER_FIELDS, memberPayload } from "@/lib/member-select";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -43,13 +43,8 @@ export async function POST(
 
   const updated = await prisma.projectMember.update({
     where: { id: found.id },
-    data: {
-      inviteToken: newInviteToken(),
-      inviteCreatedAt: new Date(),
-      // A new link is a live one, however the last one ended.
-      inviteRevoked: false,
-      inviteUsedAt: null,
-    },
+    // A new link is a live one for three days, however the last one ended.
+    data: freshInvite(),
     select: MEMBER_FIELDS,
   });
   return NextResponse.json(memberPayload(updated));

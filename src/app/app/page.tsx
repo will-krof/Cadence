@@ -9,15 +9,18 @@ export default async function AppPage() {
   const viewer = await getViewer();
   if (!viewer) redirect("/login");
 
-  // An invited guest gets the same app, narrowed to their project and their
-  // roles — there is no separate, lesser view to keep in step.
-  if (viewer.kind === "guest") {
+  // A team member gets the same app, narrowed to the projects they are on and
+  // the roles they hold — there is no separate, lesser view to keep in step.
+  if (viewer.kind === "member") {
     return (
       <AppShell
-        guest={{
+        member={{
           name: viewer.developerName,
-          projectId: viewer.projectId,
-          roleIds: viewer.roleIds,
+          username: viewer.username,
+          places: viewer.places.map((p) => ({
+            projectId: p.projectId,
+            roleIds: p.roleIds,
+          })),
         }}
       />
     );

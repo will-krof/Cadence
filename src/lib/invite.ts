@@ -1,21 +1,39 @@
 import { randomBytes } from "node:crypto";
 
-/** The cookie an accepted invite leaves behind. */
-export const INVITE_COOKIE = "cadence_invite";
+/**
+ * How long an invite link is good for. It is a setup window, not access: past
+ * it the link stops working and a fresh one takes its place, so a link that was
+ * never opened never sits around waiting to be found.
+ */
+export const INVITE_DAYS = 3;
 
-const INVITE_DAYS = 365;
-
-export const INVITE_MAX_AGE = INVITE_DAYS * 24 * 60 * 60;
+const DAY = 24 * 60 * 60 * 1000;
 
 /**
- * 32 bytes of randomness, url-safe. Long enough that guessing one is not a
+ * 24 bytes of randomness, url-safe. Long enough that guessing one is not a
  * threat model, short enough to paste into a chat message.
  */
 export function newInviteToken() {
   return randomBytes(24).toString("base64url");
 }
 
-/** The path an invite link points at. Callers put the origin in front. */
-export function invitePath(token: string) {
-  return `/invite/${token}`;
+/** When a link made now runs out. */
+export function inviteExpiry(from = new Date()) {
+  return new Date(from.getTime() + INVITE_DAYS * DAY);
+}
+
+/** The fields that make a link a live one, for a fresh or replaced invite. */
+export function freshInvite() {
+  const now = new Date();
+  return {
+    inviteToken: newInviteToken(),
+    inviteCreatedAt: now,
+    inviteExpiresAt: inviteExpiry(now),
+    inviteRevoked: false,
+    inviteUsedAt: null,
+  };
+}
+
+export function inviteHasExpired(expiresAt: Date | null | undefined) {
+  return expiresAt != null && expiresAt.getTime() <= Date.now();
 }

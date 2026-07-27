@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { projectFilter, workspaceOwnerId } from "@/lib/api-auth";
-import { guestDenied, requireViewer } from "@/lib/viewer";
+import { boardFilter, workspaceOwnerId } from "@/lib/api-auth";
+import { memberDenied, requireViewer } from "@/lib/viewer";
 import { TASK_FIELDS } from "@/lib/task-select";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -18,13 +18,13 @@ export async function PATCH(
   if (response) return response;
   // Which project the task is in is settled by the lookup below; this is the
   // role's say on whether a guest may touch tasks at all.
-  if (guestDenied(viewer, null)) return forbidden();
+  if (memberDenied(viewer, null)) return forbidden();
 
   const { id } = await ctx.params;
   const body = await request.json();
 
   const reachable = await prisma.task.findFirst({
-    where: { id, ...projectFilter(viewer) },
+    where: { id, ...boardFilter(viewer) },
     select: { id: true },
   });
   if (!reachable) return notFound();
@@ -68,12 +68,12 @@ export async function DELETE(
 ) {
   const { viewer, response } = await requireViewer();
   if (response) return response;
-  if (guestDenied(viewer, null)) return forbidden();
+  if (memberDenied(viewer, null)) return forbidden();
 
   const { id } = await ctx.params;
 
   const deleted = await prisma.task.deleteMany({
-    where: { id, ...projectFilter(viewer) },
+    where: { id, ...boardFilter(viewer) },
   });
   if (deleted.count === 0) return notFound();
 

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { developerScope, requireUser } from "@/lib/api-auth";
 import { requireViewer } from "@/lib/viewer";
 import { parseDeveloper } from "@/lib/developer-input";
+import { DEVELOPER_FIELDS } from "@/lib/developer-select";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -12,6 +13,7 @@ export async function GET(request: NextRequest) {
   // Profiles carry avatars, so this is the other response worth compressing.
   const developers = await prisma.developer.findMany({
     where: developerScope(viewer),
+    select: DEVELOPER_FIELDS,
     orderBy: { createdAt: "asc" },
   });
   return jsonResponse(request, developers);
@@ -33,6 +35,7 @@ export async function POST(request: NextRequest) {
 
   const developer = await prisma.developer.create({
     data: { ...parsed.data, name: parsed.data.name!, userId: user.id },
+    select: DEVELOPER_FIELDS,
   });
   return NextResponse.json(developer, { status: 201 });
 }

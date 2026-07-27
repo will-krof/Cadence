@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { parseDeveloper } from "@/lib/developer-input";
+import { DEVELOPER_FIELDS } from "@/lib/developer-select";
 import { NextRequest, NextResponse } from "next/server";
 
 const notFound = () =>
@@ -30,6 +31,7 @@ export async function PATCH(
   const developer = await prisma.developer.update({
     where: { id },
     data: parsed.data,
+    select: DEVELOPER_FIELDS,
   });
   return NextResponse.json(developer);
 }

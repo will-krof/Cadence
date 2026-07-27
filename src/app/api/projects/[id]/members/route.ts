@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
-import { newInviteToken } from "@/lib/invite";
+import { freshInvite } from "@/lib/invite";
 import { MEMBER_FIELDS, memberPayload } from "@/lib/member-select";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -68,10 +68,9 @@ export async function PUT(
       projectId: id,
       developerId,
       roles: { create: roleIds.map((roleId) => ({ roleId })) },
-      // Putting someone on a project is how they get in, so the link they get
-      // in with is made here rather than asked for separately.
-      inviteToken: newInviteToken(),
-      inviteCreatedAt: new Date(),
+      // Putting someone on a project is how they get in, so the link that sets
+      // their login up is made here rather than asked for separately.
+      ...freshInvite(),
     },
     // Replacing the set outright keeps this the single description of what
     // they hold, rather than something callers have to diff. The link is left

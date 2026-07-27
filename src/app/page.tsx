@@ -36,8 +36,8 @@ export default async function LandingPage() {
           <p className="mt-5 max-w-xl text-[0.9375rem] leading-relaxed text-[var(--ink-secondary)]">
             Cadence gives every project a Gantt timeline and a kanban tracker
             over the same tasks — so scheduling and day-to-day progress never
-            drift apart. Everyone you work with comes in through a link, and
-            sees exactly what their role should.
+            drift apart. Everyone you work with is invited by link, picks their
+            own login, and sees exactly what their role should.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link href={inside ? "/app" : "/login"} className="btn-primary">
@@ -46,8 +46,9 @@ export default async function LandingPage() {
           </div>
           {!inside && (
             <p className="mt-4 max-w-xl text-[0.8125rem] leading-relaxed text-[var(--ink-muted)]">
-              Been sent an invite link? Open it — it takes you straight into the
-              project. There is no sign-up: the link is the way in.
+              Been sent an invite link? Open it and pick a username and
+              password. There is no sign-up: an invite is the way in, and each
+              link works for three days.
             </p>
           )}
         </section>
@@ -70,8 +71,8 @@ export default async function LandingPage() {
             body="Every project has its own roles, and each one is a list of what it can open: timeline, tracker, team. Admins hold the pen."
           />
           <Feature
-            title="Invite links, not accounts"
-            body="Put someone on a project and they get a link. It lets them in as themselves, with the roles they hold — no password to set up."
+            title="Invited, not signed up"
+            body="Put someone on a project and they get a link. It lasts three days, and they spend it picking the username and password they'll sign in with."
           />
           <Feature
             title="One team, many projects"
@@ -91,13 +92,13 @@ export default async function LandingPage() {
             />
             <Step
               n={2}
-              title="Send them the link"
-              body="They open it, see the project and the roles it carries, and they're in — no account, no password."
+              title="They pick a login"
+              body="The link shows them the project and the roles it carries, then asks for a username and a password. That is what they sign in with from then on."
             />
             <Step
               n={3}
-              title="Change your mind whenever"
-              body="Regenerate the link and the old one dies on the spot. Switch it off and nobody gets in until you hand out a new one."
+              title="Links don't linger"
+              body="Every link runs out after three days, and a fresh one takes its place. Regenerate one and the old one dies on the spot; switch it off and nobody can use it at all."
             />
           </ol>
         </section>
@@ -107,9 +108,9 @@ export default async function LandingPage() {
             Your workspace is yours
           </h2>
           <p className="mt-2 max-w-xl text-[0.875rem] leading-relaxed text-[var(--ink-secondary)]">
-            Projects, tasks and the roster belong to your account. Guests reach
-            one project and the roles you gave them — nothing else, and nothing
-            you didn’t hand out.
+            Projects, tasks and the roster belong to your account. Everyone else
+            reaches the projects you put them on, through the roles you gave
+            them — nothing else, and nothing you didn’t hand out.
           </p>
         </section>
       </main>

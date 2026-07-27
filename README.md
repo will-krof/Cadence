@@ -17,8 +17,9 @@ Then open [http://localhost:3000](http://localhost:3000).
 ## Accounts
 
 There is no sign-up. A workspace account is created out of band, and everyone
-else comes in through an invite link, so the only self-serve door into the app
-is a link an admin handed out.
+else picks their login through an invite link, so the only self-serve door into
+the app is a link an admin handed out. Both kinds sign in on the same form: an
+account by email, a team member by username.
 
 To create the first account, hash a password and insert the row:
 
@@ -40,15 +41,22 @@ timeline, tracker, team. One role per project is the admin, which always sees
 everything and is the only one that edits the project. Someone can hold several
 roles on the same project, and different roles on different projects.
 
-Putting somebody on a project mints their invite link. Opening it lets them in
-as themselves, with the roles they hold, and without an account:
+Putting somebody on a project mints their invite link. Opening it shows them the
+project and the roles it carries, then asks for a username and a password — that
+login is how they get in from then on, and it is the only thing the link is spent
+on. From the project card, or their profile in the Team view:
 
 - **Copy** hands the link over.
 - **Regenerate** issues a new token, which kills the link they had.
-- **Switch off** revokes the link, and whoever was using it is out on their next
-  request.
+- **Switch off** revokes the link, so nobody can use it to set a login up.
 
-Guests reach one project. Their roles decide which of its tools they can open;
-they can move the work on the boards they can see, and everything else — the
-project's settings, its roles, the roster, the links themselves — stays with the
-workspace's owner.
+**Links last three days.** Past that the link is dead, and a fresh one takes its
+place — the next time an admin looks at the memberships, what they see is a live
+link rather than an expired one. Once somebody has set their login up, their link
+is spent and the row says so; taking them off the project is what ends their
+access after that.
+
+A signed-in member reaches the projects they are on, through the roles they hold
+on each. They can move the work on the boards those roles open; everything else —
+the project's settings, its roles, the roster, the links themselves — stays with
+the workspace's owner.

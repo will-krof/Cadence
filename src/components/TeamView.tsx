@@ -390,6 +390,7 @@ function ProfileCard({
       roles: { id: string; name: string }[];
       viaTasks: boolean;
       invite: Invite | null;
+      hasLogin: boolean;
     }[] = [];
     const seen = new Set<string>();
 
@@ -405,6 +406,7 @@ function ProfileCard({
         roles: project.roles.filter((r) => membership.roleIds.includes(r.id)),
         viaTasks: false,
         invite: membership.invite,
+        hasLogin: membership.hasLogin,
       });
     }
 
@@ -418,6 +420,7 @@ function ProfileCard({
         viaTasks: true,
         // Carrying a task isn't being put on the project, so there is no link.
         invite: null,
+        hasLogin: false,
       });
     }
 
@@ -565,6 +568,7 @@ function ProfileCard({
                   <InviteRow
                     person={person}
                     invite={row.invite}
+                    hasLogin={row.hasLogin}
                     onRotate={() => onRotateInvite(row.id, person.id)}
                     onRevoke={() => onRevokeInvite(row.id, person.id)}
                   />

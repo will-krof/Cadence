@@ -681,7 +681,10 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       setMemberships((prev) =>
         prev.some(isTheirs)
           ? prev.map((m) => (isTheirs(m) ? { ...m, roleIds } : m))
-          : [...prev, { projectId, developerId, roleIds, invite: null }]
+          : [
+              ...prev,
+              { projectId, developerId, roleIds, hasLogin: false, invite: null },
+            ]
       );
 
       const res = await fetch(`/api/projects/${projectId}/members`, {

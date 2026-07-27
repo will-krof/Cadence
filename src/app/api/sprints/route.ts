@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { projectFilter, requireUser } from "@/lib/api-auth";
-import { requireViewer } from "@/lib/viewer";
+import { placeOn, requireViewer } from "@/lib/viewer";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -12,9 +12,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "projectId is required" }, { status: 400 });
   }
 
-  if (viewer.kind === "guest" && projectId !== viewer.projectId) {
+  if (viewer.kind === "member" && !placeOn(viewer, projectId)) {
     return NextResponse.json(
-      { error: "Your invite isn't for that project" },
+      { error: "You are not on that project" },
       { status: 403 }
     );
   }

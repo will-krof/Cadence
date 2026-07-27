@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { Field } from "@/components/ui";
 
 /**
- * Logging in, and only logging in. Accounts aren't self-served: people join a
- * project through an invite link, so there is nothing to sign up for.
+ * Logging in, and only logging in. Accounts aren't self-served: team members get
+ * their login from an invite link, so there is nothing to sign up for. One field
+ * takes either — a workspace email, or a member's username.
  */
 export function AuthForm() {
   const router = useRouter();
 
-  const [email, setEmail] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -25,7 +26,7 @@ export function AuthForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ login, password }),
       });
 
       if (!res.ok) {
@@ -45,16 +46,15 @@ export function AuthForm() {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3.5">
-      <Field label="Email">
+      <Field label="Email or username">
         <input
           autoFocus
-          type="email"
           required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          value={login}
+          onChange={(e) => setLogin(e.target.value)}
           className="input"
-          placeholder="you@example.com"
-          autoComplete="email"
+          placeholder="you@example.com or alex.ivanenko"
+          autoComplete="username"
         />
       </Field>
 
@@ -88,8 +88,8 @@ export function AuthForm() {
       </button>
 
       <p className="mt-1 text-center text-[0.75rem] leading-relaxed text-[var(--ink-secondary)]">
-        Been sent an invite link? Open it — it takes you straight to the project,
-        no account needed.
+        Been sent an invite link? Open it to pick your username and password —
+        it works for three days.
       </p>
     </form>
   );

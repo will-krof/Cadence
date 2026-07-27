@@ -495,6 +495,7 @@ function PeopleSection({
                   <InviteRow
                     person={person}
                     invite={membership.invite}
+                    hasLogin={membership.hasLogin}
                     onRotate={() => onRotateInvite(project.id, person.id)}
                     onRevoke={() => onRevokeInvite(project.id, person.id)}
                   />

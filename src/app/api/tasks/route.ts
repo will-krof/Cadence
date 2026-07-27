@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { projectFilter, workspaceOwnerId } from "@/lib/api-auth";
-import { guestDenied, requireViewer } from "@/lib/viewer";
+import { boardFilter, workspaceOwnerId } from "@/lib/api-auth";
+import { memberDenied, requireViewer } from "@/lib/viewer";
 import { TASK_FIELDS } from "@/lib/task-select";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
@@ -14,13 +14,13 @@ export async function GET(request: NextRequest) {
 
   const params = request.nextUrl.searchParams;
   const projectId = params.get("projectId");
-  if (guestDenied(viewer, projectId)) return forbidden();
+  if (memberDenied(viewer, projectId)) return forbidden();
 
   // scope=all powers the Team view, which only needs to know who works where —
   // not the tasks themselves.
   if (params.get("scope") === "all") {
     const assignments = await prisma.task.findMany({
-      where: { ...projectFilter(viewer), developerId: { not: null } },
+      where: { ...boardFilter(viewer), developerId: { not: null } },
       select: { developerId: true, projectId: true },
       distinct: ["developerId", "projectId"],
     });
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     // Scoping through the project relation keeps other workspaces' tasks out
     // even when an arbitrary projectId is supplied.
     where: {
-      ...projectFilter(viewer),
+      ...boardFilter(viewer),
       ...(projectId ? { projectId } : {}),
     },
     // The assignee's profile is left out on purpose: the client already holds
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  if (guestDenied(viewer, body.projectId)) return forbidden();
+  if (memberDenied(viewer, body.projectId)) return forbidden();
 
   const ownerId = workspaceOwnerId(viewer);
 

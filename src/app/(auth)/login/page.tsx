@@ -8,7 +8,7 @@ export default function LoginPage() {
     <>
       <h1 className="mb-1 text-lg font-semibold tracking-tight">Welcome back</h1>
       <p className="mb-5 text-[0.8125rem] text-[var(--ink-secondary)]">
-        Log in to your workspace.
+        Your workspace email, or the username your invite link set up.
       </p>
       <AuthForm />
     </>

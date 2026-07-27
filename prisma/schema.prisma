@@ -58,13 +58,35 @@ model Developer {
   active         Boolean   @default(true)
   notes          String?
 
+  /// The login they set up when they followed an invite link. Nothing until
+  /// then: most of a roster never signs in, and a profile doesn't need one.
+  /// One login per person, not per project — what they reach is decided by the
+  /// projects they are a member of, and the roles they hold on each.
+  username     String? @unique
+  passwordHash String?
+
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   tasks     Task[]
   memberships ProjectMember[]
+  sessions    DeveloperSession[]
 
   @@index([userId])
+}
+
+/// A signed-in team member. Kept apart from `Session` because the two answer
+/// different questions: that one is an account holding a workspace, this one is
+/// a person holding roles on some of its projects.
+model DeveloperSession {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  developerId String
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  @@index([developerId])
 }
 
 model Project {
@@ -120,13 +142,16 @@ model ProjectMember {
   roles     MemberRole[]
   createdAt DateTime     @default(now())
 
-  /// The invite link that lets this person into the project as themselves,
-  /// seeing whatever their roles see. Made when they are put on the project;
-  /// rotating it replaces the token, which is what makes the old link dead.
-  /// Held as issued rather than hashed so the admin can copy it again later —
-  /// it grants one project's roles, and rotating or revoking it is one click.
+  /// The invite link that lets this person set up their login for the project.
+  /// Made when they are put on the project; rotating it replaces the token,
+  /// which is what makes the old link dead. Held as issued rather than hashed
+  /// so the admin can copy it again later — on its own it grants nothing but
+  /// the chance to pick a username and a password.
   inviteToken     String?   @unique
   inviteCreatedAt DateTime?
+  /// A link is good for three days. Past that it stops working and a fresh one
+  /// takes its place, so an unopened invite is never a link that lives forever.
+  inviteExpiresAt DateTime?
   /// Revoked links stay on the row: the admin can see there was one, and can
   /// hand out a new one without the old one ever working again.
   inviteRevoked   Boolean   @default(false)

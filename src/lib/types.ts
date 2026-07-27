@@ -61,10 +61,16 @@ export interface Developer {
   employmentType: EmploymentType | null;
   active: boolean;
   notes: string | null;
+  /** The login they picked when they followed an invite link, if they have. */
+  username: string | null;
   createdAt: string;
 }
 
-export type DeveloperInput = Omit<Developer, "id" | "createdAt">;
+/** What a profile form writes. The username is theirs to pick, not an admin's. */
+export type DeveloperInput = Omit<
+  Developer,
+  "id" | "createdAt" | "username"
+>;
 
 export interface ProjectRole {
   id: string;
@@ -150,15 +156,18 @@ export interface Assignment {
 }
 
 /**
- * The link that lets one person into one project as themselves. `token` is
- * null once the link has been revoked — there is nothing left to copy, but the
- * row still says there was one.
+ * The link that lets one person set up their login for a project. It lasts
+ * three days; past that it is replaced by a fresh one. `token` is null once the
+ * link has been revoked — there is nothing left to copy, but the row still says
+ * there was one.
  */
 export interface Invite {
   token: string | null;
   createdAt: string | null;
+  /** Links last three days; past this one is dead and a new one takes over. */
+  expiresAt: string | null;
   revoked: boolean;
-  /** When the link was first opened, or null if it never was. */
+  /** When the link was used to set a login up, or null if it never was. */
   usedAt: string | null;
 }
 
@@ -167,7 +176,9 @@ export interface Membership {
   projectId: string;
   developerId: string;
   roleIds: string[];
-  /** Only ever sent to the project's owner; a guest sees null. */
+  /** True once this person has set their login up through the link. */
+  hasLogin: boolean;
+  /** Only ever sent to the project's owner; a member sees null. */
   invite: Invite | null;
 }
 

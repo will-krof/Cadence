@@ -1,14 +1,14 @@
 import { prisma } from "@/lib/prisma";
-import { developerScope, projectFilter } from "@/lib/api-auth";
+import { developerScope, teamFilter } from "@/lib/api-auth";
 import { requireViewer } from "@/lib/viewer";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
  * Everything assigned to one person, across every project they appear in —
- * the board only ever holds the active project's tasks. A guest sees this
- * through their own project: their roles have to include the Team view, and
- * the work listed is the work on that project.
+ * the board only ever holds the active project's tasks. A team member sees this
+ * through their own projects: their roles have to include the Team view, and
+ * the work listed is the work on the projects where they do.
  */
 export async function GET(
   request: NextRequest,
@@ -16,7 +16,7 @@ export async function GET(
 ) {
   const { viewer, response } = await requireViewer();
   if (response) return response;
-  if (viewer.kind === "guest" && !viewer.canViewTeam) {
+  if (viewer.kind === "member" && !viewer.places.some((p) => p.canViewTeam)) {
     return NextResponse.json(
       { error: "Your role can't see the team" },
       { status: 403 }
@@ -36,7 +36,7 @@ export async function GET(
   // The card lists a title, a status, a due date and the project — nothing else
   // needs to travel.
   const tasks = await prisma.task.findMany({
-    where: { developerId: id, ...projectFilter(viewer) },
+    where: { developerId: id, ...teamFilter(viewer) },
     select: {
       id: true,
       title: true,
