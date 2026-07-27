@@ -48,6 +48,9 @@ export async function PATCH(
       number,
       startDate: body.startDate ? new Date(body.startDate) : undefined,
       endDate: body.endDate ? new Date(body.endDate) : undefined,
+      // Archiving is the gentle end of a sprint: nothing moves, it just stops
+      // being one of the sprints the project is working through.
+      archived: typeof body.archived === "boolean" ? body.archived : undefined,
     },
   });
   return NextResponse.json(updated);

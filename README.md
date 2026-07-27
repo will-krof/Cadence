@@ -59,6 +59,15 @@ link rather than an expired one. Once somebody has set their login up, their lin
 is spent and the row says so; taking them off the project is what ends their
 access after that.
 
+## Sprints
+
+A project runs as a series of sprints, and each one is its own board. When a
+sprint is done with, **Archive** puts it away: nothing moves, and its tasks stay
+where they are. It drops out of the run of sprints on the project card into an
+"Archived" group, and a board never lands on it — though it can still be opened
+from the sprint picker, under "Archived", so the work in it stays reachable.
+**Restore** brings it back.
+
 ## Sharing a profile
 
 Every profile has an address of its own — `/people/<id>` — and a **Share** button

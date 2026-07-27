@@ -7,6 +7,7 @@ import { InviteRow } from "@/components/InviteRow";
 import {
   Avatar,
   CloseIcon,
+  Disclosure,
   Field,
   LazySelect,
   RoleChips,
@@ -209,7 +210,13 @@ export function ProjectOverview({
           <Metric
             label="Sprints"
             value={projectLoading ? null : String(sprints.length)}
-            hint={sprint ? `Sprint ${sprint.number} on show` : "None planned"}
+            hint={
+              sprint
+                ? `Sprint ${sprint.number} on show`
+                : sprints.length > 0
+                  ? "All archived"
+                  : "None planned"
+            }
           />
           <Metric
             label="Tasks"
@@ -426,20 +433,31 @@ function PeopleSection({
 
   return (
     <section className="flex flex-col gap-2.5">
-      <div>
-        <h3 className="text-[0.8125rem] font-semibold tracking-tight">
-          People
-          {!loading && (
-            <span className="ml-2 font-normal text-[var(--ink-muted)]">
-              {people.length}
-            </span>
-          )}
-        </h3>
-        <p className="text-[0.75rem] text-[var(--ink-muted)]">
-          Who works on this project, and in which of its roles.
-        </p>
-      </div>
-
+      {/* A busy project can hold dozens of people, and each row carries roles
+          and an invite link — folded away, the rest of the card stays reachable
+          without scrolling past all of them. */}
+      <Disclosure
+        label="People"
+        count={loading ? undefined : people.length}
+        hint="Who works on this project, and in which of its roles."
+        summary={
+          people.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {people.slice(0, 12).map((person) => (
+                <span key={person.id} title={person.name}>
+                  <Avatar person={person} size={22} />
+                </span>
+              ))}
+              {people.length > 12 && (
+                <span className="text-[0.75rem] text-[var(--ink-muted)]">
+                  +{people.length - 12}
+                </span>
+              )}
+            </div>
+          ) : undefined
+        }
+      >
+        <div className="flex flex-col gap-2.5">
       {loading ? (
         <p className="text-[0.8125rem] text-[var(--ink-muted)]">Loading…</p>
       ) : people.length === 0 ? (
@@ -556,6 +574,8 @@ function PeopleSection({
           Open Team
         </button>
       )}
+        </div>
+      </Disclosure>
     </section>
   );
 }
@@ -741,6 +761,9 @@ function SprintsSection({
 
   const unplanned = tasks.filter((t) => !t.sprintId).length;
 
+  const live = sprints.filter((s) => !s.archived);
+  const archived = sprints.filter((s) => s.archived);
+
   // A new sprint follows the last one: the next number, the fortnight after.
   const last = sprints[sprints.length - 1];
   const suggested = {
@@ -791,8 +814,14 @@ function SprintsSection({
         </p>
       )}
 
+      {live.length === 0 && archived.length > 0 && !adding && (
+        <p className="text-[0.8125rem] text-[var(--ink-muted)]">
+          Every sprint is archived.
+        </p>
+      )}
+
       <ul className="flex flex-col gap-1.5">
-        {sprints.map((sprint) => (
+        {live.map((sprint) => (
           <SprintRow
             key={sprint.id}
             sprint={sprint}
@@ -803,6 +832,29 @@ function SprintsSection({
           />
         ))}
       </ul>
+
+      {/* Archived sprints are out of the way but not gone: their work is still
+          on the boards, and they can be brought back. */}
+      {archived.length > 0 && (
+        <Disclosure
+          label="Archived"
+          count={archived.length}
+          defaultOpen={false}
+        >
+          <ul className="flex flex-col gap-1.5 pt-1.5">
+            {archived.map((sprint) => (
+              <SprintRow
+                key={sprint.id}
+                sprint={sprint}
+                taskCount={counts.get(sprint.id) ?? 0}
+                canEdit={canEdit}
+                onUpdate={onUpdate}
+                onDelete={() => remove(sprint)}
+              />
+            ))}
+          </ul>
+        </Disclosure>
+      )}
 
       {adding && (
         <SprintForm
@@ -844,14 +896,23 @@ function SprintRow({
     toISODate(new Date(sprint.endDate)) >= today;
 
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2">
+    <li
+      className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2 ${
+        sprint.archived ? "opacity-60" : ""
+      }`}
+    >
       <span className="flex items-center gap-2">
         <span className="text-[0.8125rem] font-medium">
           Sprint {sprint.number}
         </span>
-        {running && (
+        {running && !sprint.archived && (
           <span className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.5625rem] uppercase tracking-wide text-[var(--accent)]">
             Running
+          </span>
+        )}
+        {sprint.archived && (
+          <span className="rounded-full bg-[var(--gridline)] px-2 py-0.5 text-[0.5625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
+            Archived
           </span>
         )}
       </span>
@@ -884,14 +945,29 @@ function SprintRow({
       </span>
 
       {canEdit && (
-        <button
-          onClick={onDelete}
-          className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
-          aria-label={`Delete sprint ${sprint.number}`}
-          title="Delete sprint"
-        >
-          <CloseIcon />
-        </button>
+        <>
+          <button
+            onClick={() =>
+              onUpdate(sprint.id, { archived: !sprint.archived })
+            }
+            className="btn-secondary !px-2 !py-1"
+            title={
+              sprint.archived
+                ? "Bring this sprint back into the run"
+                : "Put this sprint away — its tasks stay where they are"
+            }
+          >
+            {sprint.archived ? "Restore" : "Archive"}
+          </button>
+          <button
+            onClick={onDelete}
+            className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
+            aria-label={`Delete sprint ${sprint.number}`}
+            title="Delete sprint"
+          >
+            <CloseIcon />
+          </button>
+        </>
       )}
     </li>
   );
@@ -967,7 +1043,7 @@ function SprintForm({
           className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
           disabled={pending || !valid}
         >
-          {pending ? "Planning…" : "Plan sprint"}
+          {pending ? "Creating…" : "Create sprint"}
         </button>
       </div>
       {endDate < startDate && (
@@ -983,6 +1059,8 @@ interface SprintPatch {
   number?: number;
   startDate?: string;
   endDate?: string;
+  /** Archiving puts a sprint away without touching the work in it. */
+  archived?: boolean;
 }
 
 function Metric({

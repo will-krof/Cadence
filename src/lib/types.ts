@@ -133,6 +133,8 @@ export interface Sprint {
   number: number;
   startDate: string;
   endDate: string;
+  /** Put away: still openable, but no longer part of the run of sprints. */
+  archived: boolean;
   createdAt: string;
   updatedAt: string;
 }

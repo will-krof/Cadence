@@ -45,6 +45,7 @@ interface SprintPatch {
   number?: number;
   startDate?: string;
   endDate?: string;
+  archived?: boolean;
 }
 
 interface ProjectInput {
@@ -175,18 +176,20 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   );
 
   // Falls back to the sprint today sits in, then the last one — opening a
-  // project lands on the board being worked on rather than the oldest.
+  // project lands on the board being worked on rather than the oldest. An
+  // archived sprint is never landed on, though it can still be chosen.
   const sprint = useMemo(() => {
     if (sprintId === UNPLANNED) return null;
     if (sprintId) return sprints.find((s) => s.id === sprintId) ?? null;
-    if (sprints.length === 0) return null;
+    const live = sprints.filter((s) => !s.archived);
+    if (live.length === 0) return null;
     const today = startOfDay(new Date()).getTime();
-    const current = sprints.find(
+    const current = live.find(
       (s) =>
         startOfDay(new Date(s.startDate)).getTime() <= today &&
         startOfDay(new Date(s.endDate)).getTime() >= today
     );
-    return current ?? sprints[sprints.length - 1];
+    return current ?? live[live.length - 1];
   }, [sprintId, sprints]);
 
   /** What the boards show: one sprint's worth of work. */

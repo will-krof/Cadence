@@ -101,12 +101,27 @@ export function SprintPicker({
         className="select w-56"
         aria-label="Sprint on show"
       >
-        {sprints.map((s) => (
-          <option key={s.id} value={s.id}>
-            {`Sprint ${s.number} · ${formatRange(s.startDate, s.endDate)}`}
-          </option>
-        ))}
+        {sprints
+          .filter((s) => !s.archived)
+          .map((s) => (
+            <option key={s.id} value={s.id}>
+              {`Sprint ${s.number} · ${formatRange(s.startDate, s.endDate)}`}
+            </option>
+          ))}
         {hasUnplanned && <option value={UNPLANNED}>Unplanned</option>}
+        {/* Archived sprints are still openable — their work didn't go
+            anywhere — they just sit apart from the ones being worked through. */}
+        {sprints.some((s) => s.archived) && (
+          <optgroup label="Archived">
+            {sprints
+              .filter((s) => s.archived)
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {`Sprint ${s.number} · ${formatRange(s.startDate, s.endDate)}`}
+                </option>
+              ))}
+          </optgroup>
+        )}
       </select>
     </label>
   );
@@ -267,6 +282,79 @@ export function StatusPill({
         ariaLabel="Task status"
       />
     </div>
+  );
+}
+
+/**
+ * A section that can be folded away. Used where a list has no natural length —
+ * the people on a project, the sprints that have been archived — so one long
+ * list can't push everything else off the card.
+ */
+export function Disclosure({
+  label,
+  count,
+  hint,
+  defaultOpen = true,
+  summary,
+  children,
+}: {
+  label: string;
+  count?: number;
+  hint?: string;
+  defaultOpen?: boolean;
+  /** Shown in place of the children while folded, if anything should be. */
+  summary?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex items-center gap-1.5 text-left"
+        >
+          <Chevron open={open} />
+          <span className="text-[0.8125rem] font-semibold tracking-tight">
+            {label}
+          </span>
+          {count !== undefined && (
+            <span className="text-[0.8125rem] font-normal text-[var(--ink-muted)]">
+              {count}
+            </span>
+          )}
+        </button>
+        {hint && (
+          <span className="text-[0.75rem] text-[var(--ink-muted)]">{hint}</span>
+        )}
+      </div>
+      {open ? children : summary}
+    </div>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      fill="none"
+      aria-hidden="true"
+      className={`shrink-0 text-[var(--ink-muted)] transition-transform ${
+        open ? "rotate-90" : ""
+      }`}
+    >
+      <path
+        d="M3.5 1.5L7 5l-3.5 3.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

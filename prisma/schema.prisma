@@ -211,6 +211,10 @@ model Sprint {
   number    Int      @default(1)
   startDate DateTime
   endDate   DateTime
+  /// A sprint that has been put away. Its tasks stay where they are and it can
+  /// still be opened on a board; it just stops being one of the sprints the
+  /// project is working through, and stops being the one a board lands on.
+  archived  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tasks     Task[]

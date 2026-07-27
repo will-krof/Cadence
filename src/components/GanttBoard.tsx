@@ -80,7 +80,9 @@ export function GanttBoard() {
   const barRefs = useRef(new Map<string, HTMLDivElement>());
   const tipRefs = useRef(new Map<string, HTMLSpanElement>());
 
-  const [hideWeekends, setHideWeekends] = useState(false);
+  // Weekends are hidden to begin with: most plans don't run over them, and the
+  // columns they add are two-fifths of the width for none of the work.
+  const [hideWeekends, setHideWeekends] = useState(true);
   const [compact, setCompact] = useState(false);
   const [colWidths, setColWidths] = useState<ColWidths>(COL_WIDTHS_WIDE);
 
