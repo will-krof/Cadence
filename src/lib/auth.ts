@@ -44,6 +44,17 @@ export async function verifyPassword(
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
+/**
+ * The work a password check costs, done against nothing. Called when no account
+ * matched, so a failed sign-in takes about as long either way and the timing
+ * doesn't say whether the name exists.
+ */
+export async function burnPasswordTime(password: string) {
+  await scrypt(password.slice(0, 200), randomBytes(16), KEY_LENGTH).catch(
+    () => {}
+  );
+}
+
 /** Sessions are looked up by hash, so a database leak can't be replayed. */
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");

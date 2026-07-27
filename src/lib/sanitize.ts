@@ -1,0 +1,68 @@
+/**
+ * What the server will accept from a browser, in one place. Every field here is
+ * something a signed-in person types, and some of them come back out into an
+ * `href` or a style, so the rules are about what can't be allowed to travel
+ * rather than about tidy input.
+ */
+
+/** Caps, so one request can't fill a row with a megabyte of text. */
+export const LIMITS = {
+  name: 120,
+  title: 200,
+  description: 5_000,
+  link: 2_000,
+  notes: 5_000,
+  email: 200,
+  phone: 40,
+  roleName: 60,
+  /** Base64 of a 256px JPEG, with room to spare. */
+  avatar: 400_000,
+  /** scrypt is deliberately slow, so a password is not an open-ended input. */
+  password: 200,
+  /** Nobody holds hundreds of roles on one project. */
+  roleIds: 50,
+} as const;
+
+/**
+ * A link that is safe to put in an `href`. Only http and https survive:
+ * `javascript:` and `data:` in a link are a script waiting for a click, and no
+ * task needs them.
+ */
+export function safeHttpUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > LIMITS.link) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+/** `#rgb` or `#rrggbb`. Colours reach a `style`, so nothing else goes in one. */
+export function safeColor(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(trimmed) ? trimmed : null;
+}
+
+/** Image data URLs only, and only formats a browser draws as an image. */
+export function safeAvatar(value: string): boolean {
+  return (
+    /^data:image\/(png|jpeg|jpg|webp|gif);base64,[a-z0-9+/=\s]+$/i.test(value) &&
+    value.length <= LIMITS.avatar
+  );
+}
+
+/** Trimmed text, or null. Anything longer than the cap is a 400, not a slice. */
+export function boundedText(
+  value: unknown,
+  max: number
+): { value: string | null } | { tooLong: true } {
+  if (typeof value !== "string") return { value: null };
+  const trimmed = value.trim();
+  if (trimmed.length > max) return { tooLong: true };
+  return { value: trimmed || null };
+}

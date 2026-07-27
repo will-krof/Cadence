@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import { LIMITS } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
 
 /** 404 rather than 403, same as everywhere else — don't confirm it exists. */
@@ -36,6 +37,12 @@ export async function PATCH(
   }
 
   const name = typeof body.name === "string" ? body.name.trim() : undefined;
+  if (name !== undefined && name.length > LIMITS.roleName) {
+    return NextResponse.json(
+      { error: `A role name is ${LIMITS.roleName} characters or fewer` },
+      { status: 400 }
+    );
+  }
   if (name === "") {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }

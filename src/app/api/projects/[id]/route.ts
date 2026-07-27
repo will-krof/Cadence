@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import { PROJECT_FIELDS } from "@/lib/project-select";
+import { boundedText, LIMITS } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
 
 /** 404 rather than 403 for someone else's project — don't confirm it exists. */
@@ -14,7 +16,13 @@ export async function PATCH(
   if (response) return response;
 
   const { id } = await ctx.params;
-  const body = await request.json();
+  const body = await request.json().catch(() => ({}));
+
+  const named = boundedText(body.name, LIMITS.name);
+  const described = boundedText(body.description, LIMITS.description);
+  if ("tooLong" in named || "tooLong" in described) {
+    return NextResponse.json({ error: "That is too long" }, { status: 400 });
+  }
 
   const owned = await prisma.project.findFirst({
     where: { id, userId: user.id },
@@ -25,18 +33,15 @@ export async function PATCH(
   const project = await prisma.project.update({
     where: { id },
     data: {
-      name: typeof body.name === "string" ? body.name.trim() : undefined,
-      description:
-        body.description === undefined
-          ? undefined
-          : body.description?.trim() || null,
+      name: named.value ?? undefined,
+      description: body.description === undefined ? undefined : described.value,
       hasTimeline:
         typeof body.hasTimeline === "boolean" ? body.hasTimeline : undefined,
       hasTracker:
         typeof body.hasTracker === "boolean" ? body.hasTracker : undefined,
       hasTeam: typeof body.hasTeam === "boolean" ? body.hasTeam : undefined,
     },
-    include: { roles: { orderBy: { createdAt: "asc" } } },
+    select: PROJECT_FIELDS,
   });
   return NextResponse.json(project);
 }

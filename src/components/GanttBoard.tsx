@@ -10,6 +10,7 @@ import {
   weekdayLetter,
 } from "@/lib/dates";
 import { contrastText } from "@/lib/color";
+import { safeHttpUrl } from "@/lib/sanitize";
 import { Developer, STATUS_OPTIONS, Task, TaskRow, statusMeta } from "@/lib/types";
 import { useBoard } from "@/components/BoardProvider";
 import {
@@ -736,19 +737,23 @@ const TableRow = memo(function TableRow({
   onEdit: (id: string) => void;
   onChange: (id: string, data: Partial<TaskRow>) => void;
 }) {
+  // Checked here as well as on the way in: a title is a link to whatever the
+  // row holds, and only http and https belong in one.
+  const link = safeHttpUrl(task.link);
+
   return (
     <div
       className="group grid items-center border-b border-[var(--hairline)] transition-colors hover:bg-[var(--plane)]"
       style={{ height: ROW_HEIGHT, gridTemplateColumns }}
     >
       <div className="flex min-w-0 items-center gap-1 px-3 text-[0.8125rem]">
-        {task.link ? (
+        {link ? (
           <a
-            href={task.link}
+            href={link}
             target="_blank"
             rel="noopener noreferrer"
             className="truncate text-[var(--accent)] hover:underline"
-            title={task.description || task.link}
+            title={task.description || link}
           >
             {task.title}
           </a>

@@ -6,6 +6,7 @@ import { AssigneeSelect, Avatar, SprintPicker, StatusPill } from "@/components/u
 import { TaskModal } from "@/components/TaskModal";
 import { Developer, STATUS_OPTIONS, Task, TaskStatus } from "@/lib/types";
 import { formatDay, formatDayShort } from "@/lib/dates";
+import { safeHttpUrl } from "@/lib/sanitize";
 
 /** Pointer travel before a press turns into a drag rather than a click. */
 const DRAG_THRESHOLD = 5;
@@ -368,6 +369,10 @@ const TaskCard = memo(function TaskCard({
     });
   }
 
+  // Checked here as well as on the way in: a card title is a link to whatever
+  // the row holds, and only http and https belong in one.
+  const link = safeHttpUrl(task.link);
+
   return (
     <article
       onPointerDown={handlePointerDown}
@@ -382,9 +387,9 @@ const TaskCard = memo(function TaskCard({
       }`}
     >
       <div className="flex items-start gap-1.5">
-        {task.link ? (
+        {link ? (
           <a
-            href={task.link}
+            href={link}
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 text-[0.8125rem] font-medium leading-snug text-[var(--accent)] hover:underline"

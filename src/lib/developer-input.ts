@@ -1,4 +1,10 @@
 import { EmploymentType } from "@/lib/types";
+import {
+  boundedText,
+  LIMITS,
+  safeAvatar,
+  safeColor,
+} from "@/lib/sanitize";
 
 const EMPLOYMENT_VALUES: EmploymentType[] = [
   "FULL_TIME",
@@ -7,14 +13,7 @@ const EMPLOYMENT_VALUES: EmploymentType[] = [
   "INTERN",
 ];
 
-/** Avatars are stored inline, so keep them small enough not to bloat rows. */
-const MAX_AVATAR_CHARS = 400_000;
 
-function text(value: unknown): string | null | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") return null;
-  return value.trim() || null;
-}
 
 export interface ParsedDeveloper {
   name?: string;
@@ -41,25 +40,47 @@ export function parseDeveloper(
   const data: ParsedDeveloper = {};
 
   if (body.name !== undefined) {
-    const name = typeof body.name === "string" ? body.name.trim() : "";
-    if (!name) return { error: "Name is required" };
-    data.name = name;
+    const name = boundedText(body.name, LIMITS.name);
+    if ("tooLong" in name) {
+      return { error: `Name must be ${LIMITS.name} characters or fewer` };
+    }
+    if (!name.value) return { error: "Name is required" };
+    data.name = name.value;
   }
 
-  if (typeof body.color === "string") data.color = body.color;
+  // The colour is drawn straight into a style, so it is a hex colour or it is
+  // nothing — not somewhere to smuggle a `url()` that phones home.
+  if (body.color !== undefined) {
+    const color = safeColor(body.color);
+    if (!color) return { error: "Colour must be a hex value like #2a78d6" };
+    data.color = color;
+  }
 
-  data.role = text(body.role);
-  data.email = text(body.email);
-  data.phone = text(body.phone);
-  data.notes = text(body.notes);
+  // Free text, each with a cap: one profile shouldn't be able to carry a novel.
+  for (const field of ["role", "email", "phone", "notes"] as const) {
+    if (body[field] === undefined) continue;
+    const limit =
+      field === "notes"
+        ? LIMITS.notes
+        : field === "email"
+          ? LIMITS.email
+          : field === "phone"
+            ? LIMITS.phone
+            : LIMITS.name;
+    const parsed = boundedText(body[field], limit);
+    if ("tooLong" in parsed) {
+      return { error: `That ${field} is too long` };
+    }
+    data[field] = parsed.value;
+  }
 
   if (body.avatar !== undefined) {
     if (typeof body.avatar !== "string" || !body.avatar) {
       data.avatar = null;
-    } else if (!body.avatar.startsWith("data:image/")) {
-      return { error: "Avatar must be an image" };
-    } else if (body.avatar.length > MAX_AVATAR_CHARS) {
-      return { error: "Image is too large" };
+    } else if (!safeAvatar(body.avatar)) {
+      // Base64 PNG, JPEG, WebP or GIF, within a size a row can hold. Anything
+      // else — an SVG, a remote URL, a script-bearing data URL — is refused.
+      return { error: "Avatar must be a small PNG, JPEG, WebP or GIF image" };
     } else {
       data.avatar = body.avatar;
     }

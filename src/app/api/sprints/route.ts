@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   const { user, response } = await requireUser();
   if (response) return response;
 
-  const body = await request.json();
+  const body = await request.json().catch(() => ({}));
   if (!body.projectId || !body.startDate || !body.endDate) {
     return NextResponse.json(
       { error: "projectId, startDate and endDate are required" },
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
   });
   const asked = Number(body.number);
   const number =
-    Number.isFinite(asked) && asked >= 1
+    Number.isFinite(asked) && asked >= 1 && asked <= 10_000
       ? Math.floor(asked)
       : (highest._max.number ?? 0) + 1;
 

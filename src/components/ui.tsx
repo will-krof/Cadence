@@ -10,6 +10,7 @@ import {
   statusMeta,
 } from "@/lib/types";
 import { formatRange } from "@/lib/dates";
+import { safeColor } from "@/lib/sanitize";
 
 /**
  * A `<select>` that only holds its options once someone reaches for them.
@@ -387,7 +388,9 @@ export function Avatar({
   person: Pick<Developer, "name" | "avatar" | "color">;
   size?: number;
 }) {
-  if (person.avatar) {
+  // Only an image data URL is ever drawn: a row written before the server
+  // checked this, or by anything but this app, falls back to the initial.
+  if (person.avatar?.startsWith("data:image/")) {
     return (
       // Data URLs can't go through next/image, and these are already downscaled.
       // eslint-disable-next-line @next/next/no-img-element
@@ -405,7 +408,7 @@ export function Avatar({
       style={{
         width: size,
         height: size,
-        background: person.color,
+        background: safeColor(person.color) ?? "var(--gridline)",
         fontSize: Math.max(9, size * 0.4),
       }}
       aria-hidden="true"

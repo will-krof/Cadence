@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { freshInvite } from "@/lib/invite";
+import { LIMITS } from "@/lib/sanitize";
 import { MEMBER_FIELDS, memberPayload } from "@/lib/member-select";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -17,13 +18,20 @@ export async function PUT(
   if (response) return response;
 
   const { id } = await ctx.params;
-  const body = await request.json();
+  const body = await request.json().catch(() => ({}));
   const developerId =
     typeof body.developerId === "string" ? body.developerId : "";
   const asked: unknown[] = Array.isArray(body.roleIds) ? body.roleIds : [];
   const roleIds = [
     ...new Set(asked.filter((r): r is string => typeof r === "string")),
   ];
+
+  if (roleIds.length > LIMITS.roleIds) {
+    return NextResponse.json(
+      { error: "That is more roles than a project has" },
+      { status: 400 }
+    );
+  }
 
   if (!developerId) {
     return NextResponse.json(
@@ -129,7 +137,7 @@ export async function DELETE(
   if (response) return response;
 
   const { id } = await ctx.params;
-  const body = await request.json();
+  const body = await request.json().catch(() => ({}));
   const developerId =
     typeof body.developerId === "string" ? body.developerId : "";
 

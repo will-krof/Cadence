@@ -13,7 +13,7 @@ export async function PATCH(
   if (response) return response;
 
   const { id } = await ctx.params;
-  const body = await request.json();
+  const body = await request.json().catch(() => ({}));
 
   const sprint = await prisma.sprint.findFirst({
     where: { id, project: { userId: user.id } },
@@ -25,7 +25,7 @@ export async function PATCH(
   const number =
     body.number === undefined
       ? undefined
-      : Number.isFinite(asked) && asked >= 1
+      : Number.isFinite(asked) && asked >= 1 && asked <= 10_000
         ? Math.floor(asked)
         : undefined;
 

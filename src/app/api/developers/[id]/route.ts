@@ -15,7 +15,7 @@ export async function PATCH(
   if (response) return response;
 
   const { id } = await ctx.params;
-  const body = await request.json();
+  const body = await request.json().catch(() => ({}));
 
   const owned = await prisma.developer.findFirst({
     where: { id, userId: user.id },

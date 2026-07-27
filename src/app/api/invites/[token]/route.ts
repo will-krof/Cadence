@@ -7,6 +7,8 @@ import {
   usernameProblem,
 } from "@/lib/auth";
 import { freshInvite, inviteHasExpired } from "@/lib/invite";
+import { INVITE_LIMIT, rateLimited } from "@/lib/rate-limit";
+import { LIMITS } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
 
 const dead = () =>
@@ -24,11 +26,23 @@ export async function POST(
   request: NextRequest,
   ctx: RouteContext<"/api/invites/[token]">
 ) {
+  // A token is 24 random bytes, so guessing one is hopeless — but a limit costs
+  // nothing and takes hopeless down to pointless.
+  const limited = rateLimited(request, "invite", INVITE_LIMIT);
+  if (limited) return limited;
+
   const { token } = await ctx.params;
   const body = await request.json().catch(() => ({}));
 
   const username = normalizeUsername(body.username);
   const password = typeof body.password === "string" ? body.password : "";
+
+  if (password.length > LIMITS.password) {
+    return NextResponse.json(
+      { error: `Password must be ${LIMITS.password} characters or fewer` },
+      { status: 400 }
+    );
+  }
 
   const member = await prisma.projectMember.findFirst({
     where: { inviteToken: token, inviteRevoked: false },
@@ -88,10 +102,20 @@ export async function POST(
     );
   }
 
-  await prisma.developer.update({
-    where: { id: member.developer.id },
-    data: { username, passwordHash: await hashPassword(password) },
-  });
+  // The check above and this write aren't one step, so two people picking the
+  // same name at the same moment is decided here, by the unique index — and it
+  // reads as "taken" rather than as something going wrong.
+  try {
+    await prisma.developer.update({
+      where: { id: member.developer.id },
+      data: { username, passwordHash: await hashPassword(password) },
+    });
+  } catch {
+    return NextResponse.json(
+      { error: "That username is taken — try another" },
+      { status: 409 }
+    );
+  }
   // The link is spent, and saying when it was taken up is worth keeping.
   await prisma.projectMember.update({
     where: { id: member.id },

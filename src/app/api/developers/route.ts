@@ -2,13 +2,28 @@ import { prisma } from "@/lib/prisma";
 import { developerScope, requireUser } from "@/lib/api-auth";
 import { requireViewer } from "@/lib/viewer";
 import { parseDeveloper } from "@/lib/developer-input";
-import { DEVELOPER_FIELDS } from "@/lib/developer-select";
+import {
+  DEVELOPER_FIELDS,
+  TEAMMATE_FIELDS,
+  teammatePayload,
+} from "@/lib/developer-select";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   const { viewer, response } = await requireViewer();
   if (response) return response;
+
+  // A team member is shown who their colleagues are, not what the workspace
+  // knows about them: salaries, phone numbers and notes stay server-side.
+  if (viewer.kind === "member") {
+    const teammates = await prisma.developer.findMany({
+      where: developerScope(viewer),
+      select: TEAMMATE_FIELDS,
+      orderBy: { createdAt: "asc" },
+    });
+    return jsonResponse(request, teammates.map(teammatePayload));
+  }
 
   // Profiles carry avatars, so this is the other response worth compressing.
   const developers = await prisma.developer.findMany({
@@ -23,7 +38,7 @@ export async function POST(request: NextRequest) {
   const { user, response } = await requireUser();
   if (response) return response;
 
-  const body = await request.json();
+  const body = await request.json().catch(() => ({}));
   if (!body.name) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }

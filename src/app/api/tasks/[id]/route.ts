@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { boardFilter, workspaceOwnerId } from "@/lib/api-auth";
 import { memberDenied, requireViewer } from "@/lib/viewer";
 import { TASK_FIELDS } from "@/lib/task-select";
+import { parseTask } from "@/lib/task-input";
 import { NextRequest, NextResponse } from "next/server";
 
 const notFound = () =>
@@ -17,15 +18,20 @@ export async function PATCH(
   const { viewer, response } = await requireViewer();
   if (response) return response;
   // Which project the task is in is settled by the lookup below; this is the
-  // role's say on whether a guest may touch tasks at all.
+  // role's say on whether a member may touch tasks at all.
   if (memberDenied(viewer, null)) return forbidden();
 
   const { id } = await ctx.params;
-  const body = await request.json();
+  const body = await request.json().catch(() => ({}));
+
+  const parsed = parseTask(body);
+  if ("error" in parsed) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
 
   const reachable = await prisma.task.findFirst({
     where: { id, ...boardFilter(viewer) },
-    select: { id: true },
+    select: { id: true, projectId: true },
   });
   if (!reachable) return notFound();
 
@@ -40,22 +46,27 @@ export async function PATCH(
     }
   }
 
+  // Moving a task between sprints stays inside its own project.
+  if (body.sprintId) {
+    const sprint = await prisma.sprint.findFirst({
+      where: { id: body.sprintId, projectId: reachable.projectId },
+      select: { id: true },
+    });
+    if (!sprint) {
+      return NextResponse.json(
+        { error: "That sprint is not on this project" },
+        { status: 404 }
+      );
+    }
+  }
+
   const task = await prisma.task.update({
     where: { id },
     data: {
-      title: typeof body.title === "string" ? body.title.trim() : undefined,
-      description:
-        body.description === undefined
-          ? undefined
-          : body.description?.trim() || null,
-      link: body.link === undefined ? undefined : body.link?.trim() || null,
-      status: body.status || undefined,
-      startDate: body.startDate ? new Date(body.startDate) : undefined,
-      endDate: body.endDate ? new Date(body.endDate) : undefined,
+      ...parsed.data,
       developerId:
         body.developerId === undefined ? undefined : body.developerId || null,
       sprintId: body.sprintId === undefined ? undefined : body.sprintId || null,
-      order: typeof body.order === "number" ? body.order : undefined,
     },
     select: TASK_FIELDS,
   });

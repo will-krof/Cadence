@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { boardFilter, workspaceOwnerId } from "@/lib/api-auth";
 import { memberDenied, requireViewer } from "@/lib/viewer";
 import { TASK_FIELDS } from "@/lib/task-select";
+import { parseTask } from "@/lib/task-input";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -46,21 +47,26 @@ export async function POST(request: NextRequest) {
   const { viewer, response } = await requireViewer();
   if (response) return response;
 
-  const body = await request.json();
-  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const body = await request.json().catch(() => ({}));
+  const projectId = typeof body.projectId === "string" ? body.projectId : "";
 
-  if (!title || !body.startDate || !body.endDate || !body.projectId) {
+  const parsed = parseTask(body);
+  if ("error" in parsed) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const { title, startDate, endDate } = parsed.data;
+  if (!projectId || !title || !startDate || !endDate) {
     return NextResponse.json(
       { error: "projectId, title, startDate and endDate are required" },
       { status: 400 }
     );
   }
-  if (memberDenied(viewer, body.projectId)) return forbidden();
+  if (memberDenied(viewer, projectId)) return forbidden();
 
   const ownerId = workspaceOwnerId(viewer);
 
   const project = await prisma.project.findFirst({
-    where: { id: body.projectId, userId: ownerId },
+    where: { id: projectId, userId: ownerId },
     select: { id: true },
   });
   if (!project) {
@@ -81,20 +87,34 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // A task belongs to a sprint of its own project. Without this, an id from
+  // somewhere else would file the work under a stranger's sprint.
+  if (body.sprintId) {
+    const sprint = await prisma.sprint.findFirst({
+      where: { id: body.sprintId, projectId },
+      select: { id: true },
+    });
+    if (!sprint) {
+      return NextResponse.json(
+        { error: "That sprint is not on this project" },
+        { status: 404 }
+      );
+    }
+  }
+
   const maxOrder = await prisma.task.aggregate({
-    where: { projectId: body.projectId },
+    where: { projectId },
     _max: { order: true },
   });
 
   const task = await prisma.task.create({
     data: {
+      ...parsed.data,
       title,
-      description: body.description?.trim() || null,
-      link: body.link?.trim() || null,
-      status: body.status || "TODO",
-      startDate: new Date(body.startDate),
-      endDate: new Date(body.endDate),
-      projectId: body.projectId,
+      startDate,
+      endDate,
+      status: parsed.data.status ?? "TODO",
+      projectId,
       developerId: body.developerId || null,
       sprintId: body.sprintId || null,
       order: (maxOrder._max.order ?? 0) + 1,

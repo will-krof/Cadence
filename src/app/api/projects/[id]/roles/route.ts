@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import { boundedText, LIMITS } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(
@@ -10,9 +11,15 @@ export async function POST(
   if (response) return response;
 
   const { id } = await ctx.params;
-  const body = await request.json();
-  const name = typeof body.name === "string" ? body.name.trim() : "";
-
+  const body = await request.json().catch(() => ({}));
+  const named = boundedText(body.name, LIMITS.roleName);
+  if ("tooLong" in named) {
+    return NextResponse.json(
+      { error: `A role name is ${LIMITS.roleName} characters or fewer` },
+      { status: 400 }
+    );
+  }
+  const name = named.value;
   if (!name) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }

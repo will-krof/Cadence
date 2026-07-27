@@ -1,18 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { projectScope, requireUser } from "@/lib/api-auth";
 import { requireViewer } from "@/lib/viewer";
+import { PROJECT_FIELDS } from "@/lib/project-select";
+import { boundedText, LIMITS } from "@/lib/sanitize";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
-  // A guest sees one project — the one their invite link is for.
+  // A member sees the projects they are on; the owner sees the workspace.
   const { viewer, response } = await requireViewer();
   if (response) return response;
 
   const projects = await prisma.project.findMany({
     where: projectScope(viewer),
     orderBy: { createdAt: "asc" },
-    include: { roles: { orderBy: { createdAt: "asc" } } },
+    select: PROJECT_FIELDS,
   });
   return jsonResponse(request, projects);
 }
@@ -21,9 +23,14 @@ export async function POST(request: NextRequest) {
   const { user, response } = await requireUser();
   if (response) return response;
 
-  const body = await request.json();
-  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const body = await request.json().catch(() => ({}));
+  const named = boundedText(body.name, LIMITS.name);
+  const described = boundedText(body.description, LIMITS.description);
 
+  if ("tooLong" in named || "tooLong" in described) {
+    return NextResponse.json({ error: "That is too long" }, { status: 400 });
+  }
+  const name = named.value;
   if (!name) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }
@@ -44,7 +51,7 @@ export async function POST(request: NextRequest) {
   const project = await prisma.project.create({
     data: {
       name,
-      description: body.description?.trim() || null,
+      description: described.value,
       hasTimeline,
       hasTracker,
       hasTeam,
@@ -67,7 +74,7 @@ export async function POST(request: NextRequest) {
         ],
       },
     },
-    include: { roles: { orderBy: { createdAt: "asc" } } },
+    select: PROJECT_FIELDS,
   });
   return NextResponse.json(project, { status: 201 });
 }
