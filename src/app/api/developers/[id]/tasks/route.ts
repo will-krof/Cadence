@@ -2,7 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { developerScope, teamFilter } from "@/lib/api-auth";
 import { requireViewer } from "@/lib/viewer";
 import { jsonResponse } from "@/lib/json-response";
-import { NextRequest, NextResponse } from "next/server";
+import { forbidden, notFound } from "@/lib/responses";
+import { NextRequest } from "next/server";
 
 /**
  * Everything assigned to one person, across every project they appear in —
@@ -17,10 +18,7 @@ export async function GET(
   const { viewer, response } = await requireViewer();
   if (response) return response;
   if (viewer.kind === "member" && !viewer.places.some((p) => p.canViewTeam)) {
-    return NextResponse.json(
-      { error: "Your role can't see the team" },
-      { status: 403 }
-    );
+    return forbidden("Your role can't see the team");
   }
 
   const { id } = await ctx.params;
@@ -29,9 +27,7 @@ export async function GET(
     where: { id, ...developerScope(viewer) },
     select: { id: true },
   });
-  if (!reachable) {
-    return NextResponse.json({ error: "Developer not found" }, { status: 404 });
-  }
+  if (!reachable) return notFound("Developer");
 
   // The card lists a title, a status, a due date and the project — nothing else
   // needs to travel.

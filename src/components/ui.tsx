@@ -10,7 +10,10 @@ import {
 } from "@/lib/types";
 import { formatRange } from "@/lib/dates";
 import { safeColor } from "@/lib/sanitize";
-import { offeredStatuses, useHiddenStatuses } from "@/lib/prefs";
+import { offeredStatuses } from "@/lib/prefs";
+
+/** Nothing put away: a stable empty list, so a default can't churn a memo. */
+const NONE_HIDDEN: TaskStatus[] = [];
 
 /**
  * A `<select>` that only holds its options once someone reaches for them.
@@ -258,16 +261,22 @@ export function Stat({
 
 export function StatusPill({
   status,
+  hidden = NONE_HIDDEN,
   onChange,
 }: {
   status: TaskStatus;
+  /**
+   * The statuses put away in the tracker, passed down rather than read here: a
+   * board draws hundreds of these, and each one subscribing to the same
+   * preference on its own is hundreds of listeners for one answer.
+   */
+  hidden?: TaskStatus[];
   onChange: (status: TaskStatus) => void;
 }) {
   const meta = statusMeta(status);
-  // A column put away in the tracker is a state nobody is working in, so it is
-  // not offered here either — except to a task already in it, which has to keep
-  // being able to say what it is.
-  const [hidden] = useHiddenStatuses();
+  // A column put away is a state nobody is working in, so it is not offered
+  // here either — except to a task already in it, which has to keep being able
+  // to say what it is.
   return (
     <div className="relative flex items-center">
       <span

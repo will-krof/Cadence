@@ -319,6 +319,7 @@ export function TrackerBoard() {
                     key={task.id}
                     task={task}
                     steps={stepCounts.get(task.id)}
+                    hiddenStatuses={hidden}
                     parentTitle={
                       task.parentId ? titles.get(task.parentId) : undefined
                     }
@@ -411,6 +412,7 @@ const TaskCard = memo(function TaskCard({
   task,
   steps,
   parentTitle,
+  hiddenStatuses,
   developers,
   dragging,
   onDragStart,
@@ -423,6 +425,8 @@ const TaskCard = memo(function TaskCard({
   steps?: { done: number; total: number };
   /** The task this card is a step of, when it is one. */
   parentTitle?: string;
+  /** Read once for the board and handed down, not read per card. */
+  hiddenStatuses: TaskStatus[];
   developers: Developer[];
   dragging: boolean;
   onDragStart: (state: DragState) => void;
@@ -533,6 +537,7 @@ const TaskCard = memo(function TaskCard({
         <div className="min-w-0 flex-1">
           <StatusPill
             status={task.status}
+            hidden={hiddenStatuses}
             onChange={(status) => onStatusChange(task.id, status)}
           />
         </div>

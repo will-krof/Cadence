@@ -2,10 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { parseDeveloper } from "@/lib/developer-input";
 import { DEVELOPER_FIELDS } from "@/lib/developer-select";
+import { ownedDeveloper } from "@/lib/owned";
+import { badRequest, done, notFound } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
-
-const notFound = () =>
-  NextResponse.json({ error: "Developer not found" }, { status: 404 });
 
 export async function PATCH(
   request: NextRequest,
@@ -17,16 +16,10 @@ export async function PATCH(
   const { id } = await ctx.params;
   const body = await request.json().catch(() => ({}));
 
-  const owned = await prisma.developer.findFirst({
-    where: { id, userId: user.id },
-    select: { id: true },
-  });
-  if (!owned) return notFound();
+  if (!(await ownedDeveloper(user.id, id))) return notFound("Developer");
 
   const parsed = parseDeveloper(body);
-  if ("error" in parsed) {
-    return NextResponse.json({ error: parsed.error }, { status: 400 });
-  }
+  if ("error" in parsed) return badRequest(parsed.error);
 
   const developer = await prisma.developer.update({
     where: { id },
@@ -48,7 +41,7 @@ export async function DELETE(
   const deleted = await prisma.developer.deleteMany({
     where: { id, userId: user.id },
   });
-  if (deleted.count === 0) return notFound();
+  if (deleted.count === 0) return notFound("Developer");
 
-  return NextResponse.json({ ok: true });
+  return done();
 }

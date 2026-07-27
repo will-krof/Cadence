@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { freshInvite } from "@/lib/invite";
 import { LIMITS } from "@/lib/sanitize";
+import { ownedDeveloper, ownedProject } from "@/lib/owned";
+import { badRequest, notFound } from "@/lib/responses";
 import { MEMBER_FIELDS, memberPayload } from "@/lib/member-select";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -27,46 +29,24 @@ export async function PUT(
   ];
 
   if (roleIds.length > LIMITS.roleIds) {
-    return NextResponse.json(
-      { error: "That is more roles than a project has" },
-      { status: 400 }
-    );
+    return badRequest("That is more roles than a project has");
   }
-
-  if (!developerId) {
-    return NextResponse.json(
-      { error: "developerId is required" },
-      { status: 400 }
-    );
-  }
+  if (!developerId) return badRequest("developerId is required");
 
   // Project, person and roles all have to belong to the caller.
   const [project, developer] = await Promise.all([
-    prisma.project.findFirst({
-      where: { id, userId: user.id },
-      select: { id: true },
-    }),
-    prisma.developer.findFirst({
-      where: { id: developerId, userId: user.id },
-      select: { id: true },
-    }),
+    ownedProject(user.id, id),
+    ownedDeveloper(user.id, developerId),
   ]);
-  if (!project) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  }
-  if (!developer) {
-    return NextResponse.json({ error: "Person not found" }, { status: 404 });
-  }
+  if (!project) return notFound("Project");
+  if (!developer) return notFound("Person");
 
   if (roleIds.length > 0) {
     const known = await prisma.projectRole.count({
       where: { id: { in: roleIds }, projectId: id },
     });
     if (known !== roleIds.length) {
-      return NextResponse.json(
-        { error: "That role is not on this project" },
-        { status: 404 }
-      );
+      return notFound("That role is not on this project —");
     }
   }
 

@@ -8,6 +8,7 @@ import {
   teammatePayload,
 } from "@/lib/developer-select";
 import { jsonResponse } from "@/lib/json-response";
+import { badRequest } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -39,14 +40,10 @@ export async function POST(request: NextRequest) {
   if (response) return response;
 
   const body = await request.json().catch(() => ({}));
-  if (!body.name) {
-    return NextResponse.json({ error: "Name is required" }, { status: 400 });
-  }
+  if (!body.name) return badRequest("Name is required");
 
   const parsed = parseDeveloper(body);
-  if ("error" in parsed) {
-    return NextResponse.json({ error: parsed.error }, { status: 400 });
-  }
+  if ("error" in parsed) return badRequest(parsed.error);
 
   const developer = await prisma.developer.create({
     data: { ...parsed.data, name: parsed.data.name!, userId: user.id },

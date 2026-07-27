@@ -11,7 +11,14 @@ import {
 } from "@/lib/dates";
 import { contrastText } from "@/lib/color";
 import { isHttpUrl } from "@/lib/sanitize";
-import { Developer, STATUS_OPTIONS, Task, TaskRow, statusMeta } from "@/lib/types";
+import {
+  Developer,
+  STATUS_OPTIONS,
+  Task,
+  TaskRow,
+  TaskStatus,
+  statusMeta,
+} from "@/lib/types";
 import { useBoard } from "@/components/BoardProvider";
 import { useHiddenStatuses } from "@/lib/prefs";
 import {
@@ -540,6 +547,7 @@ export function GanttBoard() {
               key={task.id}
               task={task}
               steps={stepCounts.get(task.id)}
+              hiddenStatuses={hiddenStatuses}
               developers={developers}
               gridTemplateColumns={gridTemplateColumns}
               onEdit={openEditor}
@@ -738,6 +746,7 @@ export function GanttBoard() {
 const TableRow = memo(function TableRow({
   task,
   steps,
+  hiddenStatuses,
   developers,
   gridTemplateColumns,
   onEdit,
@@ -746,6 +755,8 @@ const TableRow = memo(function TableRow({
   task: Task;
   /** How many of this task's steps are done, when it has any. */
   steps?: { done: number; total: number };
+  /** Read once for the board and handed down, not read per row. */
+  hiddenStatuses: TaskStatus[];
   developers: Developer[];
   gridTemplateColumns: string;
   onEdit: (id: string) => void;
@@ -817,6 +828,7 @@ const TableRow = memo(function TableRow({
       <div className="px-2">
         <StatusPill
           status={task.status}
+          hidden={hiddenStatuses}
           onChange={(status) => onChange(task.id, { status })}
         />
       </div>

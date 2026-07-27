@@ -488,31 +488,12 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         notify("error", await errorMessage(res, "Could not create the task."));
         return;
       }
-      const created = await res.json();
+      // A task and the steps it was made with come back together: the server
+      // writes them in one go, so the board never shows a half-made task.
+      const { subtasks = [], ...created }: TaskRow & { subtasks?: TaskRow[] } =
+        await res.json();
 
-      // The steps a task was created with. Each is a task in its own right —
-      // same dates, same board — so it is created the same way, under the one
-      // that was just made.
-      const steps: TaskRow[] = [];
-      for (const title of input.subtasks ?? []) {
-        const stepRes = await fetch("/api/tasks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title,
-            startDate: input.startDate,
-            endDate: input.endDate,
-            developerId: input.developerId,
-            projectId: activeId,
-            sprintId: boardSprintIdRef.current,
-            parentId: created.id,
-          }),
-        });
-        if (stepRes.ok) steps.push(await stepRes.json());
-        else notify("error", `Could not add the step “${title}”.`);
-      }
-
-      setTasks((prev) => [...prev, created, ...steps]);
+      setTasks((prev) => [...prev, created, ...subtasks]);
       notify("success", `Task “${created.title}” created.`);
     },
     [activeId, setTasks, notify]

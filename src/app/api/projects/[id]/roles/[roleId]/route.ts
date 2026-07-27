@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import { ownedRole } from "@/lib/owned";
+import { badRequest, conflict, done, notFound } from "@/lib/responses";
 import { LIMITS } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -10,17 +12,6 @@ const VISIBILITY = [
   "canViewTeam",
   "canViewWiki",
 ] as const;
-
-/** 404 rather than 403, same as everywhere else — don't confirm it exists. */
-const notFound = () =>
-  NextResponse.json({ error: "Role not found" }, { status: 404 });
-
-/** The role has to belong to a project this user owns. */
-async function ownedRole(userId: string, projectId: string, roleId: string) {
-  return prisma.projectRole.findFirst({
-    where: { id: roleId, projectId, project: { userId } },
-  });
-}
 
 export async function PATCH(
   request: NextRequest,
@@ -33,7 +24,7 @@ export async function PATCH(
   const body = await request.json();
 
   const role = await ownedRole(user.id, id, roleId);
-  if (!role) return notFound();
+  if (!role) return notFound("Role");
 
   // Admins run the project, so their own visibility isn't theirs to give up —
   // it would leave the project with nobody able to change these settings. What
@@ -43,33 +34,20 @@ export async function PATCH(
     (key) => typeof body[key] === "boolean"
   );
   if (role.isAdmin && changesVisibility) {
-    return NextResponse.json(
-      { error: "Admins always see everything" },
-      { status: 400 }
-    );
+    return badRequest("Admins always see everything");
   }
 
   const name = typeof body.name === "string" ? body.name.trim() : undefined;
   if (name !== undefined && name.length > LIMITS.roleName) {
-    return NextResponse.json(
-      { error: `A role name is ${LIMITS.roleName} characters or fewer` },
-      { status: 400 }
-    );
+    return badRequest(`A role name is ${LIMITS.roleName} characters or fewer`);
   }
-  if (name === "") {
-    return NextResponse.json({ error: "Name is required" }, { status: 400 });
-  }
+  if (name === "") return badRequest("Name is required");
   if (name && name !== role.name) {
     const taken = await prisma.projectRole.findFirst({
       where: { projectId: id, name },
       select: { id: true },
     });
-    if (taken) {
-      return NextResponse.json(
-        { error: `This project already has a “${name}” role` },
-        { status: 409 }
-      );
-    }
+    if (taken) return conflict(`This project already has a “${name}” role`);
   }
 
   const updated = await prisma.projectRole.update({
@@ -103,14 +81,9 @@ export async function DELETE(
   const { id, roleId } = await ctx.params;
 
   const role = await ownedRole(user.id, id, roleId);
-  if (!role) return notFound();
-  if (role.isAdmin) {
-    return NextResponse.json(
-      { error: "The admin role can't be removed" },
-      { status: 400 }
-    );
-  }
+  if (!role) return notFound("Role");
+  if (role.isAdmin) return badRequest("The admin role can't be removed");
 
   await prisma.projectRole.delete({ where: { id: roleId } });
-  return NextResponse.json({ ok: true });
+  return done();
 }

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { freshInvite } from "@/lib/invite";
 import { MEMBER_FIELDS, memberPayload } from "@/lib/member-select";
+import { badRequest, notFound } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -26,8 +27,7 @@ async function developerIdFrom(request: NextRequest) {
   return typeof body.developerId === "string" ? body.developerId : "";
 }
 
-const notOnProject = () =>
-  NextResponse.json({ error: "They are not on this project" }, { status: 404 });
+const notOnProject = () => notFound("They are not on this project —");
 
 export async function POST(
   request: NextRequest,
@@ -42,10 +42,7 @@ export async function POST(
   if (!found) return notOnProject();
   // What the link opens is the roles behind it, so there has to be one.
   if (found._count.roles === 0) {
-    return NextResponse.json(
-      { error: "Give them a role on this project first" },
-      { status: 400 }
-    );
+    return badRequest("Give them a role on this project first");
   }
 
   const updated = await prisma.projectMember.update({

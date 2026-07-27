@@ -3,13 +3,9 @@ import { boardFilter, workspaceOwnerId } from "@/lib/api-auth";
 import { memberDenied, requireViewer } from "@/lib/viewer";
 import { TASK_FIELDS } from "@/lib/task-select";
 import { parseTask } from "@/lib/task-input";
+import { ownedDeveloper } from "@/lib/owned";
+import { badRequest, done, forbidden, notFound } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
-
-const notFound = () =>
-  NextResponse.json({ error: "Task not found" }, { status: 404 });
-
-const forbidden = () =>
-  NextResponse.json({ error: "Your role can't do that" }, { status: 403 });
 
 export async function PATCH(
   request: NextRequest,
@@ -25,15 +21,13 @@ export async function PATCH(
   const body = await request.json().catch(() => ({}));
 
   const parsed = parseTask(body);
-  if ("error" in parsed) {
-    return NextResponse.json({ error: parsed.error }, { status: 400 });
-  }
+  if ("error" in parsed) return badRequest(parsed.error);
 
   const reachable = await prisma.task.findFirst({
     where: { id, ...boardFilter(viewer) },
     select: { id: true, projectId: true, parentId: true },
   });
-  if (!reachable) return notFound();
+  if (!reachable) return notFound("Task");
 
   // Making a task a step of another, or lifting it back out. A task can't be
   // its own parent, can't be filed under one of its own steps, and can't be
@@ -43,50 +37,31 @@ export async function PATCH(
     if (!body.parentId) {
       parentId = null;
     } else if (body.parentId === id) {
-      return NextResponse.json(
-        { error: "A task can’t be a step of itself" },
-        { status: 400 }
-      );
+      return badRequest("A task can’t be a step of itself");
     } else {
       const parent = await prisma.task.findFirst({
         where: { id: body.parentId, projectId: reachable.projectId },
         select: { id: true, parentId: true },
       });
-      if (!parent) {
-        return NextResponse.json(
-          { error: "That task is not on this project" },
-          { status: 404 }
-        );
-      }
+      if (!parent) return notFound("That task is not on this project —");
       if (parent.parentId) {
-        return NextResponse.json(
-          { error: "A subtask can’t have subtasks of its own" },
-          { status: 400 }
-        );
+        return badRequest("A subtask can’t have subtasks of its own");
       }
       const hasSteps = await prisma.task.findFirst({
         where: { parentId: id },
         select: { id: true },
       });
-      if (hasSteps) {
-        return NextResponse.json(
-          { error: "This task has steps of its own" },
-          { status: 400 }
-        );
-      }
+      if (hasSteps) return badRequest("This task has steps of its own");
       parentId = parent.id;
     }
   }
 
   // Reassignment must stay within the workspace's own roster.
-  if (body.developerId) {
-    const developer = await prisma.developer.findFirst({
-      where: { id: body.developerId, userId: workspaceOwnerId(viewer) },
-      select: { id: true },
-    });
-    if (!developer) {
-      return NextResponse.json({ error: "Developer not found" }, { status: 404 });
-    }
+  if (
+    body.developerId &&
+    !(await ownedDeveloper(workspaceOwnerId(viewer), body.developerId))
+  ) {
+    return notFound("Developer");
   }
 
   // Moving a task between sprints stays inside its own project.
@@ -95,12 +70,7 @@ export async function PATCH(
       where: { id: body.sprintId, projectId: reachable.projectId },
       select: { id: true },
     });
-    if (!sprint) {
-      return NextResponse.json(
-        { error: "That sprint is not on this project" },
-        { status: 404 }
-      );
-    }
+    if (!sprint) return notFound("That sprint is not on this project —");
   }
 
   const task = await prisma.task.update({
@@ -130,7 +100,7 @@ export async function DELETE(
   const deleted = await prisma.task.deleteMany({
     where: { id, ...boardFilter(viewer) },
   });
-  if (deleted.count === 0) return notFound();
+  if (deleted.count === 0) return notFound("Task");
 
-  return NextResponse.json({ ok: true });
+  return done();
 }

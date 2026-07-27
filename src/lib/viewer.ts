@@ -127,7 +127,7 @@ export function memberProjectIds(member: MemberViewer) {
 }
 
 /** Their standing on one project, or null if they aren't on it. */
-export function placeOn(member: MemberViewer, projectId: string) {
+function placeOn(member: MemberViewer, projectId: string) {
   return member.places.find((p) => p.projectId === projectId) ?? null;
 }
 

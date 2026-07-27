@@ -3,6 +3,7 @@ import { projectScope, requireUser } from "@/lib/api-auth";
 import { requireViewer } from "@/lib/viewer";
 import { PROJECT_FIELDS } from "@/lib/project-select";
 import { boundedText, LIMITS } from "@/lib/sanitize";
+import { badRequest } from "@/lib/responses";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -28,12 +29,10 @@ export async function POST(request: NextRequest) {
   const described = boundedText(body.description, LIMITS.description);
 
   if ("tooLong" in named || "tooLong" in described) {
-    return NextResponse.json({ error: "That is too long" }, { status: 400 });
+    return badRequest("That is too long");
   }
   const name = named.value;
-  if (!name) {
-    return NextResponse.json({ error: "Name is required" }, { status: 400 });
-  }
+  if (!name) return badRequest("Name is required");
 
   // Boards and the wiki are the project's to switch off. Its people are not:
   // every project has a team, so a project with no tool at all is still a

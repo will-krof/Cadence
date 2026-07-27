@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { projectFilter, requireUser } from "@/lib/api-auth";
-import { placeOn, requireViewer } from "@/lib/viewer";
+import { boardFilter, requireUser } from "@/lib/api-auth";
+import { memberDenied, requireViewer } from "@/lib/viewer";
+import { ownedProject } from "@/lib/owned";
+import { badRequest, forbidden, notFound } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -8,19 +10,14 @@ export async function GET(request: NextRequest) {
   if (response) return response;
 
   const projectId = request.nextUrl.searchParams.get("projectId");
-  if (!projectId) {
-    return NextResponse.json({ error: "projectId is required" }, { status: 400 });
-  }
+  if (!projectId) return badRequest("projectId is required");
 
-  if (viewer.kind === "member" && !placeOn(viewer, projectId)) {
-    return NextResponse.json(
-      { error: "You are not on that project" },
-      { status: 403 }
-    );
-  }
+  // Sprints are the boards' own dividing line, so seeing them takes a board:
+  // being on a project with neither is being on it without a calendar.
+  if (memberDenied(viewer, projectId)) return forbidden();
 
   const sprints = await prisma.sprint.findMany({
-    where: { projectId, ...projectFilter(viewer) },
+    where: { projectId, ...boardFilter(viewer) },
     orderBy: { number: "asc" },
   });
   return NextResponse.json(sprints);
@@ -32,19 +29,10 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}));
   if (!body.projectId || !body.startDate || !body.endDate) {
-    return NextResponse.json(
-      { error: "projectId, startDate and endDate are required" },
-      { status: 400 }
-    );
+    return badRequest("projectId, startDate and endDate are required");
   }
 
-  const project = await prisma.project.findFirst({
-    where: { id: body.projectId, userId: user.id },
-    select: { id: true },
-  });
-  if (!project) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  }
+  if (!(await ownedProject(user.id, body.projectId))) return notFound("Project");
 
   // Sprints are numbered in sequence unless the caller says otherwise.
   const highest = await prisma.sprint.aggregate({

@@ -80,12 +80,16 @@ export function wikiFilter(viewer: Viewer) {
 }
 
 /**
- * The people a viewer may read. A member gets the people on their own projects
- * — enough to name whoever a task belongs to, and nobody else's profile.
+ * The people a viewer may read. A member gets the people on the projects they
+ * have something to open — a board to name an assignee on, or the roster
+ * itself. A project whose tools their roles all close is a project whose people
+ * they have no screen to meet on, so its profiles stay behind.
  */
 export function developerScope(viewer: Viewer) {
   if (viewer.kind === "owner") return { userId: viewer.user.id };
-  const projectIds = memberProjectIds(viewer);
+  const projectIds = [
+    ...new Set([...boardProjectIds(viewer), ...teamProjectIds(viewer)]),
+  ];
   return {
     userId: viewer.ownerId,
     OR: [

@@ -13,12 +13,12 @@ const DAY = 24 * 60 * 60 * 1000;
  * 24 bytes of randomness, url-safe. Long enough that guessing one is not a
  * threat model, short enough to paste into a chat message.
  */
-export function newInviteToken() {
+function newInviteToken() {
   return randomBytes(24).toString("base64url");
 }
 
 /** When a link made now runs out. */
-export function inviteExpiry(from = new Date()) {
+function inviteExpiry(from = new Date()) {
   return new Date(from.getTime() + INVITE_DAYS * DAY);
 }
 

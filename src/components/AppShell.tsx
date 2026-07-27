@@ -1,27 +1,65 @@
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState, useSyncExternalStore } from "react";
+import dynamic from "next/dynamic";
 import { BoardProvider, useBoard } from "@/components/BoardProvider";
-import { GanttBoard } from "@/components/GanttBoard";
-import { TrackerBoard } from "@/components/TrackerBoard";
 import { Wordmark } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
-
-import { ProjectModal } from "@/components/ProjectModal";
-import { ProjectOverview } from "@/components/ProjectOverview";
 import { FeedbackProvider } from "@/components/Feedback";
-import { TaskModal } from "@/components/TaskModal";
-import { TeamView } from "@/components/TeamView";
-import { WikiView } from "@/components/WikiView";
+import { ProjectOverview } from "@/components/ProjectOverview";
+import {
+  VIEW_LABELS,
+  TEAM_ICON,
+  TIMELINE_ICON,
+  TRACKER_ICON,
+  WIKI_ICON,
+} from "@/components/shell/icons";
+import { AccountMenu, MemberMenu } from "@/components/shell/Menus";
+import {
+  Centered,
+  CollapseIcon,
+  PlusIcon,
+  ViewButton,
+} from "@/components/shell/parts";
+
+/**
+ * One tool is on screen at a time, and the project card is where every session
+ * starts — so the boards, the roster and the wiki are fetched when they are
+ * first opened rather than before the app has drawn anything. The two modals
+ * are the same: most sessions open neither.
+ *
+ * The card itself stays in the first load. It is what a project opens on, and
+ * splitting it would only trade a fetch for a flash of nothing.
+ */
+const loading = () => <Centered>Loading…</Centered>;
+
+const GanttBoard = dynamic(
+  () => import("@/components/GanttBoard").then((m) => m.GanttBoard),
+  { loading }
+);
+const TrackerBoard = dynamic(
+  () => import("@/components/TrackerBoard").then((m) => m.TrackerBoard),
+  { loading }
+);
+const TeamView = dynamic(
+  () => import("@/components/TeamView").then((m) => m.TeamView),
+  { loading }
+);
+const WikiView = dynamic(
+  () => import("@/components/WikiView").then((m) => m.WikiView),
+  { loading }
+);
+const TaskModal = dynamic(() =>
+  import("@/components/TaskModal").then((m) => m.TaskModal)
+);
+const ProjectModal = dynamic(() =>
+  import("@/components/ProjectModal").then((m) => m.ProjectModal)
+);
+/** Only a superadmin ever draws this one. */
+const InstallStats = dynamic(() =>
+  import("@/components/InstallStats").then((m) => m.InstallStats)
+);
 import { HideableView, useHiddenViews } from "@/lib/prefs";
-import { InstallStats } from "@/components/InstallStats";
 
 /** The views a project carries. Team isn't one: it belongs to the workspace. */
 type View = "overview" | "timeline" | "tracker" | "wiki";
@@ -55,75 +93,6 @@ function toggleSidebar() {
   }
   window.dispatchEvent(new Event(SIDEBAR_EVENT));
 }
-
-const TIMELINE_ICON = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <rect x="1.5" y="3" width="8" height="2.6" rx="1.3" fill="currentColor" />
-    <rect x="4" y="6.7" width="10.5" height="2.6" rx="1.3" fill="currentColor" />
-    <rect x="1.5" y="10.4" width="6.5" height="2.6" rx="1.3" fill="currentColor" />
-  </svg>
-);
-
-const TRACKER_ICON = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <rect
-      x="1.6"
-      y="2.4"
-      width="4.3"
-      height="11.2"
-      rx="1.4"
-      stroke="currentColor"
-      strokeWidth="1.5"
-    />
-    <rect
-      x="10.1"
-      y="2.4"
-      width="4.3"
-      height="7"
-      rx="1.4"
-      stroke="currentColor"
-      strokeWidth="1.5"
-    />
-  </svg>
-);
-
-
-const TEAM_ICON = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <circle cx="6" cy="5" r="2.6" stroke="currentColor" strokeWidth="1.5" />
-    <path
-      d="M1.6 13.2c0-2.4 2-4 4.4-4s4.4 1.6 4.4 4"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
-    <path
-      d="M11 3.2a2.4 2.4 0 010 4.4M12.2 9.6c1.4.5 2.2 1.8 2.2 3.6"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
-  </svg>
-);
-
-const WIKI_ICON = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <path
-      d="M2.5 3.2c1.9-.7 3.7-.7 5.5.4 1.8-1.1 3.6-1.1 5.5-.4v9.1c-1.9-.7-3.7-.7-5.5.4-1.8-1.1-3.6-1.1-5.5-.4V3.2Z"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinejoin="round"
-    />
-    <path d="M8 3.6v9.1" stroke="currentColor" strokeWidth="1.5" />
-  </svg>
-);
-
-/** What a put-away tool is called while it is out of the way. */
-const VIEW_LABELS: Record<HideableView, string> = {
-  timeline: "Timeline",
-  tracker: "Tracker",
-  wiki: "Wiki",
-};
 
 export interface ShellUser {
   id: string;
@@ -657,253 +626,3 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   );
 }
 
-function AccountMenu({ user }: { user: ShellUser }) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick(e: MouseEvent) {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  async function signOut() {
-    setSigningOut(true);
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/");
-    router.refresh();
-  }
-
-  const label = user.name?.trim() || user.email;
-  const initial = label.slice(0, 1).toUpperCase();
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent)] text-[0.75rem] font-semibold text-white transition hover:opacity-85"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Account menu"
-        title={label}
-      >
-        {initial}
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-10 z-50 w-56 rounded-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-1.5 shadow-xl"
-        >
-          <div className="border-b border-[var(--hairline)] px-2.5 pb-2 pt-1.5">
-            {user.name && (
-              <p className="truncate text-[0.8125rem] font-medium">{user.name}</p>
-            )}
-            <p className="truncate text-[0.75rem] text-[var(--ink-muted)]">
-              {user.email}
-            </p>
-          </div>
-          <button
-            onClick={signOut}
-            disabled={signingOut}
-            role="menuitem"
-            className="mt-1 w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] disabled:opacity-60"
-          >
-            {signingOut ? "Signing out…" : "Sign out"}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Who a signed-in team member is, and the way out. */
-function MemberMenu({ member }: { member: ShellMember }) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick(e: MouseEvent) {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  async function signOut() {
-    setSigningOut(true);
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/");
-    router.refresh();
-  }
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex h-8 items-center gap-2 rounded-full border border-[var(--hairline)] px-2.5 text-[0.75rem] font-medium transition hover:bg-[var(--plane)]"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={`${member.name} — team member`}
-      >
-        <span className="truncate">{member.name}</span>
-        <span className="text-[0.625rem] uppercase tracking-wide text-[var(--ink-muted)]">
-          Member
-        </span>
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-10 z-50 w-60 rounded-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-1.5 shadow-xl"
-        >
-          <div className="border-b border-[var(--hairline)] px-2.5 pb-2 pt-1.5">
-            <p className="truncate text-[0.8125rem] font-medium">{member.name}</p>
-            <p className="truncate text-[0.75rem] text-[var(--ink-muted)]">
-              {member.username ?? "Team member"}
-            </p>
-          </div>
-          <button
-            onClick={signOut}
-            disabled={signingOut}
-            role="menuitem"
-            className="mt-1 w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] disabled:opacity-60"
-          >
-            {signingOut ? "Signing out…" : "Sign out"}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ViewButton({
-  active,
-  onClick,
-  onHide,
-  icon,
-  label,
-  wide,
-}: {
-  active: boolean;
-  onClick: () => void;
-  /** Puts the tool away. It stays put away until it is asked back. */
-  onHide?: () => void;
-  icon: React.ReactNode;
-  label: string;
-  wide: boolean;
-}) {
-  return (
-    <span className="group/view relative flex items-center">
-    <button
-      onClick={onClick}
-      aria-current={active ? "page" : undefined}
-      title={label}
-      className={`flex flex-1 items-center gap-2.5 rounded-[var(--radius)] py-2 text-[0.8125rem] font-medium transition ${
-        wide ? "px-3" : "justify-center px-2"
-      } ${
-        active
-          ? "bg-[var(--accent-wash)] text-[var(--accent)]"
-          : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
-      }`}
-    >
-      <span className="shrink-0">{icon}</span>
-      {wide && (
-        <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-      )}
-    </button>
-      {/* Sits over the row rather than inside it: a button can't hold another
-          one, and the tool itself is what the row is for. */}
-      {onHide && wide && (
-        <button
-          onClick={onHide}
-          className="absolute right-1.5 rounded p-1 text-[var(--ink-muted)] opacity-0 transition hover:bg-[var(--surface)] hover:text-[var(--ink)] focus:opacity-100 group-hover/view:opacity-100"
-          aria-label={`Hide ${label} from the sidebar`}
-          title={`Hide ${label}`}
-        >
-          <HideIcon />
-        </button>
-      )}
-    </span>
-  );
-}
-
-function HideIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-      <path
-        d="M2 6h8"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function CollapseIcon({ pointsLeft }: { pointsLeft: boolean }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-      <rect
-        x="1.6"
-        y="2.6"
-        width="12.8"
-        height="10.8"
-        rx="2"
-        stroke="currentColor"
-        strokeWidth="1.4"
-      />
-      <path d="M6.2 2.6v10.8" stroke="currentColor" strokeWidth="1.4" />
-      <path
-        d={pointsLeft ? "M11.4 6.4L9.4 8l2 1.6" : "M9.4 6.4L11.4 8l-2 1.6"}
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
-      <path
-        d="M6 2v8M2 6h8"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function Centered({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--ink-muted)]">
-      {children}
-    </div>
-  );
-}

@@ -66,6 +66,20 @@ const contentSecurityPolicy = (nonce: string) =>
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /**
+ * The largest body any route here has a use for. The longest thing anybody can
+ * type is a wiki page, and that is capped at a hundred thousand characters, so
+ * half a megabyte is generous — and it is refused on the declared length,
+ * before a route hands a megabyte of JSON to the parser.
+ */
+const MAX_BODY_BYTES = 512 * 1024;
+
+function tooLarge(request: NextRequest) {
+  if (SAFE_METHODS.has(request.method)) return false;
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  return Number.isFinite(declared) && declared > MAX_BODY_BYTES;
+}
+
+/**
  * True when a state-changing request came from somewhere else. A browser always
  * sends `Origin` on a cross-site write, so a mismatch is a forgery attempt; a
  * request with neither header is something that isn't a browser, and cannot be
@@ -94,6 +108,10 @@ export function proxy(request: NextRequest) {
     );
   }
 
+  if (tooLarge(request)) {
+    return NextResponse.json({ error: "That is too much data" }, { status: 413 });
+  }
+
   const nonce = crypto.randomUUID();
   const csp = contentSecurityPolicy(nonce);
 
@@ -106,6 +124,12 @@ export function proxy(request: NextRequest) {
   response.headers.set("content-security-policy", csp);
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
     response.headers.set(name, value);
+  }
+  // Everything an API route answers is one workspace's private data. Without
+  // saying so, a shared cache between us and the browser is free to keep a
+  // copy and hand it to the next person who asks for the same address.
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    response.headers.set("cache-control", "no-store, private");
   }
   return response;
 }

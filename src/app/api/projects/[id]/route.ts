@@ -2,11 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { PROJECT_FIELDS } from "@/lib/project-select";
 import { boundedText, LIMITS } from "@/lib/sanitize";
+import { ownedProject } from "@/lib/owned";
+import { badRequest, done, notFound } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
-
-/** 404 rather than 403 for someone else's project — don't confirm it exists. */
-const notFound = () =>
-  NextResponse.json({ error: "Project not found" }, { status: 404 });
 
 export async function PATCH(
   request: NextRequest,
@@ -21,14 +19,10 @@ export async function PATCH(
   const named = boundedText(body.name, LIMITS.name);
   const described = boundedText(body.description, LIMITS.description);
   if ("tooLong" in named || "tooLong" in described) {
-    return NextResponse.json({ error: "That is too long" }, { status: 400 });
+    return badRequest("That is too long");
   }
 
-  const owned = await prisma.project.findFirst({
-    where: { id, userId: user.id },
-    select: { id: true },
-  });
-  if (!owned) return notFound();
+  if (!(await ownedProject(user.id, id))) return notFound("Project");
 
   const project = await prisma.project.update({
     where: { id },
@@ -59,7 +53,7 @@ export async function DELETE(
   const deleted = await prisma.project.deleteMany({
     where: { id, userId: user.id },
   });
-  if (deleted.count === 0) return notFound();
+  if (deleted.count === 0) return notFound("Project");
 
-  return NextResponse.json({ ok: true });
+  return done();
 }

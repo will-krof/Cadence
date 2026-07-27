@@ -1,33 +1,27 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser, wikiFilter } from "@/lib/api-auth";
 import { requireViewer } from "@/lib/viewer";
+import { ownedProject } from "@/lib/owned";
+import { badRequest, notFound } from "@/lib/responses";
 import { boundedText, LIMITS } from "@/lib/sanitize";
 import { jsonResponse } from "@/lib/json-response";
+import { WIKI_FIELDS, WIKI_INDEX_FIELDS } from "@/lib/wiki-select";
 import { NextRequest, NextResponse } from "next/server";
 
-/** What a page travels with. */
-const WIKI_FIELDS = {
-  id: true,
-  projectId: true,
-  title: true,
-  content: true,
-  order: true,
-  parentId: true,
-  updatedAt: true,
-} as const;
-
 /**
- * The wiki of every project the viewer may read one for. Like the roster, this
- * is one request rather than one per project: the client holds them all and
- * shows the active project's.
+ * The contents of the wiki: every page the viewer may read, as titles and where
+ * they sit. What is written on them arrives a page at a time, when one is
+ * opened — a documented project's text dwarfs its table of contents, and most
+ * of it is never read in a sitting.
  */
 export async function GET(request: NextRequest) {
   const { viewer, response } = await requireViewer();
   if (response) return response;
 
+  const projectId = request.nextUrl.searchParams.get("projectId");
   const pages = await prisma.wikiPage.findMany({
-    where: wikiFilter(viewer),
-    select: WIKI_FIELDS,
+    where: { ...wikiFilter(viewer), ...(projectId ? { projectId } : {}) },
+    select: WIKI_INDEX_FIELDS,
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
   });
   return jsonResponse(request, pages);
@@ -40,24 +34,11 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}));
   const titled = boundedText(body.title, LIMITS.title);
-  if ("tooLong" in titled) {
-    return NextResponse.json(
-      { error: "That title is too long" },
-      { status: 400 }
-    );
-  }
-  if (!titled.value) {
-    return NextResponse.json({ error: "Title is required" }, { status: 400 });
-  }
+  if ("tooLong" in titled) return badRequest("That title is too long");
+  if (!titled.value) return badRequest("Title is required");
 
   const projectId = typeof body.projectId === "string" ? body.projectId : "";
-  const owned = await prisma.project.findFirst({
-    where: { id: projectId, userId: user.id },
-    select: { id: true },
-  });
-  if (!owned) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  }
+  if (!(await ownedProject(user.id, projectId))) return notFound("Project");
 
   // A section of a section, as deep as the project needs — the parent only has
   // to be a page of the same project.
@@ -67,12 +48,7 @@ export async function POST(request: NextRequest) {
       where: { id: body.parentId, projectId },
       select: { id: true },
     });
-    if (!parent) {
-      return NextResponse.json(
-        { error: "That section is not in this wiki" },
-        { status: 404 }
-      );
-    }
+    if (!parent) return notFound("That section is");
     parentId = parent.id;
   }
 

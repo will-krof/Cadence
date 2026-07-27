@@ -1,9 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import { done, notFound } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
-
-const notFound = () =>
-  NextResponse.json({ error: "Sprint not found" }, { status: 404 });
 
 export async function PATCH(
   request: NextRequest,
@@ -19,7 +17,7 @@ export async function PATCH(
     where: { id, project: { userId: user.id } },
     select: { id: true, projectId: true, number: true },
   });
-  if (!sprint) return notFound();
+  if (!sprint) return notFound("Sprint");
 
   const asked = Number(body.number);
   const number =
@@ -70,7 +68,7 @@ export async function DELETE(
   const deleted = await prisma.sprint.deleteMany({
     where: { id, project: { userId: user.id } },
   });
-  if (deleted.count === 0) return notFound();
+  if (deleted.count === 0) return notFound("Sprint");
 
-  return NextResponse.json({ ok: true });
+  return done();
 }

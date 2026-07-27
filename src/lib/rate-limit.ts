@@ -48,7 +48,7 @@ export const SIGNUP_LIMIT: RateLimit = { limit: 5, windowSeconds: 60 * 60 };
  * this is a header the client can't set for itself; without one it falls back
  * to a shared bucket, which is the safe direction to be wrong in.
  */
-export function callerKey(request: NextRequest) {
+function callerKey(request: NextRequest) {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0].trim();
   return request.headers.get("x-real-ip") ?? "unknown";

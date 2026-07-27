@@ -157,12 +157,6 @@ export interface DeveloperTask {
   project: { id: string; name: string };
 }
 
-/** Who works on what, for grouping the team — one row per person per project. */
-export interface Assignment {
-  developerId: string;
-  projectId: string;
-}
-
 /**
  * The link that lets one person set up their login for a project. It lasts
  * three days; past that it is replaced by a fresh one. `token` is null once the
@@ -197,14 +191,21 @@ export function inviteLink(token: string) {
   return `${origin}/invite/${token}`;
 }
 
-/** A page of a project's wiki, as it travels. */
-export interface WikiPage {
+/**
+ * A page of a project's wiki as the contents list knows it: a title and where
+ * it sits. What is written on it arrives when the page is opened.
+ */
+export interface WikiEntry {
   id: string;
   projectId: string;
   title: string;
-  content: string;
   order: number;
   /** The section this page sits in, or null at the top of the wiki. */
   parentId: string | null;
   updatedAt: string;
+}
+
+/** The page itself, with its writing. */
+export interface WikiPage extends WikiEntry {
+  content: string;
 }
