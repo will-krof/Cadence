@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
 import { Avatar, Field, RoleChips } from "@/components/ui";
 import { useFeedback } from "@/components/Feedback";
@@ -18,45 +18,6 @@ import {
   Project,
 } from "@/lib/types";
 import { toISODate } from "@/lib/dates";
-
-/** Avatars are stored inline in the row, so downscale before upload. */
-const AVATAR_SIZE = 256;
-
-async function fileToAvatar(file: File): Promise<string> {
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-
-  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const el = new Image();
-    el.onload = () => resolve(el);
-    el.onerror = () => reject(new Error("Could not read that image"));
-    el.src = dataUrl;
-  });
-
-  // Square centre-crop, then re-encode as JPEG to keep the payload small.
-  const side = Math.min(img.width, img.height);
-  const canvas = document.createElement("canvas");
-  canvas.width = AVATAR_SIZE;
-  canvas.height = AVATAR_SIZE;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas unavailable");
-  ctx.drawImage(
-    img,
-    (img.width - side) / 2,
-    (img.height - side) / 2,
-    side,
-    side,
-    0,
-    0,
-    AVATAR_SIZE,
-    AVATAR_SIZE
-  );
-  return canvas.toDataURL("image/jpeg", 0.82);
-}
 
 /**
  * The workspace roster: everybody on the team, whatever they work on. It sits
@@ -557,13 +518,10 @@ function ProfileForm({
   onCancel: () => void;
   onDelete?: () => void;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-
   const [name, setName] = useState(person?.name ?? "");
   const [role, setRole] = useState(person?.role ?? "");
   const [email, setEmail] = useState(person?.email ?? "");
   const [phone, setPhone] = useState(person?.phone ?? "");
-  const [avatar, setAvatar] = useState<string | null>(person?.avatar ?? null);
   const [startDate, setStartDate] = useState(
     person?.startDate ? toISODate(new Date(person.startDate)) : ""
   );
@@ -616,15 +574,6 @@ function ProfileForm({
     });
   }
 
-  async function pickAvatar(file: File) {
-    setError(null);
-    try {
-      setAvatar(await fileToAvatar(file));
-    } catch {
-      setError("Could not read that image.");
-    }
-  }
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
@@ -637,7 +586,6 @@ function ProfileForm({
         role,
         email,
         phone,
-        avatar,
         startDate: startDate || null,
         salary: salary === "" ? null : Number(salary),
         currency,
@@ -656,42 +604,13 @@ function ProfileForm({
 
   return (
     <form onSubmit={submit} className="mx-auto flex max-w-2xl flex-col gap-5">
+      {/* A profile is a letter and a colour. Nothing is uploaded and nothing is
+          stored, so this is the whole of how somebody looks. */}
       <div className="flex items-center gap-4">
-        <Avatar person={{ name: name || "?", avatar, color }} size={64} />
-        <div className="flex flex-col gap-1.5">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="btn-secondary"
-            >
-              {avatar ? "Change photo" : "Upload photo"}
-            </button>
-            {avatar && (
-              <button
-                type="button"
-                onClick={() => setAvatar(null)}
-                className="btn-secondary"
-              >
-                Remove
-              </button>
-            )}
-          </div>
-          <p className="text-[0.6875rem] text-[var(--ink-muted)]">
-            Square crop, resized to {AVATAR_SIZE}px.
-          </p>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) pickAvatar(file);
-              e.target.value = "";
-            }}
-          />
-        </div>
+        <Avatar person={{ name: name || "?", color }} size={64} />
+        <p className="text-[0.6875rem] text-[var(--ink-muted)]">
+          The initial of the name, in the colour below.
+        </p>
       </div>
 
       <section className="grid gap-3.5 sm:grid-cols-2">

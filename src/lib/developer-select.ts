@@ -11,7 +11,6 @@ export const DEVELOPER_FIELDS = {
   role: true,
   email: true,
   phone: true,
-  avatar: true,
   startDate: true,
   salary: true,
   currency: true,
@@ -33,7 +32,6 @@ export const TEAMMATE_FIELDS = {
   name: true,
   color: true,
   role: true,
-  avatar: true,
   active: true,
   currency: true,
   createdAt: true,
@@ -44,7 +42,6 @@ interface Teammate {
   name: string;
   color: string;
   role: string | null;
-  avatar: string | null;
   active: boolean;
   currency: string;
   createdAt: Date;

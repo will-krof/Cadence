@@ -42,7 +42,6 @@ export function ProfileResume({
     | "name"
     | "role"
     | "color"
-    | "avatar"
     | "active"
     | "email"
     | "phone"

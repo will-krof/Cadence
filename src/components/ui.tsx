@@ -468,28 +468,18 @@ export function ToolCheckbox({
   );
 }
 
-/** Photo when there is one, otherwise a coloured initial. */
+/**
+ * A coloured initial, and only ever that. The workspace holds no images —
+ * nothing is uploaded, nothing is stored — so who somebody is on a row is their
+ * letter and their colour.
+ */
 export function Avatar({
   person,
   size = 32,
 }: {
-  person: Pick<Developer, "name" | "avatar" | "color">;
+  person: Pick<Developer, "name" | "color">;
   size?: number;
 }) {
-  // Only an image data URL is ever drawn: a row written before the server
-  // checked this, or by anything but this app, falls back to the initial.
-  if (person.avatar?.startsWith("data:image/")) {
-    return (
-      // Data URLs can't go through next/image, and these are already downscaled.
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={person.avatar}
-        alt=""
-        className="shrink-0 rounded-full object-cover"
-        style={{ width: size, height: size }}
-      />
-    );
-  }
   return (
     <span
       className="flex shrink-0 items-center justify-center rounded-full font-semibold text-white"

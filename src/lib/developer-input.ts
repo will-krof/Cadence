@@ -1,10 +1,5 @@
 import { EmploymentType } from "@/lib/types";
-import {
-  boundedText,
-  LIMITS,
-  safeAvatar,
-  safeColor,
-} from "@/lib/sanitize";
+import { boundedText, LIMITS, safeColor } from "@/lib/sanitize";
 
 const EMPLOYMENT_VALUES: EmploymentType[] = [
   "FULL_TIME",
@@ -21,7 +16,6 @@ export interface ParsedDeveloper {
   role?: string | null;
   email?: string | null;
   phone?: string | null;
-  avatar?: string | null;
   startDate?: Date | null;
   salary?: number | null;
   currency?: string;
@@ -72,18 +66,6 @@ export function parseDeveloper(
       return { error: `That ${field} is too long` };
     }
     data[field] = parsed.value;
-  }
-
-  if (body.avatar !== undefined) {
-    if (typeof body.avatar !== "string" || !body.avatar) {
-      data.avatar = null;
-    } else if (!safeAvatar(body.avatar)) {
-      // Base64 PNG, JPEG, WebP or GIF, within a size a row can hold. Anything
-      // else — an SVG, a remote URL, a script-bearing data URL — is refused.
-      return { error: "Avatar must be a small PNG, JPEG, WebP or GIF image" };
-    } else {
-      data.avatar = body.avatar;
-    }
   }
 
   if (body.startDate !== undefined) {

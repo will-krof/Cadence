@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       ...(projectId ? { projectId } : {}),
     },
     // The assignee's profile is left out on purpose: the client already holds
-    // the roster, and repeating it per task (avatars and all) dwarfed the tasks.
+    // the roster, and repeating a profile per task dwarfed the tasks themselves.
     select: TASK_FIELDS,
     orderBy: { order: "asc" },
   });

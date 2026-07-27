@@ -62,7 +62,6 @@ model Developer {
   role           String?
   email          String?
   phone          String?
-  avatar         String? // data URL, downscaled client-side before upload
   startDate      DateTime?
   salary         Int?
   currency       String    @default("USD")

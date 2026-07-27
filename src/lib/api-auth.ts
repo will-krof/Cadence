@@ -69,7 +69,7 @@ export function teamFilter(viewer: Viewer) {
 
 /**
  * The people a viewer may read. A member gets the people on their own projects
- * — enough to draw an avatar beside a task, and nobody else's profile.
+ * — enough to name whoever a task belongs to, and nobody else's profile.
  */
 export function developerScope(viewer: Viewer) {
   if (viewer.kind === "owner") return { userId: viewer.user.id };

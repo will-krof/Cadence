@@ -54,7 +54,6 @@ export interface Developer {
   role: string | null;
   email: string | null;
   phone: string | null;
-  avatar: string | null;
   startDate: string | null;
   salary: number | null;
   currency: string;

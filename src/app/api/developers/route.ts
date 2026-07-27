@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(request, teammates.map(teammatePayload));
   }
 
-  // Profiles carry avatars, so this is the other response worth compressing.
+  // A whole roster of profiles in one answer, so it travels compressed.
   const developers = await prisma.developer.findMany({
     where: developerScope(viewer),
     select: DEVELOPER_FIELDS,

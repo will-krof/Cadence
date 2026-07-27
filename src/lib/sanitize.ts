@@ -15,8 +15,6 @@ export const LIMITS = {
   email: 200,
   phone: 40,
   roleName: 60,
-  /** Base64 of a 256px JPEG, with room to spare. */
-  avatar: 400_000,
   /** scrypt is deliberately slow, so a password is not an open-ended input. */
   password: 200,
   /** Nobody holds hundreds of roles on one project. */
@@ -56,14 +54,6 @@ export function safeColor(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(trimmed) ? trimmed : null;
-}
-
-/** Image data URLs only, and only formats a browser draws as an image. */
-export function safeAvatar(value: string): boolean {
-  return (
-    /^data:image\/(png|jpeg|jpg|webp|gif);base64,[a-z0-9+/=\s]+$/i.test(value) &&
-    value.length <= LIMITS.avatar
-  );
 }
 
 /** Trimmed text, or null. Anything longer than the cap is a 400, not a slice. */

@@ -42,8 +42,9 @@ function policyTemplate(isDev: boolean) {
     // The app styles elements inline — a colour here, a grid there — which is
     // what 'unsafe-inline' is for. It is style, not script: nothing executes.
     "style-src 'self' 'unsafe-inline'",
-    // Avatars are stored as data URLs, and canvas work reads back as a blob.
-    "img-src 'self' data: blob:",
+    // The app uploads and stores no images at all: what it draws is its own
+    // few inline marks, and a letter where a photo would have gone.
+    "img-src 'self' data:",
     "font-src 'self' data:",
     // Talks to itself only; the dev server also wants its websocket.
     `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
