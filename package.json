@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "create-account": "node scripts/create-account.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

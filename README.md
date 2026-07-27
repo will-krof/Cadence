@@ -21,18 +21,16 @@ else picks their login through an invite link, so the only self-serve door into
 the app is a link an admin handed out. Both kinds sign in on the same form: an
 account by email, a team member by username.
 
-To create the first account, hash a password and insert the row:
+To create one:
 
 ```bash
-HASH=$(node -e "const {randomBytes,scryptSync}=require('node:crypto');const s=randomBytes(16);process.stdout.write('scrypt\$'+s.toString('hex')+'\$'+scryptSync(process.argv[1],s,64).toString('hex'))" 'your-password')
-
-npx prisma db execute --schema prisma/schema.prisma --stdin <<SQL
-INSERT INTO "User" ("id", "email", "name", "passwordHash", "createdAt")
-VALUES (lower(hex(randomblob(16))), 'you@example.com', 'Your Name', '$HASH', CURRENT_TIMESTAMP);
-SQL
+npm run create-account -- you@example.com --name "Your Name"
 ```
 
-The hash format is the one `src/lib/auth.ts` reads: `scrypt$<salt-hex>$<key-hex>`.
+It asks for the password without echoing it. `--password` is there for scripts
+that need it, at the cost of putting the password in your shell history.
+
+Then log in at [/login](http://localhost:3000/login) with that email.
 
 ## Roles and invite links
 
