@@ -488,18 +488,25 @@ function PeopleSection({
                   )}
                 </div>
 
-                {/* Only the owner is handed the links, and only for people who
-                    were actually put on the project — carrying a task doesn't
-                    make one. */}
-                {canEdit && membership && (
-                  <InviteRow
-                    person={person}
-                    invite={membership.invite}
-                    hasLogin={membership.hasLogin}
-                    onRotate={() => onRotateInvite(project.id, person.id)}
-                    onRevoke={() => onRevokeInvite(project.id, person.id)}
-                  />
-                )}
+                {/* Inviting somebody is this card's business, and it waits for
+                    a role: the link is only worth sending once it opens
+                    something. Carrying a task isn't being put on the project,
+                    so those rows have no link either. */}
+                {canEdit &&
+                  membership &&
+                  (held.length > 0 || membership.hasLogin ? (
+                    <InviteRow
+                      person={person}
+                      invite={membership.invite}
+                      hasLogin={membership.hasLogin}
+                      onRotate={() => onRotateInvite(project.id, person.id)}
+                      onRevoke={() => onRevokeInvite(project.id, person.id)}
+                    />
+                  ) : (
+                    <p className="border-t border-[var(--hairline)] pt-2 text-[0.75rem] text-[var(--ink-muted)]">
+                      Give them a role to invite them to this project.
+                    </p>
+                  ))}
               </li>
             );
           })}

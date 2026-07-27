@@ -17,7 +17,7 @@ async function member(projectId: string, developerId: string, userId: string) {
   if (!developerId) return null;
   return prisma.projectMember.findFirst({
     where: { projectId, developerId, project: { userId } },
-    select: { id: true },
+    select: { id: true, _count: { select: { roles: true } } },
   });
 }
 
@@ -40,6 +40,13 @@ export async function POST(
   const developerId = await developerIdFrom(request);
   const found = await member(id, developerId, user.id);
   if (!found) return notOnProject();
+  // What the link opens is the roles behind it, so there has to be one.
+  if (found._count.roles === 0) {
+    return NextResponse.json(
+      { error: "Give them a role on this project first" },
+      { status: 400 }
+    );
+  }
 
   const updated = await prisma.projectMember.update({
     where: { id: found.id },

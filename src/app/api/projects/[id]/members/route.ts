@@ -62,24 +62,57 @@ export async function PUT(
     }
   }
 
+  // An invite is only worth handing out once there is a role behind it: a link
+  // that opens nothing would be a link that says nothing about what the person
+  // is here to do. So the roles decide whether there is one.
+  const existing = await prisma.projectMember.findUnique({
+    where: { projectId_developerId: { projectId: id, developerId } },
+    select: {
+      inviteToken: true,
+      inviteRevoked: true,
+      developer: { select: { username: true } },
+    },
+  });
+  const hasLogin = existing?.developer.username != null;
+
+  const invite = (() => {
+    // Their own login has replaced the link; nothing here should disturb it.
+    if (hasLogin) return {};
+    if (roleIds.length === 0) {
+      // No role, no way in. Clearing rather than revoking, so giving them a
+      // role again reads as a first invite rather than as something undone.
+      return existing?.inviteToken
+        ? {
+            inviteToken: null,
+            inviteCreatedAt: null,
+            inviteExpiresAt: null,
+            inviteRevoked: false,
+          }
+        : {};
+    }
+    // A role and no live link: this is the moment they can be invited. A link
+    // that is already live is left alone — changing what somebody can see
+    // doesn't change how they get in.
+    if (!existing?.inviteToken && !existing?.inviteRevoked) return freshInvite();
+    return {};
+  })();
+
   const member = await prisma.projectMember.upsert({
     where: { projectId_developerId: { projectId: id, developerId } },
     create: {
       projectId: id,
       developerId,
       roles: { create: roleIds.map((roleId) => ({ roleId })) },
-      // Putting someone on a project is how they get in, so the link that sets
-      // their login up is made here rather than asked for separately.
-      ...freshInvite(),
+      ...invite,
     },
     // Replacing the set outright keeps this the single description of what
-    // they hold, rather than something callers have to diff. The link is left
-    // alone: changing what someone can see doesn't change how they get in.
+    // they hold, rather than something callers have to diff.
     update: {
       roles: {
         deleteMany: {},
         create: roleIds.map((roleId) => ({ roleId })),
       },
+      ...invite,
     },
     select: MEMBER_FIELDS,
   });

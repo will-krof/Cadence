@@ -72,7 +72,7 @@ export default async function LandingPage() {
           />
           <Feature
             title="Invited, not signed up"
-            body="Put someone on a project and they get a link. It lasts three days, and they spend it picking the username and password they'll sign in with."
+            body="Give someone a role on a project and their link appears. It lasts three days, and they spend it picking the username and password they'll sign in with."
           />
           <Feature
             title="One team, many projects"
@@ -87,8 +87,8 @@ export default async function LandingPage() {
           <ol className="mt-4 flex flex-col gap-4">
             <Step
               n={1}
-              title="Add them to the project"
-              body="Pick someone from the roster and tick the roles they should hold. A link is made for them there and then."
+              title="Put them on the project, in a role"
+              body="Add someone from the roster to a project and tick what they are here to do. The moment they hold a role, their invite link is ready on the project card."
             />
             <Step
               n={2}

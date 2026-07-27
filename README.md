@@ -39,10 +39,15 @@ timeline, tracker, team. One role per project is the admin, which always sees
 everything and is the only one that edits the project. Someone can hold several
 roles on the same project, and different roles on different projects.
 
-Putting somebody on a project mints their invite link. Opening it shows them the
-project and the roles it carries, then asks for a username and a password — that
-login is how they get in from then on, and it is the only thing the link is spent
-on. From the project card, or their profile in the Team view:
+People are added to the team first, which gives them a profile and nothing more.
+Inviting them is a project's business: put them on a project, tick the roles they
+should hold, and their invite link appears on the project card — a link with no
+role behind it would open nothing, so there isn't one until there is a role. Take
+every role away again and the link goes with them.
+
+Opening the link shows them the project and the roles it carries, then asks for a
+username and a password — that login is how they get in from then on, and it is
+the only thing the link is spent on. From the project card:
 
 - **Copy** hands the link over.
 - **Regenerate** issues a new token, which kills the link they had.

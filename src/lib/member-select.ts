@@ -72,6 +72,8 @@ export async function refreshExpiredInvites(where: {
       inviteToken: { not: null },
       inviteExpiresAt: { lte: new Date() },
       developer: { username: null },
+      // No role behind it, nothing to invite them into.
+      roles: { some: {} },
     },
     select: { id: true, inviteExpiresAt: true },
   });

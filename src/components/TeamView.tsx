@@ -4,10 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
 import { Avatar, Field, RoleChips } from "@/components/ui";
 import { useFeedback } from "@/components/Feedback";
-import { InviteRow } from "@/components/InviteRow";
 import {
   CURRENCIES,
-  Invite,
   Membership,
   Developer,
   DeveloperInput,
@@ -60,9 +58,12 @@ async function fileToAvatar(file: File): Promise<string> {
 }
 
 /**
- * The roster. A guest who was let in through an invite link reads it — the
- * profiles, the salaries, the projects — but changing the team, and handing out
- * the links that get people in, stays with the workspace's owner.
+ * The roster: who is on the team, and what each of them is like. Adding somebody
+ * here gives them a profile and nothing else — inviting them is a project's
+ * business, and it happens on the project card once they have a role there.
+ *
+ * A signed-in team member reads this where a role lets them; changing the team
+ * stays with the workspace's owner.
  */
 export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
   const {
@@ -70,8 +71,6 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
     projects,
     memberships,
     setMemberRoles,
-    rotateInvite,
-    revokeInvite,
     removeMember,
     createDeveloper,
     updateDeveloper,
@@ -290,8 +289,6 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
             onToggleArchive={() =>
               setDeveloperActive(selected.id, !selected.active)
             }
-            onRotateInvite={rotateInvite}
-            onRevokeInvite={revokeInvite}
             canEdit={canEdit}
           />
         ) : (
@@ -359,8 +356,6 @@ function ProfileCard({
   onBack,
   onDelete,
   onToggleArchive,
-  onRotateInvite,
-  onRevokeInvite,
   canEdit,
 }: {
   person: Developer;
@@ -370,8 +365,6 @@ function ProfileCard({
   onBack: () => void;
   onDelete: () => void;
   onToggleArchive: () => void;
-  onRotateInvite: (projectId: string, developerId: string) => Promise<void>;
-  onRevokeInvite: (projectId: string, developerId: string) => Promise<void>;
   /** Guests read a profile; the owner changes it and hands out the links. */
   canEdit: boolean;
 }) {
@@ -389,7 +382,6 @@ function ProfileCard({
       name: string;
       roles: { id: string; name: string }[];
       viaTasks: boolean;
-      invite: Invite | null;
       hasLogin: boolean;
     }[] = [];
     const seen = new Set<string>();
@@ -405,7 +397,6 @@ function ProfileCard({
         name: project.name,
         roles: project.roles.filter((r) => membership.roleIds.includes(r.id)),
         viaTasks: false,
-        invite: membership.invite,
         hasLogin: membership.hasLogin,
       });
     }
@@ -418,8 +409,6 @@ function ProfileCard({
         name: task.project.name,
         roles: [],
         viaTasks: true,
-        // Carrying a task isn't being put on the project, so there is no link.
-        invite: null,
         hasLogin: false,
       });
     }
@@ -540,38 +529,33 @@ function ProfileCard({
         ) : (
           <ul className="divide-y divide-[var(--hairline)]">
             {onProjects.map((row) => (
-              <li key={row.id} className="flex flex-col gap-2 px-3 py-2.5">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                  <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
-                    {row.name}
+              <li
+                key={row.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5"
+              >
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
+                  {row.name}
+                </span>
+                {row.hasLogin && (
+                  <span className="shrink-0 text-[0.6875rem] text-[var(--ink-muted)]">
+                    Login set up
                   </span>
-                  {row.roles.length > 0 ? (
-                    <span className="flex flex-wrap gap-1">
-                      {row.roles.map((role) => (
-                        <span
-                          key={role.id}
-                          className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--accent)]"
-                        >
-                          {role.name}
-                        </span>
-                      ))}
-                    </span>
-                  ) : (
-                    <span className="text-[0.75rem] text-[var(--ink-muted)]">
-                      {row.viaTasks ? "Has tasks, no role" : "No role"}
-                    </span>
-                  )}
-                </div>
-                {/* The link they get into this project with — the same one the
-                    project card hands out, so either place will do. */}
-                {canEdit && !row.viaTasks && (
-                  <InviteRow
-                    person={person}
-                    invite={row.invite}
-                    hasLogin={row.hasLogin}
-                    onRotate={() => onRotateInvite(row.id, person.id)}
-                    onRevoke={() => onRevokeInvite(row.id, person.id)}
-                  />
+                )}
+                {row.roles.length > 0 ? (
+                  <span className="flex flex-wrap gap-1">
+                    {row.roles.map((role) => (
+                      <span
+                        key={role.id}
+                        className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--accent)]"
+                      >
+                        {role.name}
+                      </span>
+                    ))}
+                  </span>
+                ) : (
+                  <span className="text-[0.75rem] text-[var(--ink-muted)]">
+                    {row.viaTasks ? "Has tasks, no role" : "No role"}
+                  </span>
                 )}
               </li>
             ))}
