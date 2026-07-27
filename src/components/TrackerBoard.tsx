@@ -2,10 +2,10 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
-import { AssigneeSelect, Avatar, StatusPill } from "@/components/ui";
+import { AssigneeSelect, Avatar, SprintPicker, StatusPill } from "@/components/ui";
 import { TaskModal } from "@/components/TaskModal";
 import { Developer, STATUS_OPTIONS, Task, TaskStatus } from "@/lib/types";
-import { toISODate } from "@/lib/dates";
+import { formatDay, formatDayShort } from "@/lib/dates";
 
 /** Pointer travel before a press turns into a drag rather than a click. */
 const DRAG_THRESHOLD = 5;
@@ -26,7 +26,17 @@ interface DragState {
 }
 
 export function TrackerBoard() {
-  const { tasks, developers, updateTask, deleteTask } = useBoard();
+  const {
+    tasks,
+    developers,
+    sprints,
+    sprint,
+    sprintId,
+    hasUnplanned,
+    selectSprint,
+    updateTask,
+    deleteTask,
+  } = useBoard();
   const [assignee, setAssignee] = useState("");
   // Only the identity of what is being dragged lives in state; where it is
   // lives in a ref and goes straight to the preview element.
@@ -165,6 +175,13 @@ export function TrackerBoard() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-end gap-3 border-b border-[var(--hairline)] px-4 py-3 sm:px-6">
+        <SprintPicker
+          sprints={sprints}
+          sprint={sprint}
+          sprintId={sprintId}
+          hasUnplanned={hasUnplanned}
+          onSelect={selectSprint}
+        />
         <label className="flex flex-col gap-1">
           <span className="field-label">Filter by developer</span>
           <select
@@ -328,8 +345,8 @@ const TaskCard = memo(function TaskCard({
   onAssign: (id: string, developerId: string | null) => void;
   onOpen: (id: string) => void;
 }) {
-  const start = toISODate(new Date(task.startDate));
-  const end = toISODate(new Date(task.endDate));
+  const start = formatDayShort(task.startDate);
+  const end = formatDay(task.endDate);
 
   function handlePointerDown(e: React.PointerEvent<HTMLElement>) {
     // Let the selects, links and delete button behave normally.

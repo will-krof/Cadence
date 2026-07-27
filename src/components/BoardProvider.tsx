@@ -18,8 +18,9 @@ import {
   Task,
   TaskRow,
   TaskStatus,
+  UNPLANNED,
 } from "@/lib/types";
-import { toISODate } from "@/lib/dates";
+import { startOfDay } from "@/lib/dates";
 import { useFeedback } from "@/components/Feedback";
 
 interface TaskInput {
@@ -70,8 +71,15 @@ interface BoardContextValue {
   deleteRole: (projectId: string, roleId: string) => Promise<void>;
 
   tasks: Task[];
+  /** Every task in the project, not just the sprint on show. */
+  projectTasks: Task[];
   developers: Developer[];
+  sprints: Sprint[];
   sprint: Sprint | null;
+  /** The chosen board: a sprint id, UNPLANNED, or null to follow the dates. */
+  sprintId: string | null;
+  hasUnplanned: boolean;
+  selectSprint: (id: string | null) => void;
   loading: boolean;
   projectLoading: boolean;
   stats: {
@@ -86,7 +94,13 @@ interface BoardContextValue {
   updateDeveloper: (id: string, input: Partial<DeveloperInput>) => Promise<void>;
   setDeveloperActive: (id: string, active: boolean) => Promise<void>;
   deleteDeveloper: (id: string) => Promise<void>;
-  updateSprint: (patch: SprintPatch) => Promise<void>;
+  createSprint: (input: {
+    number?: number;
+    startDate: string;
+    endDate: string;
+  }) => Promise<Sprint | null>;
+  updateSprint: (id: string, patch: SprintPatch) => Promise<void>;
+  deleteSprint: (id: string) => Promise<void>;
 }
 
 const BoardContext = createContext<BoardContextValue | null>(null);
@@ -100,6 +114,7 @@ export function useBoard() {
 /** Stable identity so consumers don't re-render on every empty state. */
 const EMPTY_ROWS: TaskRow[] = [];
 const EMPTY_TASKS: Task[] = [];
+const EMPTY_SPRINTS: Sprint[] = [];
 
 /** Pulls the server's error message out of a failed response, if there is one. */
 async function errorMessage(res: Response, fallback: string) {
@@ -127,16 +142,63 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   const [loaded, setLoaded] = useState<{
     projectId: string | null;
     tasks: TaskRow[];
-    sprint: Sprint | null;
-  }>({ projectId: null, tasks: [], sprint: null });
+    sprints: Sprint[];
+  }>({ projectId: null, tasks: [], sprints: [] });
+
+  // Which sprint's board is on show. Null means "work it out from the dates".
+  const [sprintId, setSprintId] = useState<string | null>(null);
 
   const rows = loaded.projectId === activeId ? loaded.tasks : EMPTY_ROWS;
-  const sprint = loaded.projectId === activeId ? loaded.sprint : null;
+  const sprints = loaded.projectId === activeId ? loaded.sprints : EMPTY_SPRINTS;
+
+  /** Tasks nobody planned into a sprint, shown as a board of their own. */
+  const hasUnplanned = useMemo(
+    () => rows.some((row) => !row.sprintId),
+    [rows]
+  );
+
+  // Falls back to the sprint today sits in, then the last one — opening a
+  // project lands on the board being worked on rather than the oldest.
+  const sprint = useMemo(() => {
+    if (sprintId === UNPLANNED) return null;
+    if (sprintId) return sprints.find((s) => s.id === sprintId) ?? null;
+    if (sprints.length === 0) return null;
+    const today = startOfDay(new Date()).getTime();
+    const current = sprints.find(
+      (s) =>
+        startOfDay(new Date(s.startDate)).getTime() <= today &&
+        startOfDay(new Date(s.endDate)).getTime() >= today
+    );
+    return current ?? sprints[sprints.length - 1];
+  }, [sprintId, sprints]);
+
+  /** What the boards show: one sprint's worth of work. */
+  const boardSprintId = sprintId === UNPLANNED ? null : sprint?.id ?? null;
+  // Read when a task is created, so the callback stays stable.
+  const boardSprintIdRef = useRef(boardSprintId);
+  useEffect(() => {
+    boardSprintIdRef.current = boardSprintId;
+  }, [boardSprintId]);
+
+  const boardRows = useMemo(
+    () => rows.filter((row) => (row.sprintId ?? null) === boardSprintId),
+    [rows, boardSprintId]
+  );
 
   // The server sends an assignee id; boards want the person. Joining here means
   // one pass when either side changes, instead of a copy of every profile
   // travelling inside every task.
   const tasks = useMemo(() => {
+    if (boardRows.length === 0) return EMPTY_TASKS;
+    const byId = new Map(developers.map((d) => [d.id, d]));
+    return boardRows.map((row) => ({
+      ...row,
+      developer: row.developerId ? byId.get(row.developerId) ?? null : null,
+    }));
+  }, [boardRows, developers]);
+
+  /** Every task in the project, for the card's project-wide numbers. */
+  const projectTasks = useMemo(() => {
     if (rows === EMPTY_ROWS) return EMPTY_TASKS;
     const byId = new Map(developers.map((d) => [d.id, d]));
     return rows.map((row) => ({
@@ -191,12 +253,14 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       try {
         const [taskRes, sprintRes] = await Promise.all([
           fetch(`/api/tasks?projectId=${activeId}`),
-          fetch(`/api/sprint?projectId=${activeId}`),
+          fetch(`/api/sprints?projectId=${activeId}`),
         ]);
         const nextTasks = await taskRes.json();
-        const nextSprint = await sprintRes.json();
+        const nextSprints = await sprintRes.json();
         if (cancelled) return;
-        setLoaded({ projectId: activeId, tasks: nextTasks, sprint: nextSprint });
+        setLoaded({ projectId: activeId, tasks: nextTasks, sprints: nextSprints });
+        // Whatever was selected belonged to the project being left.
+        setSprintId(null);
       } catch {
         if (!cancelled) notify("error", "Could not load this project.");
       }
@@ -355,7 +419,12 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...input, projectId: activeId }),
+        body: JSON.stringify({
+          ...input,
+          projectId: activeId,
+          // A new task belongs to the board it was created on.
+          sprintId: boardSprintIdRef.current,
+        }),
       });
       if (!res.ok) {
         notify("error", await errorMessage(res, "Could not create the task."));
@@ -493,41 +562,82 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
 
   // A patch rather than a full replacement: the sprint number and its dates are
   // edited from different places, and neither should have to restate the other.
-  const updateSprint = useCallback(
-    async (patch: SprintPatch) => {
-      if (!activeId) return;
-      const current = loaded.projectId === activeId ? loaded.sprint : null;
-      const today = toISODate(new Date());
-      const startDate =
-        patch.startDate ??
-        (current ? toISODate(new Date(current.startDate)) : today);
-      const endDate =
-        patch.endDate ?? (current ? toISODate(new Date(current.endDate)) : startDate);
-      const number = patch.number ?? current?.number ?? 1;
+  const setSprints = useCallback(
+    (update: (prev: Sprint[]) => Sprint[]) => {
+      setLoaded((prev) => ({ ...prev, sprints: update(prev.sprints) }));
+    },
+    []
+  );
 
-      const res = await fetch("/api/sprint", {
-        method: "PUT",
+  const createSprint = useCallback(
+    async (input: { number?: number; startDate: string; endDate: string }) => {
+      if (!activeId) return null;
+      const res = await fetch("/api/sprints", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: activeId, startDate, endDate, number }),
+        body: JSON.stringify({ ...input, projectId: activeId }),
+      });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not create the sprint."));
+        return null;
+      }
+      const created: Sprint = await res.json();
+      setSprints((prev) =>
+        [...prev, created].sort((a, b) => a.number - b.number)
+      );
+      notify("success", `Sprint ${created.number} planned.`);
+      return created;
+    },
+    [activeId, setSprints, notify]
+  );
+
+  const updateSprint = useCallback(
+    async (id: string, patch: SprintPatch) => {
+      const res = await fetch(`/api/sprints/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
       });
       if (!res.ok) {
         notify("error", await errorMessage(res, "Could not save the sprint."));
         return;
       }
-      const next = await res.json();
-      setLoaded((prev) => ({ ...prev, sprint: next }));
-      notify(
-        "success",
-        patch.number !== undefined && patch.startDate === undefined && patch.endDate === undefined
-          ? `Now on sprint ${next.number}.`
-          : "Sprint updated."
+      const updated: Sprint = await res.json();
+      setSprints((prev) =>
+        prev
+          .map((s) => (s.id === id ? updated : s))
+          .sort((a, b) => a.number - b.number)
       );
     },
-    [activeId, loaded.projectId, loaded.sprint, notify]
+    [setSprints, notify]
   );
 
+  /** The sprint goes; its tasks stay, unplanned. */
+  const deleteSprint = useCallback(
+    async (id: string) => {
+      const res = await fetch(`/api/sprints/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not delete the sprint."));
+        return;
+      }
+      setLoaded((prev) => ({
+        ...prev,
+        sprints: prev.sprints.filter((s) => s.id !== id),
+        tasks: prev.tasks.map((t) =>
+          t.sprintId === id ? { ...t, sprintId: null } : t
+        ),
+      }));
+      setSprintId((current) => (current === id ? null : current));
+      notify("success", "Sprint deleted. Its tasks are now unplanned.");
+    },
+    [notify]
+  );
+
+  const selectSprint = useCallback((id: string | null) => setSprintId(id), []);
+
+  // The boards show one sprint, so their tally counts that sprint's work.
   const stats = useMemo(() => {
-    const total = rows.length;
+    const total = boardRows.length;
     const counts: Record<TaskStatus, number> = {
       TODO: 0,
       IN_PROGRESS: 0,
@@ -535,10 +645,10 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       ON_HOLD: 0,
       DONE: 0,
     };
-    for (const t of rows) counts[t.status]++;
+    for (const t of boardRows) counts[t.status]++;
     const progress = total === 0 ? 0 : (counts.DONE / total) * 100;
     return { total, counts, progress };
-  }, [rows]);
+  }, [boardRows]);
 
   // Memoised: without it every provider render hands consumers a new object and
   // re-renders every board, however little actually changed.
@@ -554,8 +664,13 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     updateRole,
     deleteRole,
     tasks,
+    projectTasks,
     developers,
+    sprints,
     sprint,
+    sprintId,
+    hasUnplanned,
+    selectSprint,
     loading,
     projectLoading,
     stats,
@@ -566,7 +681,9 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     updateDeveloper,
     setDeveloperActive,
     deleteDeveloper,
+    createSprint,
     updateSprint,
+    deleteSprint,
     }),
     [
       projects,
@@ -579,8 +696,13 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       updateRole,
       deleteRole,
       tasks,
+      projectTasks,
       developers,
+      sprints,
       sprint,
+      sprintId,
+      hasUnplanned,
+      selectSprint,
       loading,
       projectLoading,
       stats,
@@ -591,7 +713,9 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       updateDeveloper,
       setDeveloperActive,
       deleteDeveloper,
+      createSprint,
       updateSprint,
+      deleteSprint,
     ]
   );
 

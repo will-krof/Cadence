@@ -78,7 +78,7 @@ model Project {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   tasks       Task[]
-  sprint      Sprint?
+  sprints     Sprint[]
   roles       ProjectRole[]
   members     ProjectMember[]
 
@@ -139,6 +139,9 @@ model Task {
   project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   developerId String?
   developer   Developer? @relation(fields: [developerId], references: [id], onDelete: SetNull)
+  // Deleting a sprint leaves its tasks behind rather than taking them with it.
+  sprintId    String?
+  sprint      Sprint?    @relation(fields: [sprintId], references: [id], onDelete: SetNull)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -148,14 +151,22 @@ model Task {
   // Carries "one person's tasks" and, as a covering index, the distinct
   // person/project pairs the team roster groups by.
   @@index([developerId, projectId])
+  @@index([sprintId, order])
 }
 
+/// A project runs a series of these. Each one is its own board: a task belongs
+/// to a sprint, so a sprint created ahead of time starts empty.
 model Sprint {
   id        String   @id @default(cuid())
-  projectId String   @unique
+  projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   number    Int      @default(1)
   startDate DateTime
   endDate   DateTime
+  createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  tasks     Task[]
+
+  @@unique([projectId, number])
+  @@index([projectId])
 }

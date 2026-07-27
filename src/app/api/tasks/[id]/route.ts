@@ -47,6 +47,7 @@ export async function PATCH(
       endDate: body.endDate ? new Date(body.endDate) : undefined,
       developerId:
         body.developerId === undefined ? undefined : body.developerId || null,
+      sprintId: body.sprintId === undefined ? undefined : body.sprintId || null,
       order: typeof body.order === "number" ? body.order : undefined,
     },
     select: TASK_FIELDS,

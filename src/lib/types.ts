@@ -112,6 +112,8 @@ export interface TaskRow {
   endDate: string;
   order: number;
   developerId: string | null;
+  /** The sprint this task is planned into, if any. */
+  sprintId: string | null;
 }
 
 /** A task as boards use it, with the assignee joined in from the roster. */
@@ -125,8 +127,12 @@ export interface Sprint {
   number: number;
   startDate: string;
   endDate: string;
+  createdAt: string;
   updatedAt: string;
 }
+
+/** Tasks that were never planned into a sprint sit in this pseudo-sprint. */
+export const UNPLANNED = "__unplanned__";
 
 /** What the per-person endpoint returns: enough to list someone's work. */
 export interface DeveloperTask {

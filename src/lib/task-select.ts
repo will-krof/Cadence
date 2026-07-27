@@ -14,4 +14,5 @@ export const TASK_FIELDS = {
   order: true,
   projectId: true,
   developerId: true,
+  sprintId: true,
 } as const;

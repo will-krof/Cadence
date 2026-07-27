@@ -12,7 +12,13 @@ import {
 import { contrastText } from "@/lib/color";
 import { Developer, STATUS_OPTIONS, Task, TaskRow, statusMeta } from "@/lib/types";
 import { useBoard } from "@/components/BoardProvider";
-import { AssigneeSelect, Avatar, Stat, StatusPill } from "@/components/ui";
+import {
+  AssigneeSelect,
+  Avatar,
+  SprintPicker,
+  Stat,
+  StatusPill,
+} from "@/components/ui";
 import { TaskModal } from "@/components/TaskModal";
 
 const ROW_HEIGHT = 44;
@@ -54,8 +60,18 @@ const COL_WIDTHS_WIDE: ColWidths = { task: 240, status: 132, developer: 132 };
 const COL_WIDTHS_COMPACT: ColWidths = { task: 132, status: 104, developer: 96 };
 
 export function GanttBoard() {
-  const { tasks, developers, sprint, stats, updateTask, deleteTask, updateSprint } =
-    useBoard();
+  const {
+    tasks,
+    developers,
+    sprints,
+    sprint,
+    sprintId,
+    hasUnplanned,
+    selectSprint,
+    stats,
+    updateTask,
+    deleteTask,
+  } = useBoard();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const barDragRef = useRef<BarDrag | null>(null);
@@ -452,26 +468,13 @@ export function GanttBoard() {
         </div>
 
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-          <label className="flex flex-col gap-1">
-            <span className="field-label">
-              Sprint {sprint ? sprint.number : ""} start
-            </span>
-            <input
-              type="date"
-              value={sprint ? toISODate(new Date(sprint.startDate)) : ""}
-              onChange={(e) => updateSprint({ startDate: e.target.value })}
-              className="input w-[9.5rem]"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="field-label">Sprint end</span>
-            <input
-              type="date"
-              value={sprint ? toISODate(new Date(sprint.endDate)) : ""}
-              onChange={(e) => updateSprint({ endDate: e.target.value })}
-              className="input w-[9.5rem]"
-            />
-          </label>
+          <SprintPicker
+            sprints={sprints}
+            sprint={sprint}
+            sprintId={sprintId}
+            hasUnplanned={hasUnplanned}
+            onSelect={selectSprint}
+          />
           <label className="flex cursor-pointer select-none items-center gap-2 pb-2 text-xs text-[var(--ink-secondary)]">
             <input
               type="checkbox"

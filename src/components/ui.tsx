@@ -1,7 +1,15 @@
 "use client";
 
 import { memo, useEffect, useState } from "react";
-import { Developer, STATUS_OPTIONS, TaskStatus, statusMeta } from "@/lib/types";
+import {
+  Developer,
+  Sprint,
+  STATUS_OPTIONS,
+  TaskStatus,
+  UNPLANNED,
+  statusMeta,
+} from "@/lib/types";
+import { formatRange } from "@/lib/dates";
 
 /**
  * A `<select>` that only holds its options once someone reaches for them.
@@ -53,6 +61,53 @@ export function LazySelect({
         <option value={value}>{selected?.label ?? ""}</option>
       )}
     </select>
+  );
+}
+
+/**
+ * Which sprint's board is on show. Both boards carry one, so switching from
+ * the timeline and switching from the tracker mean the same thing.
+ */
+export function SprintPicker({
+  sprints,
+  sprint,
+  sprintId,
+  hasUnplanned,
+  onSelect,
+}: {
+  sprints: Sprint[];
+  sprint: Sprint | null;
+  sprintId: string | null;
+  hasUnplanned: boolean;
+  onSelect: (id: string | null) => void;
+}) {
+  if (sprints.length === 0 && !hasUnplanned) {
+    return (
+      <span className="text-[0.75rem] text-[var(--ink-muted)]">
+        No sprints yet — plan one on the project card.
+      </span>
+    );
+  }
+
+  const value = sprintId === UNPLANNED ? UNPLANNED : sprint?.id ?? "";
+
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="field-label">Sprint</span>
+      <select
+        value={value}
+        onChange={(e) => onSelect(e.target.value || null)}
+        className="select w-56"
+        aria-label="Sprint on show"
+      >
+        {sprints.map((s) => (
+          <option key={s.id} value={s.id}>
+            {`Sprint ${s.number} · ${formatRange(s.startDate, s.endDate)}`}
+          </option>
+        ))}
+        {hasUnplanned && <option value={UNPLANNED}>Unplanned</option>}
+      </select>
+    </label>
   );
 }
 

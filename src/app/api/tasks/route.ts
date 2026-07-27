@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
       endDate: new Date(body.endDate),
       projectId: body.projectId,
       developerId: body.developerId || null,
+      sprintId: body.sprintId || null,
       order: (maxOrder._max.order ?? 0) + 1,
     },
     select: TASK_FIELDS,

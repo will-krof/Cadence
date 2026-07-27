@@ -11,18 +11,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "projectId is required" }, { status: 400 });
   }
 
-  const sprint = await prisma.sprint.findFirst({
+  const sprints = await prisma.sprint.findMany({
     where: { projectId, project: { userId: user.id } },
+    orderBy: { number: "asc" },
   });
-  return NextResponse.json(sprint);
+  return NextResponse.json(sprints);
 }
 
-export async function PUT(request: NextRequest) {
+export async function POST(request: NextRequest) {
   const { user, response } = await requireUser();
   if (response) return response;
 
   const body = await request.json();
-
   if (!body.projectId || !body.startDate || !body.endDate) {
     return NextResponse.json(
       { error: "projectId, startDate and endDate are required" },
@@ -38,26 +38,35 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  // Sprint numbers are counted by people, so they start at 1 and stay whole.
-  const parsedNumber = Number(body.number);
-  const number =
-    Number.isFinite(parsedNumber) && parsedNumber >= 1
-      ? Math.floor(parsedNumber)
-      : undefined;
-
-  const sprint = await prisma.sprint.upsert({
+  // Sprints are numbered in sequence unless the caller says otherwise.
+  const highest = await prisma.sprint.aggregate({
     where: { projectId: body.projectId },
-    create: {
+    _max: { number: true },
+  });
+  const asked = Number(body.number);
+  const number =
+    Number.isFinite(asked) && asked >= 1
+      ? Math.floor(asked)
+      : (highest._max.number ?? 0) + 1;
+
+  const taken = await prisma.sprint.findFirst({
+    where: { projectId: body.projectId, number },
+    select: { id: true },
+  });
+  if (taken) {
+    return NextResponse.json(
+      { error: `Sprint ${number} already exists on this project` },
+      { status: 409 }
+    );
+  }
+
+  const sprint = await prisma.sprint.create({
+    data: {
       projectId: body.projectId,
-      number: number ?? 1,
-      startDate: new Date(body.startDate),
-      endDate: new Date(body.endDate),
-    },
-    update: {
       number,
       startDate: new Date(body.startDate),
       endDate: new Date(body.endDate),
     },
   });
-  return NextResponse.json(sprint);
+  return NextResponse.json(sprint, { status: 201 });
 }

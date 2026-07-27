@@ -4,13 +4,21 @@ import { useMemo, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
 import { useFeedback } from "@/components/Feedback";
 import { Avatar, CloseIcon, Field, ToolCheckbox } from "@/components/ui";
-import { diffDays, toISODate } from "@/lib/dates";
+import {
+  addDays,
+  diffDays,
+  formatDay,
+  formatRange,
+  toISODate,
+} from "@/lib/dates";
 import {
   Developer,
   Project,
   ProjectRole,
   ROLE_VIEWS,
+  Sprint,
   STATUS_OPTIONS,
+  TaskStatus,
 } from "@/lib/types";
 
 /**
@@ -34,15 +42,18 @@ export function ProjectOverview({
     activeProject,
     updateProject,
     deleteProject,
-    tasks,
+    projectTasks,
+    sprints,
     sprint,
-    stats,
     projectLoading,
+    createSprint,
     updateSprint,
+    deleteSprint,
     createRole,
     updateRole,
     deleteRole,
   } = useBoard();
+  const tasks = projectTasks;
   const { confirm } = useFeedback();
 
   const [editing, setEditing] = useState(false);
@@ -70,9 +81,28 @@ export function ProjectOverview({
     return [...byId.values()];
   }, [tasks]);
 
+  // Project-wide, whichever sprint the boards happen to be showing.
+  const stats = useMemo(() => {
+    const counts: Record<TaskStatus, number> = {
+      TODO: 0,
+      IN_PROGRESS: 0,
+      IN_TEST: 0,
+      ON_HOLD: 0,
+      DONE: 0,
+    };
+    for (const task of tasks) counts[task.status]++;
+    const total = tasks.length;
+    return {
+      total,
+      counts,
+      progress: total === 0 ? 0 : (counts.DONE / total) * 100,
+    };
+  }, [tasks]);
+
   if (!activeProject) return null;
 
   const unassigned = tasks.filter((t) => !t.developerId).length;
+
 
   async function remove() {
     if (!activeProject) return;
@@ -138,9 +168,9 @@ export function ProjectOverview({
             }
           />
           <Metric
-            label="Sprint"
-            value={sprint ? `#${sprint.number}` : "—"}
-            hint={sprint ? "In progress" : "Not started"}
+            label="Sprints"
+            value={projectLoading ? null : String(sprints.length)}
+            hint={sprint ? `Sprint ${sprint.number} on show` : "None planned"}
           />
           <Metric
             label="Tasks"
@@ -151,12 +181,12 @@ export function ProjectOverview({
           />
           <Metric
             label="Start date"
-            value={projectLoading ? null : span ? toISODate(span.start) : "—"}
+            value={projectLoading ? null : span ? formatDay(span.start) : "—"}
             hint="Earliest task"
           />
           <Metric
             label="End date"
-            value={projectLoading ? null : span ? toISODate(span.end) : "—"}
+            value={projectLoading ? null : span ? formatDay(span.end) : "—"}
             hint="Latest task"
           />
           <Metric
@@ -197,50 +227,14 @@ export function ProjectOverview({
           </section>
         )}
 
-        <section className="flex flex-col gap-2.5">
-          <h3 className="text-[0.8125rem] font-semibold tracking-tight">
-            Sprint
-          </h3>
-          {canEdit ? (
-            <>
-              <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-                <SprintNumberInput
-                  value={sprint?.number ?? 1}
-                  onCommit={(number) => updateSprint({ number })}
-                />
-                <Field label="Starts" className="w-[9.5rem]">
-                  <input
-                    type="date"
-                    value={sprint ? toISODate(new Date(sprint.startDate)) : ""}
-                    onChange={(e) => updateSprint({ startDate: e.target.value })}
-                    className="input"
-                  />
-                </Field>
-                <Field label="Ends" className="w-[9.5rem]">
-                  <input
-                    type="date"
-                    value={sprint ? toISODate(new Date(sprint.endDate)) : ""}
-                    onChange={(e) => updateSprint({ endDate: e.target.value })}
-                    className="input"
-                  />
-                </Field>
-              </div>
-              {!sprint && (
-                <p className="text-[0.75rem] text-[var(--ink-muted)]">
-                  Pick the dates to start sprint 1.
-                </p>
-              )}
-            </>
-          ) : (
-            <p className="text-[0.8125rem] text-[var(--ink-secondary)]">
-              {sprint
-                ? `Sprint ${sprint.number}, ${toISODate(
-                    new Date(sprint.startDate)
-                  )} → ${toISODate(new Date(sprint.endDate))}`
-                : "No sprint yet."}
-            </p>
-          )}
-        </section>
+        <SprintsSection
+          sprints={sprints}
+          tasks={tasks}
+          canEdit={canEdit}
+          onCreate={createSprint}
+          onUpdate={updateSprint}
+          onDelete={deleteSprint}
+        />
 
         <section>
           <h3 className="mb-2 text-[0.8125rem] font-semibold tracking-tight">
@@ -488,45 +482,284 @@ function RolesSection({
 }
 
 /**
- * Held locally while typing so "12" doesn't first save as sprint 1, then
- * committed on blur or Enter.
+ * The project's sprints, in order. Each is its own board, so planning one ahead
+ * gives an empty board waiting for the work that will go in it.
  */
-function SprintNumberInput({
-  value,
-  onCommit,
+function SprintsSection({
+  sprints,
+  tasks,
+  canEdit,
+  onCreate,
+  onUpdate,
+  onDelete,
 }: {
-  value: number;
-  onCommit: (number: number) => void;
+  sprints: Sprint[];
+  tasks: { sprintId: string | null }[];
+  canEdit: boolean;
+  onCreate: (input: {
+    number?: number;
+    startDate: string;
+    endDate: string;
+  }) => Promise<Sprint | null>;
+  onUpdate: (id: string, patch: SprintPatch) => void;
+  onDelete: (id: string) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
+  const { confirm } = useFeedback();
+  const [adding, setAdding] = useState(false);
 
-  function commit() {
-    const next = Number(draft);
-    setDraft(null);
-    if (draft !== null && Number.isFinite(next) && next >= 1 && Math.floor(next) !== value) {
-      onCommit(Math.floor(next));
+  const counts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const task of tasks) {
+      if (!task.sprintId) continue;
+      map.set(task.sprintId, (map.get(task.sprintId) ?? 0) + 1);
     }
+    return map;
+  }, [tasks]);
+
+  const unplanned = tasks.filter((t) => !t.sprintId).length;
+
+  // A new sprint follows the last one: the next number, the fortnight after.
+  const last = sprints[sprints.length - 1];
+  const suggested = {
+    number: (last?.number ?? 0) + 1,
+    startDate: last
+      ? toISODate(addDays(new Date(last.endDate), 1))
+      : toISODate(new Date()),
+    endDate: last
+      ? toISODate(addDays(new Date(last.endDate), 14))
+      : toISODate(addDays(new Date(), 13)),
+  };
+
+  async function remove(sprint: Sprint) {
+    const held = counts.get(sprint.id) ?? 0;
+    const ok = await confirm({
+      title: `Delete sprint ${sprint.number}?`,
+      body: held
+        ? `Its ${held} task${held === 1 ? "" : "s"} won't be deleted — they become unplanned, and you can move them into another sprint.`
+        : "This sprint has no tasks in it.",
+      confirmLabel: "Delete sprint",
+      destructive: true,
+    });
+    if (ok) await onDelete(sprint.id);
   }
 
   return (
-    <Field label="Number" className="w-24">
-      <input
-        type="number"
-        min={1}
-        step={1}
-        value={draft ?? value}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            e.currentTarget.blur();
-          }
-        }}
-        className="input"
-      />
-    </Field>
+    <section className="flex flex-col gap-2.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h3 className="text-[0.8125rem] font-semibold tracking-tight">
+            Sprints
+          </h3>
+          <p className="text-[0.75rem] text-[var(--ink-muted)]">
+            Each sprint is its own board. Plan them ahead; the timeline and
+            tracker switch between them.
+          </p>
+        </div>
+        {canEdit && !adding && (
+          <button onClick={() => setAdding(true)} className="btn-secondary">
+            Plan a sprint
+          </button>
+        )}
+      </div>
+
+      {sprints.length === 0 && !adding && (
+        <p className="text-[0.8125rem] text-[var(--ink-muted)]">
+          No sprints yet.
+        </p>
+      )}
+
+      <ul className="flex flex-col gap-1.5">
+        {sprints.map((sprint) => (
+          <SprintRow
+            key={sprint.id}
+            sprint={sprint}
+            taskCount={counts.get(sprint.id) ?? 0}
+            canEdit={canEdit}
+            onUpdate={onUpdate}
+            onDelete={() => remove(sprint)}
+          />
+        ))}
+      </ul>
+
+      {adding && (
+        <SprintForm
+          initial={suggested}
+          onCancel={() => setAdding(false)}
+          onSubmit={async (values) => {
+            const created = await onCreate(values);
+            if (created) setAdding(false);
+          }}
+        />
+      )}
+
+      {unplanned > 0 && (
+        <p className="text-[0.75rem] text-[var(--ink-muted)]">
+          {unplanned} task{unplanned === 1 ? "" : "s"} not in any sprint — the
+          boards list them under “Unplanned”.
+        </p>
+      )}
+    </section>
   );
+}
+
+function SprintRow({
+  sprint,
+  taskCount,
+  canEdit,
+  onUpdate,
+  onDelete,
+}: {
+  sprint: Sprint;
+  taskCount: number;
+  canEdit: boolean;
+  onUpdate: (id: string, patch: SprintPatch) => void;
+  onDelete: () => void;
+}) {
+  const today = toISODate(new Date());
+  const running =
+    toISODate(new Date(sprint.startDate)) <= today &&
+    toISODate(new Date(sprint.endDate)) >= today;
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2">
+      <span className="flex items-center gap-2">
+        <span className="text-[0.8125rem] font-medium">
+          Sprint {sprint.number}
+        </span>
+        {running && (
+          <span className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.5625rem] uppercase tracking-wide text-[var(--accent)]">
+            Running
+          </span>
+        )}
+      </span>
+
+      {canEdit ? (
+        <span className="flex flex-wrap items-center gap-2">
+          <input
+            type="date"
+            value={toISODate(new Date(sprint.startDate))}
+            onChange={(e) => onUpdate(sprint.id, { startDate: e.target.value })}
+            className="input w-[9.5rem]"
+            aria-label={`Sprint ${sprint.number} starts`}
+          />
+          <input
+            type="date"
+            value={toISODate(new Date(sprint.endDate))}
+            onChange={(e) => onUpdate(sprint.id, { endDate: e.target.value })}
+            className="input w-[9.5rem]"
+            aria-label={`Sprint ${sprint.number} ends`}
+          />
+        </span>
+      ) : (
+        <span className="text-[0.8125rem] text-[var(--ink-secondary)]">
+          {formatRange(sprint.startDate, sprint.endDate)}
+        </span>
+      )}
+
+      <span className="ml-auto text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
+        {taskCount} task{taskCount === 1 ? "" : "s"}
+      </span>
+
+      {canEdit && (
+        <button
+          onClick={onDelete}
+          className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
+          aria-label={`Delete sprint ${sprint.number}`}
+          title="Delete sprint"
+        >
+          <CloseIcon />
+        </button>
+      )}
+    </li>
+  );
+}
+
+function SprintForm({
+  initial,
+  onCancel,
+  onSubmit,
+}: {
+  initial: { number: number; startDate: string; endDate: string };
+  onCancel: () => void;
+  onSubmit: (values: {
+    number: number;
+    startDate: string;
+    endDate: string;
+  }) => Promise<void>;
+}) {
+  const [number, setNumber] = useState(String(initial.number));
+  const [startDate, setStartDate] = useState(initial.startDate);
+  const [endDate, setEndDate] = useState(initial.endDate);
+  const [pending, setPending] = useState(false);
+
+  const valid =
+    Number(number) >= 1 && startDate !== "" && endDate !== "" && endDate >= startDate;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid) return;
+    setPending(true);
+    await onSubmit({ number: Math.floor(Number(number)), startDate, endDate });
+    setPending(false);
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="flex flex-wrap items-end gap-x-3 gap-y-2 rounded-[var(--radius)] border border-[var(--accent)] bg-[var(--accent-wash)] p-3"
+    >
+      <Field label="Number" className="w-24">
+        <input
+          type="number"
+          min={1}
+          step={1}
+          autoFocus
+          value={number}
+          onChange={(e) => setNumber(e.target.value)}
+          className="input"
+        />
+      </Field>
+      <Field label="Starts" className="w-[9.5rem]">
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="input"
+        />
+      </Field>
+      <Field label="Ends" className="w-[9.5rem]">
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          className="input"
+        />
+      </Field>
+      <div className="flex items-center gap-2 pb-0.5">
+        <button type="button" onClick={onCancel} className="btn-secondary">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={pending || !valid}
+        >
+          {pending ? "Planning…" : "Plan sprint"}
+        </button>
+      </div>
+      {endDate < startDate && (
+        <p className="w-full text-[0.6875rem] text-[#d03b3b]">
+          A sprint can’t end before it starts.
+        </p>
+      )}
+    </form>
+  );
+}
+
+interface SprintPatch {
+  number?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 function Metric({
