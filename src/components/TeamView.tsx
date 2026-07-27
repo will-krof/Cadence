@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
-import { Avatar, Field } from "@/components/ui";
+import { Avatar, Field, LazySelect } from "@/components/ui";
 import { useFeedback } from "@/components/Feedback";
 import {
   CURRENCIES,
@@ -14,6 +14,9 @@ import {
   statusMeta,
   Assignment,
   DeveloperTask,
+  Membership,
+  Project,
+  ProjectRole,
 } from "@/lib/types";
 import { toISODate } from "@/lib/dates";
 
@@ -65,7 +68,7 @@ export function TeamView() {
     setDeveloperActive,
     deleteDeveloper,
   } = useBoard();
-  const { confirm } = useFeedback();
+  const { confirm, notify } = useFeedback();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -74,15 +77,25 @@ export function TeamView() {
   // Who works on what lives in the tasks, which span every project — the board
   // itself only holds the active one.
   const [assignments, setAssignments] = useState<Assignment[] | null>(null);
+  // Roles are held per project, so who-holds-what is its own small list.
+  const [memberships, setMemberships] = useState<Membership[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/tasks?scope=all");
-        if (!res.ok) throw new Error("failed");
-        const data = await res.json();
-        if (!cancelled) setAssignments(data);
+        const [taskRes, memberRes] = await Promise.all([
+          fetch("/api/tasks?scope=all"),
+          fetch("/api/members"),
+        ]);
+        if (!taskRes.ok || !memberRes.ok) throw new Error("failed");
+        const [tasks, members] = await Promise.all([
+          taskRes.json(),
+          memberRes.json(),
+        ]);
+        if (cancelled) return;
+        setAssignments(tasks);
+        setMemberships(members);
       } catch {
         if (!cancelled) setAssignments([]);
       }
@@ -91,6 +104,45 @@ export function TeamView() {
       cancelled = true;
     };
   }, [developers.length]);
+
+  /** Index for "what role does this person hold on that project". */
+  const roleFor = useCallback(
+    (projectId: string, developerId: string) =>
+      memberships.find(
+        (m) => m.projectId === projectId && m.developerId === developerId
+      )?.roleId ?? null,
+    [memberships]
+  );
+
+  const setMemberRole = useCallback(
+    async (projectId: string, developerId: string, roleId: string | null) => {
+      const previous = memberships;
+      setMemberships((prev) => {
+        const rest = prev.filter(
+          (m) => !(m.projectId === projectId && m.developerId === developerId)
+        );
+        return roleId ? [...rest, { projectId, developerId, roleId }] : rest;
+      });
+
+      const res = await fetch(`/api/projects/${projectId}/members`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ developerId, roleId }),
+      });
+      if (!res.ok) {
+        setMemberships(previous);
+        let message = "Could not save that role.";
+        try {
+          const body = await res.json();
+          if (typeof body?.error === "string") message = body.error;
+        } catch {
+          // Keep the generic message.
+        }
+        notify("error", message);
+      }
+    },
+    [memberships, notify]
+  );
 
   const selected = useMemo(
     () => developers.find((d) => d.id === selectedId) ?? null,
@@ -106,10 +158,17 @@ export function TeamView() {
   /** Active people bucketed by the projects they have tasks in. */
   const groups = useMemo(() => {
     const byProject = new Map<string, Set<string>>();
-    for (const { developerId, projectId } of assignments ?? []) {
+    const add = (projectId: string, developerId: string) => {
       const set = byProject.get(projectId) ?? new Set<string>();
       set.add(developerId);
       byProject.set(projectId, set);
+    };
+    for (const { developerId, projectId } of assignments ?? []) {
+      add(projectId, developerId);
+    }
+    // Being given a role puts someone on the project, tasks or not.
+    for (const { developerId, projectId } of memberships) {
+      add(projectId, developerId);
     }
 
     const assignedAnywhere = new Set<string>();
@@ -122,16 +181,22 @@ export function TeamView() {
       .map((project) => ({
         id: project.id,
         name: project.name,
+        roles: project.roles,
         people: active.filter((d) => byProject.get(project.id)?.has(d.id)),
       }))
       .filter((g) => g.people.length > 0);
 
     const unassigned = active.filter((d) => !assignedAnywhere.has(d.id));
     if (unassigned.length) {
-      result.push({ id: "__none__", name: "No project yet", people: unassigned });
+      result.push({
+        id: "__none__",
+        name: "No project yet",
+        roles: [],
+        people: unassigned,
+      });
     }
     return result;
-  }, [assignments, projects, active]);
+  }, [assignments, memberships, projects, active]);
 
   const showingDetail = creating || selected != null;
   const editing = creating || (selected != null && editingId === selected.id);
@@ -194,6 +259,10 @@ export function TeamView() {
               <PersonRow
                 key={d.id}
                 person={d}
+                role={
+                  group.roles.find((r) => r.id === roleFor(group.id, d.id))
+                    ?.name ?? null
+                }
                 selected={d.id === selectedId}
                 onClick={() => openPerson(d.id)}
               />
@@ -235,6 +304,7 @@ export function TeamView() {
                 <PersonRow
                   key={d.id}
                   person={d}
+                  role={null}
                   selected={d.id === selectedId}
                   onClick={() => openPerson(d.id)}
                 />
@@ -272,6 +342,9 @@ export function TeamView() {
           <ProfileCard
             key={selected.id}
             person={selected}
+            projects={projects.filter((p) => p.hasTeam)}
+            roleFor={roleFor}
+            onRoleChange={setMemberRole}
             onEdit={() => setEditingId(selected.id)}
             onBack={() => setSelectedId(null)}
             onDelete={() => removePerson(selected)}
@@ -291,10 +364,12 @@ export function TeamView() {
 
 function PersonRow({
   person,
+  role,
   selected,
   onClick,
 }: {
   person: Developer;
+  role: string | null;
   selected: boolean;
   onClick: () => void;
 }) {
@@ -322,6 +397,11 @@ function PersonRow({
         <span className="block truncate text-[0.75rem] text-[var(--ink-muted)]">
           {person.role || person.email || "—"}
         </span>
+        {role && (
+          <span className="mt-0.5 inline-block rounded-full bg-[var(--accent-wash)] px-1.5 py-0.5 text-[0.5625rem] uppercase tracking-wide text-[var(--accent)]">
+            {role}
+          </span>
+        )}
       </span>
     </button>
   );
@@ -329,12 +409,22 @@ function PersonRow({
 
 function ProfileCard({
   person,
+  projects,
+  roleFor,
+  onRoleChange,
   onEdit,
   onBack,
   onDelete,
   onToggleArchive,
 }: {
   person: Developer;
+  projects: Project[];
+  roleFor: (projectId: string, developerId: string) => string | null;
+  onRoleChange: (
+    projectId: string,
+    developerId: string,
+    roleId: string | null
+  ) => void;
   onEdit: () => void;
   onBack: () => void;
   onDelete: () => void;
@@ -424,6 +514,58 @@ function ProfileCard({
           </p>
         </section>
       )}
+
+      <section>
+        <h3 className="text-[0.8125rem] font-semibold tracking-tight">
+          Project roles
+        </h3>
+        <p className="mb-2 text-[0.75rem] text-[var(--ink-muted)]">
+          Each project has its own roles, and what a role sees is set on that
+          project’s card.
+        </p>
+
+        {projects.length === 0 ? (
+          <p className="text-[0.8125rem] text-[var(--ink-muted)]">
+            No projects with a team yet.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {projects.map((project) => {
+              // A role deleted from the project leaves the person on it with
+              // nothing held; fall back rather than showing a stale id.
+              const held = roleFor(project.id, person.id);
+              const current = project.roles.some((r) => r.id === held)
+                ? held ?? ""
+                : "";
+              return (
+              <li
+                key={project.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
+              >
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
+                  {project.name}
+                </span>
+                <LazySelect
+                  value={current}
+                  onChange={(roleId) =>
+                    onRoleChange(project.id, person.id, roleId || null)
+                  }
+                  options={[
+                    { value: "", label: "Not on this project" },
+                    ...project.roles.map((role: ProjectRole) => ({
+                      value: role.id,
+                      label: role.name,
+                    })),
+                  ]}
+                  className="select w-44"
+                  ariaLabel={`${person.name}’s role on ${project.name}`}
+                />
+              </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <section>
         <h3 className="mb-2 text-[0.8125rem] font-semibold tracking-tight">

@@ -142,3 +142,10 @@ export interface Assignment {
   developerId: string;
   projectId: string;
 }
+
+/** Someone's place on a project: which of its roles they hold. */
+export interface Membership {
+  projectId: string;
+  developerId: string;
+  roleId: string | null;
+}

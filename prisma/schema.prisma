@@ -62,6 +62,7 @@ model Developer {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   tasks     Task[]
+  memberships ProjectMember[]
 
   @@index([userId])
 }
@@ -79,6 +80,7 @@ model Project {
   tasks       Task[]
   sprint      Sprint?
   roles       ProjectRole[]
+  members     ProjectMember[]
 
   @@index([userId])
 }
@@ -96,9 +98,32 @@ model ProjectRole {
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+  members   ProjectMember[]
 
   @@unique([projectId, name])
   @@index([projectId])
+}
+
+/// Which role someone holds on a project. Roles are per project, so the same
+/// person can be an admin on one and a developer on another.
+model ProjectMember {
+  id String @id @default(cuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  developerId String
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+
+  // Kept nullable so deleting a role leaves the person on the project.
+  roleId String?
+  role   ProjectRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, developerId])
+  @@index([developerId])
+  @@index([roleId])
 }
 
 model Task {
