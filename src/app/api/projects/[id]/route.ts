@@ -39,7 +39,7 @@ export async function PATCH(
         typeof body.hasTimeline === "boolean" ? body.hasTimeline : undefined,
       hasTracker:
         typeof body.hasTracker === "boolean" ? body.hasTracker : undefined,
-      hasTeam: typeof body.hasTeam === "boolean" ? body.hasTeam : undefined,
+      hasWiki: typeof body.hasWiki === "boolean" ? body.hasWiki : undefined,
     },
     select: PROJECT_FIELDS,
   });

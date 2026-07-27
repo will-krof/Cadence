@@ -35,7 +35,7 @@ import {
  * The project card: everything about one project in one place — its details,
  * who is on it, when it runs, and which sprint it is in.
  */
-type OpenableView = "timeline" | "tracker" | "team";
+type OpenableView = "timeline" | "tracker" | "wiki" | "team";
 
 export function ProjectOverview({
   onOpenView,
@@ -307,6 +307,9 @@ export function ProjectOverview({
             onToggle={(roleId, patch) =>
               updateRole(activeProject.id, roleId, patch)
             }
+            onRename={(roleId, name) =>
+              updateRole(activeProject.id, roleId, { name })
+            }
             onRemove={(roleId) => deleteRole(activeProject.id, roleId)}
           />
         ) : null}
@@ -559,11 +562,13 @@ function RolesSection({
   project,
   onAdd,
   onToggle,
+  onRename,
   onRemove,
 }: {
   project: Project;
   onAdd: (name: string) => Promise<ProjectRole | null>;
   onToggle: (roleId: string, patch: Record<string, boolean>) => Promise<void>;
+  onRename: (roleId: string, name: string) => Promise<void>;
   onRemove: (roleId: string) => Promise<void>;
 }) {
   const { confirm } = useFeedback();
@@ -622,7 +627,10 @@ function RolesSection({
               >
                 <td className="py-2 pr-3">
                   <span className="flex items-center gap-2">
-                    <span className="font-medium">{role.name}</span>
+                    <RoleName
+                      role={role}
+                      onRename={(name) => onRename(role.id, name)}
+                    />
                     {role.isAdmin && (
                       <span className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.5625rem] uppercase tracking-wide text-[var(--accent)]">
                         Admin
@@ -631,7 +639,8 @@ function RolesSection({
                   </span>
                 </td>
                 {ROLE_VIEWS.map((view) => {
-                  const enabled = project[view.tool];
+                  // The roster has no project toggle to depend on.
+                  const enabled = view.tool == null || project[view.tool];
                   return (
                     <td key={view.key} className="px-3 py-2 text-center">
                       <input
@@ -689,9 +698,65 @@ function RolesSection({
         </button>
       </form>
       <p className="text-[0.6875rem] text-[var(--ink-muted)]">
-        A new role starts with nothing visible — tick what it should see.
+        A new role starts with nothing visible — tick what it should see. A name
+        can be changed at any time: it says what the role is called, not what it
+        opens.
       </p>
     </section>
+  );
+}
+
+/**
+ * A role's name, editable in place. Renaming is safe in a way that the
+ * checkboxes beside it are not — nobody gains or loses a view by it — so it
+ * saves on the way out of the field rather than behind a button, and puts the
+ * old name back if the save is refused or the field is left empty.
+ */
+function RoleName({
+  role,
+  onRename,
+}: {
+  role: ProjectRole;
+  onRename: (name: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(role.name);
+
+  // A rename by somebody else, or one the server refused, wins over what is in
+  // the field — as long as the field isn't being typed in.
+  const [focused, setFocused] = useState(false);
+  if (!focused && draft !== role.name) setDraft(role.name);
+
+  async function commit() {
+    setFocused(false);
+    const name = draft.trim();
+    if (!name || name === role.name) {
+      setDraft(role.name);
+      return;
+    }
+    await onRename(name);
+  }
+
+  return (
+    <input
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+        if (e.key === "Escape") {
+          setDraft(role.name);
+          setFocused(false);
+          e.currentTarget.blur();
+        }
+      }}
+      className="w-full min-w-24 rounded-[var(--radius)] border border-transparent bg-transparent px-1.5 py-1 font-medium transition hover:border-[var(--hairline)] focus:border-[var(--accent)] focus:bg-[var(--surface-raised)] focus:outline-none"
+      aria-label={`Name of the ${role.name} role`}
+      title="Rename this role"
+    />
   );
 }
 
@@ -1061,7 +1126,7 @@ interface DetailsValues {
   description: string;
   hasTimeline: boolean;
   hasTracker: boolean;
-  hasTeam: boolean;
+  hasWiki: boolean;
 }
 
 function DetailsForm({
@@ -1077,21 +1142,19 @@ function DetailsForm({
   const [description, setDescription] = useState(project.description ?? "");
   const [hasTimeline, setHasTimeline] = useState(project.hasTimeline);
   const [hasTracker, setHasTracker] = useState(project.hasTracker);
-  const [hasTeam, setHasTeam] = useState(project.hasTeam);
+  const [hasWiki, setHasWiki] = useState(project.hasWiki);
   const [pending, setPending] = useState(false);
-
-  const noTool = !hasTimeline && !hasTracker && !hasTeam;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || noTool) return;
+    if (!name.trim()) return;
     setPending(true);
     await onSave({
       name: name.trim(),
       description: description.trim(),
       hasTimeline,
       hasTracker,
-      hasTeam,
+      hasWiki,
     });
     setPending(false);
   }
@@ -1131,15 +1194,16 @@ function DetailsForm({
           hint="Kanban board by status"
         />
         <ToolCheckbox
-          checked={hasTeam}
-          onChange={setHasTeam}
-          label="Team"
-          hint="Lets this project's people open the workspace roster"
+          checked={hasWiki}
+          onChange={setHasWiki}
+          label="Wiki"
+          hint="Pages the project writes down for itself"
         />
       </fieldset>
-      {noTool && (
-        <p className="text-[0.6875rem] text-[#d03b3b]">Pick at least one.</p>
-      )}
+      <p className="text-[0.6875rem] text-[var(--ink-muted)]">
+        The team roster isn’t a tool to switch off — every project has people.
+        Which roles may open it is in the table below.
+      </p>
 
       <div className="flex items-center justify-end gap-2">
         <button type="button" onClick={onCancel} className="btn-secondary">
@@ -1148,7 +1212,7 @@ function DetailsForm({
         <button
           type="submit"
           className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={pending || noTool || !name.trim()}
+          disabled={pending || !name.trim()}
         >
           {pending ? "Saving…" : "Save changes"}
         </button>

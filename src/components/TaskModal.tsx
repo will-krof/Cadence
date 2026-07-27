@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { toISODate } from "@/lib/dates";
-import { Developer, STATUS_OPTIONS, Task, TaskStatus } from "@/lib/types";
+import { Developer, Task, TaskStatus } from "@/lib/types";
+import { offeredStatuses, useHiddenStatuses } from "@/lib/prefs";
 import { Field, Modal } from "@/components/ui";
 
 export interface TaskFormValues {
@@ -45,6 +46,7 @@ export function TaskModal({
     task ? toISODate(new Date(task.endDate)) : today
   );
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? "TODO");
+  const [hiddenStatuses] = useHiddenStatuses();
   const [developerId, setDeveloperId] = useState(task?.developerId ?? "");
   const [pending, setPending] = useState(false);
 
@@ -123,7 +125,7 @@ export function TaskModal({
               onChange={(e) => setStatus(e.target.value as TaskStatus)}
               className="select"
             >
-              {STATUS_OPTIONS.map((s) => (
+              {offeredStatuses(hiddenStatuses, status).map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
                 </option>

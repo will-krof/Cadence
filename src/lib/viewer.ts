@@ -24,6 +24,7 @@ export interface MemberPlace {
   canViewTimeline: boolean;
   canViewTracker: boolean;
   canViewTeam: boolean;
+  canViewWiki: boolean;
 }
 
 export interface MemberViewer {
@@ -63,6 +64,7 @@ export async function getSessionMember(): Promise<MemberViewer | null> {
                   canViewTimeline: true,
                   canViewTracker: true,
                   canViewTeam: true,
+                  canViewWiki: true,
                 },
               },
             },
@@ -91,6 +93,7 @@ export async function getSessionMember(): Promise<MemberViewer | null> {
         canViewTimeline: isAdmin || roles.some((r) => r.canViewTimeline),
         canViewTracker: isAdmin || roles.some((r) => r.canViewTracker),
         canViewTeam: isAdmin || roles.some((r) => r.canViewTeam),
+        canViewWiki: isAdmin || roles.some((r) => r.canViewWiki),
       };
     }),
   };

@@ -13,6 +13,7 @@ import { contrastText } from "@/lib/color";
 import { isHttpUrl } from "@/lib/sanitize";
 import { Developer, STATUS_OPTIONS, Task, TaskRow, statusMeta } from "@/lib/types";
 import { useBoard } from "@/components/BoardProvider";
+import { useHiddenStatuses } from "@/lib/prefs";
 import {
   AssigneeSelect,
   Avatar,
@@ -74,6 +75,7 @@ export function GanttBoard() {
     deleteTask,
   } = useBoard();
 
+  const [hiddenStatuses] = useHiddenStatuses();
   const [editingId, setEditingId] = useState<string | null>(null);
   const barDragRef = useRef<BarDrag | null>(null);
   // Bars and their tooltips are addressed directly while dragging.
@@ -448,7 +450,9 @@ export function GanttBoard() {
         <div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <Stat label="Total" value={stats.total} />
-            {STATUS_OPTIONS.map((s) => (
+            {/* A status put away in the tracker is one nobody is watching, so
+                it drops out of the tally here too until it comes back. */}
+            {STATUS_OPTIONS.filter((s) => !hiddenStatuses.includes(s.value)).map((s) => (
               <Stat
                 key={s.value}
                 label={s.label}

@@ -58,13 +58,11 @@ export function TeamView({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
-  // The projects this roster is read through: the ones carrying the tool, and
-  // for anyone but the owner only those they were let in by.
+  // The projects this roster is read through: every project for the owner, and
+  // for anyone else only the ones they were let in by.
   const teamProjects = useMemo(
     () =>
-      projects.filter(
-        (p) => p.hasTeam && (scope === null || scope.includes(p.id))
-      ),
+      projects.filter((p) => scope === null || scope.includes(p.id)),
     [projects, scope]
   );
 

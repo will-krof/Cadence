@@ -79,19 +79,24 @@ export interface ProjectRole {
   canViewTimeline: boolean;
   canViewTracker: boolean;
   canViewTeam: boolean;
+  canViewWiki: boolean;
   createdAt: string;
 }
 
-/** The three tools a role's visibility is described in terms of. */
+/** What a role's visibility is described in terms of. */
 export const ROLE_VIEWS: {
-  key: "canViewTimeline" | "canViewTracker" | "canViewTeam";
+  key: "canViewTimeline" | "canViewTracker" | "canViewWiki" | "canViewTeam";
   label: string;
-  /** The project toggle this view depends on. */
-  tool: "hasTimeline" | "hasTracker" | "hasTeam";
+  /**
+   * The project toggle this view depends on, where there is one. The roster has
+   * none: every project has people, so only the role decides.
+   */
+  tool?: "hasTimeline" | "hasTracker" | "hasWiki";
 }[] = [
   { key: "canViewTimeline", label: "Timeline", tool: "hasTimeline" },
   { key: "canViewTracker", label: "Tracker", tool: "hasTracker" },
-  { key: "canViewTeam", label: "Team", tool: "hasTeam" },
+  { key: "canViewWiki", label: "Wiki", tool: "hasWiki" },
+  { key: "canViewTeam", label: "Team" },
 ];
 
 export interface Project {
@@ -100,7 +105,7 @@ export interface Project {
   description: string | null;
   hasTimeline: boolean;
   hasTracker: boolean;
-  hasTeam: boolean;
+  hasWiki: boolean;
   roles: ProjectRole[];
   createdAt: string;
 }
@@ -188,4 +193,14 @@ export function inviteLink(token: string) {
   const origin =
     typeof window === "undefined" ? "" : window.location.origin;
   return `${origin}/invite/${token}`;
+}
+
+/** A page of a project's wiki, as it travels. */
+export interface WikiPage {
+  id: string;
+  projectId: string;
+  title: string;
+  content: string;
+  order: number;
+  updatedAt: string;
 }

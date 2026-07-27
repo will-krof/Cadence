@@ -8,7 +8,7 @@ export interface ProjectFormValues {
   description: string;
   hasTimeline: boolean;
   hasTracker: boolean;
-  hasTeam: boolean;
+  hasWiki: boolean;
 }
 
 /** Creating a project. Editing one happens on its card, in the Overview view. */
@@ -23,21 +23,19 @@ export function ProjectModal({
   const [description, setDescription] = useState("");
   const [hasTimeline, setHasTimeline] = useState(true);
   const [hasTracker, setHasTracker] = useState(true);
-  const [hasTeam, setHasTeam] = useState(true);
+  const [hasWiki, setHasWiki] = useState(true);
   const [pending, setPending] = useState(false);
-
-  const noTool = !hasTimeline && !hasTracker && !hasTeam;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || noTool) return;
+    if (!name.trim()) return;
     setPending(true);
     await onSubmit({
       name: name.trim(),
       description: description.trim(),
       hasTimeline,
       hasTracker,
-      hasTeam,
+      hasWiki,
     });
     setPending(false);
   }
@@ -79,14 +77,15 @@ export function ProjectModal({
             hint="Kanban board by status"
           />
           <ToolCheckbox
-            checked={hasTeam}
-            onChange={setHasTeam}
-            label="Team"
-            hint="Lets this project's people open the workspace roster"
+            checked={hasWiki}
+            onChange={setHasWiki}
+            label="Wiki"
+            hint="Pages the project writes down for itself"
           />
-          {noTool && (
-            <p className="text-[0.6875rem] text-[#d03b3b]">Pick at least one.</p>
-          )}
+          <p className="text-[0.6875rem] text-[var(--ink-muted)]">
+            Every project has a team — the roster is always there. Which roles
+            may open it is set on the project card.
+          </p>
         </fieldset>
 
         <div className="mt-1 flex items-center justify-end gap-2">
@@ -96,7 +95,7 @@ export function ProjectModal({
           <button
             type="submit"
             className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={pending || noTool || !name.trim()}
+            disabled={pending || !name.trim()}
           >
             {pending ? "Saving…" : "Create project"}
           </button>

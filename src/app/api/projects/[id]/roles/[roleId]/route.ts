@@ -3,6 +3,14 @@ import { requireUser } from "@/lib/api-auth";
 import { LIMITS } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
 
+/** The fields that say what a role opens, as against what it is called. */
+const VISIBILITY = [
+  "canViewTimeline",
+  "canViewTracker",
+  "canViewTeam",
+  "canViewWiki",
+] as const;
+
 /** 404 rather than 403, same as everywhere else — don't confirm it exists. */
 const notFound = () =>
   NextResponse.json({ error: "Role not found" }, { status: 404 });
@@ -28,8 +36,13 @@ export async function PATCH(
   if (!role) return notFound();
 
   // Admins run the project, so their own visibility isn't theirs to give up —
-  // it would leave the project with nobody able to change these settings.
-  if (role.isAdmin) {
+  // it would leave the project with nobody able to change these settings. What
+  // the role is *called* is another matter: renaming it changes nothing about
+  // what it opens, so that stays allowed.
+  const changesVisibility = VISIBILITY.some(
+    (key) => typeof body[key] === "boolean"
+  );
+  if (role.isAdmin && changesVisibility) {
     return NextResponse.json(
       { error: "Admins always see everything" },
       { status: 400 }
@@ -73,6 +86,8 @@ export async function PATCH(
           : undefined,
       canViewTeam:
         typeof body.canViewTeam === "boolean" ? body.canViewTeam : undefined,
+      canViewWiki:
+        typeof body.canViewWiki === "boolean" ? body.canViewWiki : undefined,
     },
   });
   return NextResponse.json(updated);

@@ -4,13 +4,13 @@ import { memo, useEffect, useState } from "react";
 import {
   Developer,
   Sprint,
-  STATUS_OPTIONS,
   TaskStatus,
   UNPLANNED,
   statusMeta,
 } from "@/lib/types";
 import { formatRange } from "@/lib/dates";
 import { safeColor } from "@/lib/sanitize";
+import { offeredStatuses, useHiddenStatuses } from "@/lib/prefs";
 
 /**
  * A `<select>` that only holds its options once someone reaches for them.
@@ -264,6 +264,10 @@ export function StatusPill({
   onChange: (status: TaskStatus) => void;
 }) {
   const meta = statusMeta(status);
+  // A column put away in the tracker is a state nobody is working in, so it is
+  // not offered here either — except to a task already in it, which has to keep
+  // being able to say what it is.
+  const [hidden] = useHiddenStatuses();
   return (
     <div className="relative flex items-center">
       <span
@@ -273,7 +277,10 @@ export function StatusPill({
       <LazySelect
         value={status}
         onChange={(next) => onChange(next as TaskStatus)}
-        options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+        options={offeredStatuses(hidden, status).map((s) => ({
+          value: s.value,
+          label: s.label,
+        }))}
         className="select truncate pl-[1.375rem] font-medium"
         style={{
           background: `color-mix(in srgb, ${meta.color} 12%, var(--surface-raised))`,

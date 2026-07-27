@@ -11,6 +11,7 @@ import {
 } from "@/components/ui";
 import { TaskModal } from "@/components/TaskModal";
 import { Developer, STATUS_OPTIONS, Task, TaskStatus } from "@/lib/types";
+import { useHiddenStatuses } from "@/lib/prefs";
 import { formatDay, formatDayShort } from "@/lib/dates";
 import { isHttpUrl } from "@/lib/sanitize";
 
@@ -72,7 +73,11 @@ export function TrackerBoard() {
   // laptop; hiding the two nobody is looking at is cheaper than scrolling past
   // them. Nothing is filtered out of the data — a hidden column's tasks are
   // still there, still countable, and still a drop away once it is back.
-  const [hidden, setHidden] = useState<TaskStatus[]>([]);
+  //
+  // The choice is remembered, and it is the same choice the timeline reads: a
+  // status put away here stops being one of the states work is counted in.
+  const [hidden, { hide: hideColumn, show: showColumn, showAll }] =
+    useHiddenStatuses();
 
   const columns = useMemo(
     () =>
@@ -85,11 +90,6 @@ export function TrackerBoard() {
 
   const shownColumns = columns.filter((c) => !hidden.includes(c.value));
   const hiddenColumns = columns.filter((c) => hidden.includes(c.value));
-
-  const hideColumn = (status: TaskStatus) =>
-    setHidden((prev) => (prev.includes(status) ? prev : [...prev, status]));
-  const showColumn = (status: TaskStatus) =>
-    setHidden((prev) => prev.filter((s) => s !== status));
 
   /** Column under the given viewport point, if any. */
   function statusAtPoint(x: number, y: number): TaskStatus | null {
@@ -245,7 +245,7 @@ export function TrackerBoard() {
               </button>
             ))}
             <button
-              onClick={() => setHidden([])}
+              onClick={showAll}
               className="text-[0.6875rem] text-[var(--accent)] hover:underline"
             >
               Show all

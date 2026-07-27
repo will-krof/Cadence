@@ -19,10 +19,12 @@ import { ProjectOverview } from "@/components/ProjectOverview";
 import { FeedbackProvider } from "@/components/Feedback";
 import { TaskModal } from "@/components/TaskModal";
 import { TeamView } from "@/components/TeamView";
+import { WikiView } from "@/components/WikiView";
+import { HideableView, useHiddenViews } from "@/lib/prefs";
 import { InstallStats } from "@/components/InstallStats";
 
 /** The views a project carries. Team isn't one: it belongs to the workspace. */
-type View = "overview" | "timeline" | "tracker";
+type View = "overview" | "timeline" | "tracker" | "wiki";
 
 const SIDEBAR_EVENT = "cadence:sidebarchange";
 
@@ -103,6 +105,25 @@ const TEAM_ICON = (
     />
   </svg>
 );
+
+const WIKI_ICON = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path
+      d="M2.5 3.2c1.9-.7 3.7-.7 5.5.4 1.8-1.1 3.6-1.1 5.5-.4v9.1c-1.9-.7-3.7-.7-5.5.4-1.8-1.1-3.6-1.1-5.5-.4V3.2Z"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    />
+    <path d="M8 3.6v9.1" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+);
+
+/** What a put-away tool is called while it is out of the way. */
+const VIEW_LABELS: Record<HideableView, string> = {
+  timeline: "Timeline",
+  tracker: "Tracker",
+  wiki: "Wiki",
+};
 
 export interface ShellUser {
   id: string;
@@ -203,7 +224,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
       : role?.isAdmin ?? true;
     const sees = (
       tool: boolean,
-      key: "canViewTimeline" | "canViewTracker"
+      key: "canViewTimeline" | "canViewTracker" | "canViewWiki"
     ) =>
       tool &&
       (admin ||
@@ -217,6 +238,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
       ...(sees(activeProject.hasTracker, "canViewTracker")
         ? (["tracker"] as View[])
         : []),
+      ...(sees(activeProject.hasWiki, "canViewWiki") ? (["wiki"] as View[]) : []),
     ];
   }, [activeProject, role, member, heldRoles]);
 
@@ -230,7 +252,6 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
    */
   const teamScope = useMemo<string[] | null>(() => {
     const opensTeam = (project: (typeof projects)[number], roleIds: string[]) =>
-      project.hasTeam &&
       project.roles.some(
         (r) => roleIds.includes(r.id) && (r.isAdmin || r.canViewTeam)
       );
@@ -256,14 +277,46 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
 
   const canSeeTeam = teamScope === null || teamScope.length > 0;
 
-  // A project may not have both tools enabled, so the shown view is derived
-  // rather than synced — switching projects or roles can never leave it on a
-  // view that isn't available.
-  const activeView = available.includes(view) ? view : available[0];
+  // Tools somebody keeps out of their own sidebar. The project card is never
+  // one of them: hiding every tool still leaves a project to open.
+  const [hiddenViews, { hide: hideView, show: showView }] = useHiddenViews();
+
+  const shown = useMemo(
+    () =>
+      available.filter(
+        (v) => v === "overview" || !hiddenViews.includes(v as HideableView)
+      ),
+    [available, hiddenViews]
+  );
+
+  /** Tools this project has that are only missing because they were put away. */
+  const putAway = useMemo(
+    () =>
+      available.filter(
+        (v): v is HideableView =>
+          v !== "overview" && hiddenViews.includes(v as HideableView)
+      ),
+    [available, hiddenViews]
+  );
+
+  // A project may not have every tool enabled, and one of them may be put away,
+  // so the shown view is derived rather than synced — switching projects, roles
+  // or preferences can never leave it on a view that isn't there.
+  const activeView = shown.includes(view) ? view : shown[0];
 
   // Losing the right to the roster (a role change, a project switched off) puts
   // the projects back on show rather than leaving an empty pane.
   const showingTeam = onTeam && canSeeTeam;
+
+  /**
+   * Opening one of a project's tools. It also steps off the roster, which is
+   * what makes the sidebar work from inside Team: those buttons name a project
+   * view, so pressing one should show it.
+   */
+  function openView(next: View) {
+    setView(next);
+    setOnTeam(false);
+  }
 
   /** Switching projects opens that project's card, as its admin. */
   function openProject(id: string) {
@@ -364,7 +417,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                     {wide && <span className="truncate">{p.name}</span>}
                   </button>
 
-                  {active && available.length > 1 && (
+                  {active && (shown.length > 1 || putAway.length > 0) && (
                     <div
                       className={`flex flex-col gap-0.5 ${
                         wide
@@ -372,23 +425,54 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                           : ""
                       }`}
                     >
-                      {available.includes("timeline") && (
+                      {shown.includes("timeline") && (
                         <ViewButton
                           active={activeView === "timeline"}
-                          onClick={() => setView("timeline")}
+                          onClick={() => openView("timeline")}
+                          onHide={() => hideView("timeline")}
                           icon={TIMELINE_ICON}
                           label="Timeline"
                           wide={wide}
                         />
                       )}
-                      {available.includes("tracker") && (
+                      {shown.includes("tracker") && (
                         <ViewButton
                           active={activeView === "tracker"}
-                          onClick={() => setView("tracker")}
+                          onClick={() => openView("tracker")}
+                          onHide={() => hideView("tracker")}
                           icon={TRACKER_ICON}
                           label="Tracker"
                           wide={wide}
                         />
+                      )}
+                      {shown.includes("wiki") && (
+                        <ViewButton
+                          active={activeView === "wiki"}
+                          onClick={() => openView("wiki")}
+                          onHide={() => hideView("wiki")}
+                          icon={WIKI_ICON}
+                          label="Wiki"
+                          wide={wide}
+                        />
+                      )}
+
+                      {/* What was put away, and the way back. Hiding a tool is
+                          this browser's preference, not the project's setting,
+                          so it is undone from here rather than from the card. */}
+                      {putAway.length > 0 && wide && (
+                        <span className="flex flex-wrap items-center gap-1 px-1 pt-1">
+                          <span className="field-label">Hidden</span>
+                          {putAway.map((v) => (
+                            <button
+                              key={v}
+                              onClick={() => showView(v)}
+                              className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[0.625rem] text-[var(--ink-muted)] transition hover:border-[var(--baseline)] hover:text-[var(--ink)]"
+                              title={`Show ${VIEW_LABELS[v]} again`}
+                            >
+                              {VIEW_LABELS[v]}
+                            </button>
+                          ))}
+                        </span>
                       )}
                     </div>
                   )}
@@ -526,12 +610,11 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
               </div>
               {activeView === "overview" ? (
                 <ProjectOverview
-                  onOpenView={(v) =>
-                    v === "team" ? setOnTeam(true) : setView(v)
-                  }
+                  onOpenView={(v) => (v === "team" ? setOnTeam(true) : openView(v))}
                   visibleViews={[
-                    ...available.filter(
-                      (v): v is "timeline" | "tracker" => v !== "overview"
+                    ...shown.filter(
+                      (v): v is "timeline" | "tracker" | "wiki" =>
+                        v !== "overview"
                     ),
                     ...(canSeeTeam ? (["team"] as const) : []),
                   ]}
@@ -541,6 +624,8 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                 <Centered>Loading project…</Centered>
               ) : activeView === "timeline" ? (
                 <GanttBoard />
+              ) : activeView === "wiki" ? (
+                <WikiView project={activeProject} canEdit={isAdmin && !member} />
               ) : (
                 <TrackerBoard />
               )}
@@ -717,22 +802,26 @@ function MemberMenu({ member }: { member: ShellMember }) {
 function ViewButton({
   active,
   onClick,
+  onHide,
   icon,
   label,
   wide,
 }: {
   active: boolean;
   onClick: () => void;
+  /** Puts the tool away. It stays put away until it is asked back. */
+  onHide?: () => void;
   icon: React.ReactNode;
   label: string;
   wide: boolean;
 }) {
   return (
+    <span className="group/view relative flex items-center">
     <button
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       title={label}
-      className={`flex items-center gap-2.5 rounded-[var(--radius)] py-2 text-[0.8125rem] font-medium transition ${
+      className={`flex flex-1 items-center gap-2.5 rounded-[var(--radius)] py-2 text-[0.8125rem] font-medium transition ${
         wide ? "px-3" : "justify-center px-2"
       } ${
         active
@@ -745,6 +834,32 @@ function ViewButton({
         <span className="min-w-0 flex-1 truncate text-left">{label}</span>
       )}
     </button>
+      {/* Sits over the row rather than inside it: a button can't hold another
+          one, and the tool itself is what the row is for. */}
+      {onHide && wide && (
+        <button
+          onClick={onHide}
+          className="absolute right-1.5 rounded p-1 text-[var(--ink-muted)] opacity-0 transition hover:bg-[var(--surface)] hover:text-[var(--ink)] focus:opacity-100 group-hover/view:opacity-100"
+          aria-label={`Hide ${label} from the sidebar`}
+          title={`Hide ${label}`}
+        >
+          <HideIcon />
+        </button>
+      )}
+    </span>
+  );
+}
+
+function HideIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path
+        d="M2 6h8"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 

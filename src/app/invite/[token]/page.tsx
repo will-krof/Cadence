@@ -30,7 +30,7 @@ export default async function InvitePage({
           description: true,
           hasTimeline: true,
           hasTracker: true,
-          hasTeam: true,
+          hasWiki: true,
         },
       },
       developer: { select: { name: true, active: true, username: true } },
@@ -43,6 +43,7 @@ export default async function InvitePage({
               canViewTimeline: true,
               canViewTracker: true,
               canViewTeam: true,
+              canViewWiki: true,
             },
           },
         },
@@ -58,14 +59,16 @@ export default async function InvitePage({
 
   // What they will actually be able to open: the project's tools, narrowed to
   // what any one of their roles can see.
+  // The roster has no project toggle — every project has people — so a view
+  // without one only has to clear the role.
   const opens = ROLE_VIEWS.filter(
     (view) =>
-      member?.project[view.tool] &&
+      (view.tool == null || member?.project[view.tool]) &&
       (admin || roles.some((role) => role[view.key]))
   ).map((view) => view.label);
 
   return (
-    <div className="thin-scroll flex flex-1 flex-col overflow-y-auto bg-[var(--plane)]">
+    <div className="schematic thin-scroll flex flex-1 flex-col overflow-y-auto bg-[var(--plane)]">
       <header className="flex items-center justify-between px-5 py-4 sm:px-8">
         <Link href="/">
           <Wordmark />

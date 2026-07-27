@@ -12,7 +12,7 @@ export default async function AuthLayout({
   if (await getSessionUser()) redirect("/app");
 
   return (
-    <div className="thin-scroll flex flex-1 flex-col overflow-y-auto bg-[var(--plane)]">
+    <div className="schematic thin-scroll flex flex-1 flex-col overflow-y-auto bg-[var(--plane)]">
       <header className="px-5 py-4 sm:px-8">
         <Link href="/">
           <Wordmark />

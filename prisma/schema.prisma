@@ -106,7 +106,9 @@ model Project {
   description String?
   hasTimeline Boolean  @default(true)
   hasTracker  Boolean  @default(true)
-  hasTeam     Boolean  @default(true)
+  /// The team roster is not a tool a project switches off — every project has
+  /// people — so there is no `hasTeam` here. Who may open it is the role's.
+  hasWiki     Boolean  @default(true)
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
@@ -114,6 +116,7 @@ model Project {
   sprints     Sprint[]
   roles       ProjectRole[]
   members     ProjectMember[]
+  wikiPages   WikiPage[]
 
   @@index([userId])
 }
@@ -127,6 +130,7 @@ model ProjectRole {
   canViewTimeline Boolean @default(true)
   canViewTracker  Boolean @default(true)
   canViewTeam     Boolean @default(true)
+  canViewWiki     Boolean @default(true)
 
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -183,6 +187,25 @@ model MemberRole {
 
   @@id([memberId, roleId])
   @@index([roleId])
+}
+
+/// A page of the project's wiki: whatever a team needs written down that isn't
+/// a task. Plain text, kept in the row — there are no attachments and no
+/// uploads anywhere in this app.
+model WikiPage {
+  id      String @id @default(cuid())
+  title   String
+  content String @default("")
+  /// Hand-ordered, so a wiki reads in the order somebody arranged it rather
+  /// than the order pages happened to be written.
+  order   Int    @default(0)
+
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, order])
 }
 
 model Task {

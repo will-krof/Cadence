@@ -15,6 +15,8 @@ export const LIMITS = {
   email: 200,
   phone: 40,
   roleName: 60,
+  /** A wiki page is the one long thing here — a chapter, not a book. */
+  wiki: 100_000,
   /** scrypt is deliberately slow, so a password is not an open-ended input. */
   password: 200,
   /** Nobody holds hundreds of roles on one project. */

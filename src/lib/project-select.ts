@@ -8,7 +8,7 @@ export const PROJECT_FIELDS = {
   description: true,
   hasTimeline: true,
   hasTracker: true,
-  hasTeam: true,
+  hasWiki: true,
   createdAt: true,
   roles: { orderBy: { createdAt: "asc" } },
 } as const;

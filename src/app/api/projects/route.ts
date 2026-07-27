@@ -35,16 +35,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }
 
-  // A project with nothing enabled would be unreachable in the UI.
+  // Boards and the wiki are the project's to switch off. Its people are not:
+  // every project has a team, so a project with no tool at all is still a
+  // project somebody can open.
   const hasTimeline = body.hasTimeline !== false;
   const hasTracker = body.hasTracker !== false;
-  const hasTeam = body.hasTeam !== false;
-  if (!hasTimeline && !hasTracker && !hasTeam) {
-    return NextResponse.json(
-      { error: "Enable at least one tool" },
-      { status: 400 }
-    );
-  }
+  const hasWiki = body.hasWiki !== false;
 
   // Every project starts with the two roles most teams need; developers get
   // the boards but not the roster until an admin says otherwise.
@@ -54,7 +50,7 @@ export async function POST(request: NextRequest) {
       description: described.value,
       hasTimeline,
       hasTracker,
-      hasTeam,
+      hasWiki,
       userId: user.id,
       roles: {
         create: [
@@ -64,12 +60,14 @@ export async function POST(request: NextRequest) {
             canViewTimeline: true,
             canViewTracker: true,
             canViewTeam: true,
+            canViewWiki: true,
           },
           {
             name: "developer",
             canViewTimeline: true,
             canViewTracker: true,
             canViewTeam: false,
+            canViewWiki: true,
           },
         ],
       },

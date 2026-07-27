@@ -31,6 +31,11 @@ function boardProjectIds(member: MemberViewer) {
     .map((p) => p.projectId);
 }
 
+/** The projects where a member's roles open the wiki. */
+function wikiProjectIds(member: MemberViewer) {
+  return member.places.filter((p) => p.canViewWiki).map((p) => p.projectId);
+}
+
 /** The projects where a member's roles open the team roster. */
 function teamProjectIds(member: MemberViewer) {
   return member.places.filter((p) => p.canViewTeam).map((p) => p.projectId);
@@ -65,6 +70,13 @@ export function teamFilter(viewer: Viewer) {
   return viewer.kind === "owner"
     ? { project: { userId: viewer.user.id } }
     : { projectId: { in: teamProjectIds(viewer) } };
+}
+
+/** Narrower again: only the projects whose wiki this viewer can open. */
+export function wikiFilter(viewer: Viewer) {
+  return viewer.kind === "owner"
+    ? { project: { userId: viewer.user.id } }
+    : { projectId: { in: wikiProjectIds(viewer) } };
 }
 
 /**

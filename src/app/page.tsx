@@ -8,7 +8,7 @@ export default async function LandingPage() {
   const inside = viewer != null;
 
   return (
-    <div className="thin-scroll flex-1 overflow-y-auto bg-[var(--plane)]">
+    <div className="schematic thin-scroll flex-1 overflow-y-auto bg-[var(--plane)]">
       <header className="flex items-center justify-between gap-3 px-5 py-4 sm:px-8">
         <Wordmark />
         <div className="flex items-center gap-2">

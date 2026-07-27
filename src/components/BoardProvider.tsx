@@ -39,6 +39,7 @@ interface RolePatch {
   canViewTimeline?: boolean;
   canViewTracker?: boolean;
   canViewTeam?: boolean;
+  canViewWiki?: boolean;
 }
 
 interface SprintPatch {
@@ -53,7 +54,7 @@ interface ProjectInput {
   description: string;
   hasTimeline: boolean;
   hasTracker: boolean;
-  hasTeam: boolean;
+  hasWiki: boolean;
 }
 
 interface BoardContextValue {
