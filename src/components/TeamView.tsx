@@ -13,11 +13,10 @@ import {
   EMPLOYMENT_TYPES,
   EmploymentType,
   statusMeta,
-  Assignment,
   DeveloperTask,
   Project,
 } from "@/lib/types";
-import { toISODate } from "@/lib/dates";
+import { formatDay, toISODate } from "@/lib/dates";
 
 /** Distinguishes "not on this project" from "on it, but no role yet". */
 const OFF_PROJECT = "__off__";
@@ -81,34 +80,6 @@ export function TeamView() {
 
   // Who works on what lives in the tasks, which span every project — the board
   // itself only holds the active one.
-  const [assignments, setAssignments] = useState<Assignment[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/tasks?scope=all");
-        if (!res.ok) throw new Error("failed");
-        const data = await res.json();
-        if (!cancelled) setAssignments(data);
-      } catch {
-        if (!cancelled) setAssignments([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [developers.length]);
-
-  /** Index for "what role does this person hold on that project". */
-  const roleFor = useCallback(
-    (projectId: string, developerId: string) =>
-      memberships.find(
-        (m) => m.projectId === projectId && m.developerId === developerId
-      )?.roleId ?? null,
-    [memberships]
-  );
-
   const teamProjects = useMemo(
     () => projects.filter((p) => p.hasTeam),
     [projects]
@@ -153,49 +124,6 @@ export function TeamView() {
     () => developers.filter((d) => !d.active),
     [developers]
   );
-
-  /** Active people bucketed by the projects they have tasks in. */
-  const groups = useMemo(() => {
-    const byProject = new Map<string, Set<string>>();
-    const add = (projectId: string, developerId: string) => {
-      const set = byProject.get(projectId) ?? new Set<string>();
-      set.add(developerId);
-      byProject.set(projectId, set);
-    };
-    for (const { developerId, projectId } of assignments ?? []) {
-      add(projectId, developerId);
-    }
-    // Being given a role puts someone on the project, tasks or not.
-    for (const { developerId, projectId } of memberships) {
-      add(projectId, developerId);
-    }
-
-    const assignedAnywhere = new Set<string>();
-    for (const set of byProject.values()) {
-      for (const id of set) assignedAnywhere.add(id);
-    }
-
-    const result = projects
-      .filter((project) => project.hasTeam)
-      .map((project) => ({
-        id: project.id,
-        name: project.name,
-        roles: project.roles,
-        people: active.filter((d) => byProject.get(project.id)?.has(d.id)),
-      }))
-      .filter((g) => g.people.length > 0);
-
-    const unassigned = active.filter((d) => !assignedAnywhere.has(d.id));
-    if (unassigned.length) {
-      result.push({
-        id: "__none__",
-        name: "No project yet",
-        roles: [],
-        people: unassigned,
-      });
-    }
-    return result;
-  }, [assignments, memberships, projects, active]);
 
   const showingDetail = creating || selected != null;
   const editing = creating || (selected != null && editingId === selected.id);
@@ -251,23 +179,19 @@ export function TeamView() {
           </p>
         )}
 
-        {groups.map((group) => (
-          <section key={group.id} className="flex flex-col gap-1.5">
-            <h3 className="field-label">{group.name}</h3>
-            {group.people.map((d) => (
-              <PersonRow
-                key={d.id}
-                person={d}
-                role={
-                  group.roles.find((r) => r.id === roleFor(group.id, d.id))
-                    ?.name ?? null
-                }
-                selected={d.id === selectedId}
-                onClick={() => openPerson(d.id)}
-              />
-            ))}
-          </section>
-        ))}
+        <section className="flex flex-col gap-1.5">
+          {active.map((d) => (
+            <PersonRow
+              key={d.id}
+              person={d}
+              projectCount={
+                memberships.filter((m) => m.developerId === d.id).length
+              }
+              selected={d.id === selectedId}
+              onClick={() => openPerson(d.id)}
+            />
+          ))}
+        </section>
 
         {archived.length > 0 && (
           <section className="flex flex-col gap-1.5 border-t border-[var(--hairline)] pt-3">
@@ -303,7 +227,9 @@ export function TeamView() {
                 <PersonRow
                   key={d.id}
                   person={d}
-                  role={null}
+                  projectCount={
+                    memberships.filter((m) => m.developerId === d.id).length
+                  }
                   selected={d.id === selectedId}
                   onClick={() => openPerson(d.id)}
                 />
@@ -366,12 +292,12 @@ export function TeamView() {
 
 function PersonRow({
   person,
-  role,
+  projectCount,
   selected,
   onClick,
 }: {
   person: Developer;
-  role: string | null;
+  projectCount: number;
   selected: boolean;
   onClick: () => void;
 }) {
@@ -399,9 +325,9 @@ function PersonRow({
         <span className="block truncate text-[0.75rem] text-[var(--ink-muted)]">
           {person.role || person.email || "—"}
         </span>
-        {role && (
-          <span className="mt-0.5 inline-block rounded-full bg-[var(--accent-wash)] px-1.5 py-0.5 text-[0.5625rem] uppercase tracking-wide text-[var(--accent)]">
-            {role}
+        {projectCount > 0 && (
+          <span className="block text-[0.6875rem] text-[var(--ink-muted)]">
+            {projectCount} project{projectCount === 1 ? "" : "s"}
           </span>
         )}
       </span>
@@ -429,24 +355,48 @@ function ProfileCard({
   const [tasks, setTasks] = useState<DeveloperTask[] | null>(null);
   const [failed, setFailed] = useState(false);
 
-  // Only the projects they are actually on; the rest belong in the form.
-  // Holding no role is still being on a project, so membership decides this,
-  // not whether a role happens to be set.
-  const onProjects = projects
-    .filter((project) =>
-      memberships.some(
+  /**
+   * Where this person works: the projects they were put on, plus any they
+   * carry tasks for. Holding no role is still being on a project, so
+   * membership decides the first list, not whether a role happens to be set.
+   */
+  const onProjects = useMemo(() => {
+    const rows: {
+      id: string;
+      name: string;
+      roleName: string | null;
+      viaTasks: boolean;
+    }[] = [];
+    const seen = new Set<string>();
+
+    for (const project of projects) {
+      const membership = memberships.find(
         (m) => m.projectId === project.id && m.developerId === person.id
-      )
-    )
-    .map((project) => {
-      const roleId = memberships.find(
-        (m) => m.projectId === project.id && m.developerId === person.id
-      )?.roleId;
-      return {
-        project,
-        roleName: project.roles.find((r) => r.id === roleId)?.name ?? null,
-      };
-    });
+      );
+      if (!membership) continue;
+      seen.add(project.id);
+      rows.push({
+        id: project.id,
+        name: project.name,
+        roleName:
+          project.roles.find((r) => r.id === membership.roleId)?.name ?? null,
+        viaTasks: false,
+      });
+    }
+
+    for (const task of tasks ?? []) {
+      if (seen.has(task.project.id)) continue;
+      seen.add(task.project.id);
+      rows.push({
+        id: task.project.id,
+        name: task.project.name,
+        roleName: null,
+        viaTasks: true,
+      });
+    }
+
+    return rows;
+  }, [projects, memberships, person.id, tasks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -501,7 +451,7 @@ function ProfileCard({
         <Detail label="Phone" value={person.phone} href={person.phone ? `tel:${person.phone}` : undefined} />
         <Detail
           label="Started"
-          value={person.startDate ? toISODate(new Date(person.startDate)) : null}
+          value={person.startDate ? formatDay(person.startDate) : null}
         />
         <Detail
           label="Employment"
@@ -537,25 +487,27 @@ function ProfileCard({
 
         {onProjects.length === 0 ? (
           <p className="text-[0.8125rem] text-[var(--ink-muted)]">
-            Not on any project yet — “Edit profile” puts them on one.
+            {tasks === null
+              ? "Loading…"
+              : "Not on any project yet — “Edit profile” puts them on one."}
           </p>
         ) : (
           <ul className="flex flex-col gap-1.5">
-            {onProjects.map(({ project, roleName }) => (
+            {onProjects.map((row) => (
               <li
-                key={project.id}
+                key={row.id}
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
               >
                 <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
-                  {project.name}
+                  {row.name}
                 </span>
-                {roleName ? (
+                {row.roleName ? (
                   <span className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--accent)]">
-                    {roleName}
+                    {row.roleName}
                   </span>
                 ) : (
                   <span className="text-[0.75rem] text-[var(--ink-muted)]">
-                    No role
+                    {row.viaTasks ? "Has tasks, no role" : "No role"}
                   </span>
                 )}
               </li>
@@ -615,7 +567,7 @@ function ProfileCard({
                   {meta.label}
                 </span>
                 <span className="shrink-0 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
-                  {toISODate(new Date(task.endDate))}
+                  {formatDay(task.endDate)}
                 </span>
               </li>
             );
