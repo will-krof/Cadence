@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
-import { Avatar, Field, LazySelect } from "@/components/ui";
+import { Avatar, Field } from "@/components/ui";
 import { useFeedback } from "@/components/Feedback";
 import {
   CURRENCIES,
+  Membership,
   Developer,
   DeveloperInput,
   DEVELOPER_PALETTE,
@@ -15,9 +16,11 @@ import {
   Assignment,
   DeveloperTask,
   Project,
-  ProjectRole,
 } from "@/lib/types";
 import { toISODate } from "@/lib/dates";
+
+/** Distinguishes "not on this project" from "on it, but no role yet". */
+const OFF_PROJECT = "__off__";
 
 /** Avatars are stored inline in the row, so downscale before upload. */
 const AVATAR_SIZE = 256;
@@ -106,13 +109,38 @@ export function TeamView() {
     [memberships]
   );
 
-  /** An empty pick means "not on this project" rather than "no role yet". */
-  const chooseRole = useCallback(
-    (projectId: string, developerId: string, roleId: string | null) =>
-      roleId
-        ? setMemberRole(projectId, developerId, roleId)
-        : removeMember(projectId, developerId),
-    [setMemberRole, removeMember]
+  const teamProjects = useMemo(
+    () => projects.filter((p) => p.hasTeam),
+    [projects]
+  );
+
+  /**
+   * Writes what the form staged: only the projects whose answer changed, so
+   * saving a profile doesn't churn every membership the person has.
+   */
+  const applyPlaces = useCallback(
+    async (developerId: string, places: Map<string, string | null>) => {
+      const before = new Map<string, string | null>();
+      for (const m of memberships) {
+        if (m.developerId === developerId) before.set(m.projectId, m.roleId);
+      }
+
+      const work: Promise<void>[] = [];
+      for (const project of teamProjects) {
+        const was = before.has(project.id);
+        const now = places.has(project.id);
+        if (!was && !now) continue;
+        if (was && !now) {
+          work.push(removeMember(project.id, developerId));
+        } else if (before.get(project.id) !== places.get(project.id)) {
+          work.push(
+            setMemberRole(project.id, developerId, places.get(project.id) ?? null)
+          );
+        }
+      }
+      await Promise.all(work);
+    },
+    [memberships, teamProjects, removeMember, setMemberRole]
   );
 
   const selected = useMemo(
@@ -290,18 +318,22 @@ export function TeamView() {
             key={selected?.id ?? "new"}
             person={selected ?? undefined}
             existingCount={developers.length}
+            projects={teamProjects}
+            memberships={memberships}
             onCancel={() => {
               setCreating(false);
               setEditingId(null);
               if (creating) setSelectedId(null);
             }}
-            onSave={async (values) => {
+            onSave={async (values, places) => {
               if (selected) {
                 await updateDeveloper(selected.id, values);
+                await applyPlaces(selected.id, places);
                 setEditingId(null);
               } else {
                 const created = await createDeveloper(values);
                 if (created) {
+                  await applyPlaces(created.id, places);
                   setCreating(false);
                   setSelectedId(created.id);
                 }
@@ -313,9 +345,8 @@ export function TeamView() {
           <ProfileCard
             key={selected.id}
             person={selected}
-            projects={projects.filter((p) => p.hasTeam)}
-            roleFor={roleFor}
-            onRoleChange={chooseRole}
+            projects={teamProjects}
+            memberships={memberships}
             onEdit={() => setEditingId(selected.id)}
             onBack={() => setSelectedId(null)}
             onDelete={() => removePerson(selected)}
@@ -381,8 +412,7 @@ function PersonRow({
 function ProfileCard({
   person,
   projects,
-  roleFor,
-  onRoleChange,
+  memberships,
   onEdit,
   onBack,
   onDelete,
@@ -390,12 +420,7 @@ function ProfileCard({
 }: {
   person: Developer;
   projects: Project[];
-  roleFor: (projectId: string, developerId: string) => string | null;
-  onRoleChange: (
-    projectId: string,
-    developerId: string,
-    roleId: string | null
-  ) => void;
+  memberships: Membership[];
   onEdit: () => void;
   onBack: () => void;
   onDelete: () => void;
@@ -403,6 +428,25 @@ function ProfileCard({
 }) {
   const [tasks, setTasks] = useState<DeveloperTask[] | null>(null);
   const [failed, setFailed] = useState(false);
+
+  // Only the projects they are actually on; the rest belong in the form.
+  // Holding no role is still being on a project, so membership decides this,
+  // not whether a role happens to be set.
+  const onProjects = projects
+    .filter((project) =>
+      memberships.some(
+        (m) => m.projectId === project.id && m.developerId === person.id
+      )
+    )
+    .map((project) => {
+      const roleId = memberships.find(
+        (m) => m.projectId === project.id && m.developerId === person.id
+      )?.roleId;
+      return {
+        project,
+        roleName: project.roles.find((r) => r.id === roleId)?.name ?? null,
+      };
+    });
 
   useEffect(() => {
     let cancelled = false;
@@ -487,53 +531,35 @@ function ProfileCard({
       )}
 
       <section>
-        <h3 className="text-[0.8125rem] font-semibold tracking-tight">
+        <h3 className="mb-2 text-[0.8125rem] font-semibold tracking-tight">
           Project roles
         </h3>
-        <p className="mb-2 text-[0.75rem] text-[var(--ink-muted)]">
-          Each project has its own roles, and what a role sees is set on that
-          project’s card.
-        </p>
 
-        {projects.length === 0 ? (
+        {onProjects.length === 0 ? (
           <p className="text-[0.8125rem] text-[var(--ink-muted)]">
-            No projects with a team yet.
+            Not on any project yet — “Edit profile” puts them on one.
           </p>
         ) : (
           <ul className="flex flex-col gap-1.5">
-            {projects.map((project) => {
-              // A role deleted from the project leaves the person on it with
-              // nothing held; fall back rather than showing a stale id.
-              const held = roleFor(project.id, person.id);
-              const current = project.roles.some((r) => r.id === held)
-                ? held ?? ""
-                : "";
-              return (
+            {onProjects.map(({ project, roleName }) => (
               <li
                 key={project.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
               >
                 <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
                   {project.name}
                 </span>
-                <LazySelect
-                  value={current}
-                  onChange={(roleId) =>
-                    onRoleChange(project.id, person.id, roleId || null)
-                  }
-                  options={[
-                    { value: "", label: "Not on this project" },
-                    ...project.roles.map((role: ProjectRole) => ({
-                      value: role.id,
-                      label: role.name,
-                    })),
-                  ]}
-                  className="select w-44"
-                  ariaLabel={`${person.name}’s role on ${project.name}`}
-                />
+                {roleName ? (
+                  <span className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--accent)]">
+                    {roleName}
+                  </span>
+                ) : (
+                  <span className="text-[0.75rem] text-[var(--ink-muted)]">
+                    No role
+                  </span>
+                )}
               </li>
-              );
-            })}
+            ))}
           </ul>
         )}
       </section>
@@ -641,13 +667,21 @@ function Detail({
 function ProfileForm({
   person,
   existingCount,
+  projects,
+  memberships,
   onSave,
   onCancel,
   onDelete,
 }: {
   person?: Developer;
   existingCount: number;
-  onSave: (values: Partial<DeveloperInput>) => Promise<void>;
+  projects: Project[];
+  memberships: Membership[];
+  /** Profile and project roles are saved together, on one press of Save. */
+  onSave: (
+    values: Partial<DeveloperInput>,
+    places: Map<string, string | null>
+  ) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => void;
 }) {
@@ -674,8 +708,28 @@ function ProfileForm({
     person?.color ?? DEVELOPER_PALETTE[existingCount % DEVELOPER_PALETTE.length]
   );
 
+  // projectId -> roleId, "" for "on it, no role yet". Absent means not on it.
+  const [places, setPlaces] = useState<Map<string, string | null>>(() => {
+    const map = new Map<string, string | null>();
+    if (person) {
+      for (const m of memberships) {
+        if (m.developerId === person.id) map.set(m.projectId, m.roleId);
+      }
+    }
+    return map;
+  });
+
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  function setPlace(projectId: string, value: string) {
+    setPlaces((prev) => {
+      const next = new Map(prev);
+      if (value === OFF_PROJECT) next.delete(projectId);
+      else next.set(projectId, value || null);
+      return next;
+    });
+  }
 
   async function pickAvatar(file: File) {
     setError(null);
@@ -692,7 +746,8 @@ function ProfileForm({
     setPending(true);
     setError(null);
     try {
-      await onSave({
+      await onSave(
+        {
         name: name.trim(),
         role,
         email,
@@ -705,7 +760,9 @@ function ProfileForm({
         active,
         notes,
         color,
-      });
+        },
+        places
+      );
     } catch {
       setError("Could not save. Try again.");
     }
@@ -858,6 +915,40 @@ function ProfileForm({
           ))}
         </div>
       </Field>
+
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="field-label mb-1.5">Projects and roles</legend>
+        {projects.length === 0 ? (
+          <p className="text-[0.8125rem] text-[var(--ink-muted)]">
+            No projects with a team yet.
+          </p>
+        ) : (
+          projects.map((project) => (
+            <label
+              key={project.id}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
+            >
+              <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
+                {project.name}
+              </span>
+              <select
+                value={places.has(project.id) ? places.get(project.id) ?? "" : OFF_PROJECT}
+                onChange={(e) => setPlace(project.id, e.target.value)}
+                className="select w-44"
+                aria-label={`Role on ${project.name}`}
+              >
+                <option value={OFF_PROJECT}>Not on this project</option>
+                <option value="">On it, no role yet</option>
+                {project.roles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))
+        )}
+      </fieldset>
 
       <Field label="Notes">
         <textarea
