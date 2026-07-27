@@ -102,6 +102,8 @@ export interface SessionUser {
   id: string;
   email: string;
   name: string | null;
+  /** Every account is the admin of its own workspace; some are more. */
+  role: "ADMIN" | "SUPERADMIN";
 }
 
 /** Returns the signed-in user, or null. Expired sessions are cleaned up. */
@@ -112,7 +114,11 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
   const session = await prisma.session.findUnique({
     where: { tokenHash: hashToken(token) },
-    include: { user: true },
+    select: {
+      id: true,
+      expiresAt: true,
+      user: { select: { id: true, email: true, name: true, role: true } },
+    },
   });
   if (!session) return null;
 
@@ -125,6 +131,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     id: session.user.id,
     email: session.user.email,
     name: session.user.name,
+    role: session.user.role,
   };
 }
 

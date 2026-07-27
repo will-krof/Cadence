@@ -40,6 +40,8 @@ export const LOGIN_LIMIT: RateLimit = { limit: 10, windowSeconds: 15 * 60 };
  */
 export const LOGIN_SPRAY_LIMIT: RateLimit = { limit: 60, windowSeconds: 15 * 60 };
 export const INVITE_LIMIT: RateLimit = { limit: 20, windowSeconds: 60 * 60 };
+/** Nobody needs five workspaces in an hour, and a script would want thousands. */
+export const SIGNUP_LIMIT: RateLimit = { limit: 5, windowSeconds: 60 * 60 };
 
 /**
  * The caller's address as the proxy in front of us reports it. Behind a proxy

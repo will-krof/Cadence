@@ -19,6 +19,7 @@ import { ProjectOverview } from "@/components/ProjectOverview";
 import { FeedbackProvider } from "@/components/Feedback";
 import { TaskModal } from "@/components/TaskModal";
 import { TeamView } from "@/components/TeamView";
+import { InstallStats } from "@/components/InstallStats";
 
 type View = "overview" | "timeline" | "tracker" | "team";
 
@@ -83,25 +84,6 @@ const TRACKER_ICON = (
   </svg>
 );
 
-const OVERVIEW_ICON = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <rect
-      x="1.8"
-      y="2.4"
-      width="12.4"
-      height="11.2"
-      rx="2"
-      stroke="currentColor"
-      strokeWidth="1.5"
-    />
-    <path
-      d="M4.8 10.6V7.4M8 10.6V5.4M11.2 10.6V8.6"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
-  </svg>
-);
 
 const TEAM_ICON = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -125,6 +107,8 @@ export interface ShellUser {
   id: string;
   email: string;
   name: string | null;
+  /** Everybody who signs up is the admin of their own workspace. */
+  role: "ADMIN" | "SUPERADMIN";
 }
 
 /**
@@ -302,13 +286,17 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
               </button>
             )}
 
+            {/* A project row *is* its overview — clicking it opens the card, and
+                the views it carries hang underneath the one on show. Having both
+                a project and an "Overview" button meant two controls doing the
+                same thing. */}
             {projects.map((p) => {
               const active = p.id === activeProject?.id;
               return (
-                <button
-                    key={p.id}
+                <div key={p.id} className="flex flex-col gap-0.5">
+                  <button
                     onClick={() => openProject(p.id)}
-                    aria-current={active ? "true" : undefined}
+                    aria-current={active && activeView === "overview" ? "page" : undefined}
                     title={p.description ? `${p.name} — ${p.description}` : p.name}
                     className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
                       wide ? "" : "justify-center"
@@ -331,59 +319,52 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                     </span>
                     {wide && <span className="truncate">{p.name}</span>}
                   </button>
+
+                  {active && available.length > 1 && (
+                    <div
+                      className={`flex flex-col gap-0.5 ${
+                        wide
+                          ? "ml-3 border-l border-[var(--hairline)] pl-2"
+                          : ""
+                      }`}
+                    >
+                      {available.includes("timeline") && (
+                        <ViewButton
+                          active={activeView === "timeline"}
+                          onClick={() => setView("timeline")}
+                          icon={TIMELINE_ICON}
+                          label="Timeline"
+                          wide={wide}
+                        />
+                      )}
+                      {available.includes("tracker") && (
+                        <ViewButton
+                          active={activeView === "tracker"}
+                          onClick={() => setView("tracker")}
+                          icon={TRACKER_ICON}
+                          label="Tracker"
+                          wide={wide}
+                        />
+                      )}
+                      {/* The roster itself is shared by every project, but
+                          whether this project's people can open it is the
+                          role's call. */}
+                      {available.includes("team") && (
+                        <ViewButton
+                          active={activeView === "team"}
+                          onClick={() => setView("team")}
+                          icon={TEAM_ICON}
+                          label="Team"
+                          wide={wide}
+                          hint="All projects"
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
-
-          {available.length > 0 && (
-            <div className="flex flex-col gap-1 border-t border-[var(--hairline)] pt-3">
-              {wide && (
-                <span className="px-2 pb-1">
-                  <span className="field-label">
-                    {activeProject ? `${activeProject.name} views` : "Views"}
-                  </span>
-                </span>
-              )}
-              <ViewButton
-                active={activeView === "overview"}
-                onClick={() => setView("overview")}
-                icon={OVERVIEW_ICON}
-                label="Overview"
-                wide={wide}
-                hint="Details and stats"
-              />
-              {available.includes("timeline") && (
-                <ViewButton
-                  active={activeView === "timeline"}
-                  onClick={() => setView("timeline")}
-                  icon={TIMELINE_ICON}
-                  label="Timeline"
-                  wide={wide}
-                />
-              )}
-              {available.includes("tracker") && (
-                <ViewButton
-                  active={activeView === "tracker"}
-                  onClick={() => setView("tracker")}
-                  icon={TRACKER_ICON}
-                  label="Tracker"
-                  wide={wide}
-                />
-              )}
-              {/* The roster itself is shared by every project, but whether this
-                  project's people can open it is the role's call. */}
-              {available.includes("team") && (
-                <ViewButton
-                  active={activeView === "team"}
-                  onClick={() => setView("team")}
-                  icon={TEAM_ICON}
-                  label="Team"
-                  wide={wide}
-                  hint="All projects"
-                />
-              )}
-            </div>
-          )}
 
           {/* A member can't try other roles on: theirs are what they hold. */}
           {member && wide && (
@@ -429,6 +410,9 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
               )}
             </label>
           )}
+
+          {/* Only a superadmin has one of these, and it holds counts alone. */}
+          {user?.role === "SUPERADMIN" && <InstallStats wide={wide} />}
         </nav>
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--surface)]">

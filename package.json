@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "create-account": "node scripts/create-account.mjs"
+    "create-account": "node scripts/create-account.mjs",
+    "make-superadmin": "node scripts/set-superadmin.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

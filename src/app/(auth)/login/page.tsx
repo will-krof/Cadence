@@ -10,7 +10,7 @@ export default function LoginPage() {
       <p className="mb-5 text-[0.8125rem] text-[var(--ink-secondary)]">
         Your workspace email, or the username your invite link set up.
       </p>
-      <AuthForm />
+      <AuthForm mode="login" />
     </>
   );
 }

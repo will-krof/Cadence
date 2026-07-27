@@ -16,12 +16,14 @@ Then open [http://localhost:3000](http://localhost:3000).
 
 ## Accounts
 
-There is no sign-up. A workspace account is created out of band, and everyone
-else picks their login through an invite link, so the only self-serve door into
-the app is a link an admin handed out. Both kinds sign in on the same form: an
-account by email, a team member by username.
+Signing up at [/signup](http://localhost:3000/signup) makes a workspace and makes
+you its admin: your projects, your roster, your invite links, and nothing of
+anybody else's. Team members don't sign up — they get a login through an invite
+link — and both kinds sign in on the same form, an account by email and a member
+by username.
 
-To create one:
+An account can also be made from the command line, which is handy for the first
+one on a fresh database:
 
 ```bash
 npm run create-account -- you@example.com --name "Your Name"
@@ -30,7 +32,21 @@ npm run create-account -- you@example.com --name "Your Name"
 It asks for the password without echoing it. `--password` is there for scripts
 that need it, at the cost of putting the password in your shell history.
 
-Then log in at [/login](http://localhost:3000/login) with that email.
+### Superadmin
+
+One badge above admin, and it buys exactly one thing: a panel at the foot of the
+sidebar with counts of how the install is being used — how many admins there are,
+how many projects and people they have between them, and the per-workspace
+numbers. No names, no emails, no project titles, and no reach whatsoever into
+anybody's workspace.
+
+It is granted from the command line, never from the app, so nothing in the app
+can hand it out:
+
+```bash
+npm run make-superadmin -- you@example.com
+npm run make-superadmin -- you@example.com --revoke
+```
 
 ## Roles and invite links
 
@@ -58,6 +74,14 @@ place — the next time an admin looks at the memberships, what they see is a li
 link rather than an expired one. Once somebody has set their login up, their link
 is spent and the row says so; taking them off the project is what ends their
 access after that.
+
+## The tracker
+
+Columns are the five statuses. Any of them can be hidden with the × in its
+header — a board with five columns is wider than a laptop, and the two nobody is
+watching are just scrolling. Hidden columns collect above the board with their
+counts, one click each to bring back, and their tasks were never filtered out of
+anything.
 
 ## Sprints
 

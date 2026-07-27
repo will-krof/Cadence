@@ -17,9 +17,14 @@ export default async function LandingPage() {
               Open app
             </Link>
           ) : (
-            <Link href="/login" className="btn-primary">
-              Log in
-            </Link>
+            <>
+              <Link href="/login" className="btn-secondary">
+                Log in
+              </Link>
+              <Link href="/signup" className="btn-primary">
+                Sign up
+              </Link>
+            </>
           )}
           <ThemeToggle />
         </div>
@@ -36,19 +41,25 @@ export default async function LandingPage() {
           <p className="mt-5 max-w-xl text-[0.9375rem] leading-relaxed text-[var(--ink-secondary)]">
             Cadence gives every project a Gantt timeline and a kanban tracker
             over the same tasks — so scheduling and day-to-day progress never
-            drift apart. Everyone you work with is invited by link, picks their
-            own login, and sees exactly what their role should.
+            drift apart. Sign up and the workspace is yours to run; everyone you
+            work with is invited by link, picks their own login, and sees exactly
+            what their role should.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link href={inside ? "/app" : "/login"} className="btn-primary">
-              {inside ? "Open app" : "Log in"}
+            <Link href={inside ? "/app" : "/signup"} className="btn-primary">
+              {inside ? "Open app" : "Create your workspace"}
             </Link>
+            {!inside && (
+              <Link href="/login" className="btn-secondary">
+                I already have an account
+              </Link>
+            )}
           </div>
           {!inside && (
             <p className="mt-4 max-w-xl text-[0.8125rem] leading-relaxed text-[var(--ink-muted)]">
-              Been sent an invite link? Open it and pick a username and
-              password. There is no sign-up: an invite is the way in, and each
-              link works for three days.
+              Been sent an invite link? Open it and pick a username and password
+              — you don’t need an account of your own, and each link works for
+              three days.
             </p>
           )}
         </section>
@@ -71,6 +82,14 @@ export default async function LandingPage() {
             body="Every project has its own roles, and each one is a list of what it can open: timeline, tracker, team. Admins hold the pen."
           />
           <Feature
+            title="Your own workspace"
+            body="Signing up makes you the admin of a workspace nobody else can see: its projects, its roster, its invite links, all yours."
+          />
+          <Feature
+            title="Room to work"
+            body="Fold the roster away, hide the tracker columns you aren't watching, archive a finished sprint. The board shows what you're using."
+          />
+          <Feature
             title="Invited, not signed up"
             body="Give someone a role on a project and their link appears. It lasts three days, and they spend it picking the username and password they'll sign in with."
           />
@@ -87,16 +106,21 @@ export default async function LandingPage() {
           <ol className="mt-4 flex flex-col gap-4">
             <Step
               n={1}
+              title="Sign up, and the workspace is yours"
+              body="An account is a workspace: your projects, your roster, and you as its admin. Nothing in it is visible to anybody until you hand out a link."
+            />
+            <Step
+              n={2}
               title="Put them on the project, in a role"
               body="Add someone from the roster to a project and tick what they are here to do. The moment they hold a role, their invite link is ready on the project card."
             />
             <Step
-              n={2}
+              n={3}
               title="They pick a login"
               body="The link shows them the project and the roles it carries, then asks for a username and a password. That is what they sign in with from then on."
             />
             <Step
-              n={3}
+              n={4}
               title="Links don't linger"
               body="Every link runs out after three days, and a fresh one takes its place. Regenerate one and the old one dies on the spot; switch it off and nobody can use it at all."
             />

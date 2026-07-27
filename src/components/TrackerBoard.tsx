@@ -2,7 +2,13 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
-import { AssigneeSelect, Avatar, SprintPicker, StatusPill } from "@/components/ui";
+import {
+  AssigneeSelect,
+  Avatar,
+  CloseIcon,
+  SprintPicker,
+  StatusPill,
+} from "@/components/ui";
 import { TaskModal } from "@/components/TaskModal";
 import { Developer, STATUS_OPTIONS, Task, TaskStatus } from "@/lib/types";
 import { formatDay, formatDayShort } from "@/lib/dates";
@@ -62,6 +68,12 @@ export function TrackerBoard() {
     [tasks, assignee]
   );
 
+  // Columns somebody has put away. A board with five statuses is wider than a
+  // laptop; hiding the two nobody is looking at is cheaper than scrolling past
+  // them. Nothing is filtered out of the data — a hidden column's tasks are
+  // still there, still countable, and still a drop away once it is back.
+  const [hidden, setHidden] = useState<TaskStatus[]>([]);
+
   const columns = useMemo(
     () =>
       STATUS_OPTIONS.map((s) => ({
@@ -70,6 +82,14 @@ export function TrackerBoard() {
       })),
     [visible]
   );
+
+  const shownColumns = columns.filter((c) => !hidden.includes(c.value));
+  const hiddenColumns = columns.filter((c) => hidden.includes(c.value));
+
+  const hideColumn = (status: TaskStatus) =>
+    setHidden((prev) => (prev.includes(status) ? prev : [...prev, status]));
+  const showColumn = (status: TaskStatus) =>
+    setHidden((prev) => prev.filter((s) => s !== status));
 
   /** Column under the given viewport point, if any. */
   function statusAtPoint(x: number, y: number): TaskStatus | null {
@@ -202,10 +222,40 @@ export function TrackerBoard() {
           {visible.length} {visible.length === 1 ? "task" : "tasks"} · drag cards
           between columns
         </span>
+
+        {/* Bringing a column back, and saying what is hidden while it is. */}
+        {hiddenColumns.length > 0 && (
+          <span className="flex flex-wrap items-center gap-1.5 pb-1.5">
+            <span className="field-label">Hidden</span>
+            {hiddenColumns.map((col) => (
+              <button
+                key={col.value}
+                onClick={() => showColumn(col.value)}
+                className="flex items-center gap-1.5 rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[0.6875rem] text-[var(--ink-secondary)] transition hover:border-[var(--baseline)] hover:text-[var(--ink)]"
+                title={`Show the ${col.label} column`}
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ background: col.color }}
+                />
+                {col.label}
+                <span className="tabular-nums text-[var(--ink-muted)]">
+                  {col.items.length}
+                </span>
+              </button>
+            ))}
+            <button
+              onClick={() => setHidden([])}
+              className="text-[0.6875rem] text-[var(--accent)] hover:underline"
+            >
+              Show all
+            </button>
+          </span>
+        )}
       </div>
 
       <div className="thin-scroll flex flex-1 gap-3 overflow-x-auto p-4 sm:gap-4 sm:p-6">
-        {columns.map((col) => {
+        {shownColumns.map((col) => {
           const isTarget = dropTarget === col.value;
           return (
             <section
@@ -228,6 +278,18 @@ export function TrackerBoard() {
                 <span className="ml-auto rounded-full bg-[var(--surface-raised)] px-2 py-0.5 text-[0.6875rem] tabular-nums text-[var(--ink-secondary)]">
                   {col.items.length}
                 </span>
+                {/* The last column standing keeps its cards reachable: there is
+                    nowhere to drag to on an empty board. */}
+                {shownColumns.length > 1 && (
+                  <button
+                    onClick={() => hideColumn(col.value)}
+                    className="rounded p-0.5 text-[var(--ink-muted)] transition hover:text-[var(--ink)]"
+                    aria-label={`Hide the ${col.label} column`}
+                    title="Hide this column"
+                  >
+                    <CloseIcon size={11} />
+                  </button>
+                )}
               </header>
 
               <Column count={col.items.length} isTarget={isTarget}>

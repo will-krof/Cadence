@@ -311,38 +311,6 @@ export function ProjectOverview({
           />
         ) : null}
 
-        <section>
-          <h3 className="mb-2 text-[0.8125rem] font-semibold tracking-tight">
-            Tools
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {visibleViews.includes("timeline") && (
-              <button
-                onClick={() => onOpenView("timeline")}
-                className="btn-secondary"
-              >
-                Open Timeline
-              </button>
-            )}
-            {visibleViews.includes("tracker") && (
-              <button
-                onClick={() => onOpenView("tracker")}
-                className="btn-secondary"
-              >
-                Open Tracker
-              </button>
-            )}
-            {!visibleViews.includes("timeline") &&
-              !visibleViews.includes("tracker") && (
-                <p className="text-[0.8125rem] text-[var(--ink-muted)]">
-                  {canEdit
-                    ? "No board enabled — turn one on in Edit project."
-                    : "This role has no board on this project."}
-                </p>
-              )}
-          </div>
-        </section>
-
         {canEdit && (
           <div className="border-t border-[var(--hairline)] pt-4">
             <button onClick={remove} className="btn-secondary !text-[#d03b3b]">
@@ -440,6 +408,9 @@ function PeopleSection({
         label="People"
         count={loading ? undefined : people.length}
         hint="Who works on this project, and in which of its roles."
+        // Folded to begin with: a busy project's roster is longer than the rest
+        // of the card put together, and it is not what the card is for.
+        defaultOpen={false}
         summary={
           people.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5">

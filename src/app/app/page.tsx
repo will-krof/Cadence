@@ -26,5 +26,7 @@ export default async function AppPage() {
     );
   }
 
+  // The account's own role travels with it: a superadmin's sidebar carries the
+  // install's counts, and nothing else about the app changes.
   return <AppShell user={viewer.user} />;
 }
