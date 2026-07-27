@@ -71,6 +71,10 @@ interface BoardContextValue {
     developerId: string,
     roleIds: string[]
   ) => Promise<void>;
+  /** Replaces someone's invite link; the one they had stops working. */
+  rotateInvite: (projectId: string, developerId: string) => Promise<void>;
+  /** Switches their link off without giving them a new one. */
+  revokeInvite: (projectId: string, developerId: string) => Promise<void>;
 
   createRole: (projectId: string, name: string) => Promise<ProjectRole | null>;
   updateRole: (
@@ -275,6 +279,17 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
           fetch(`/api/tasks?projectId=${activeId}`),
           fetch(`/api/sprints?projectId=${activeId}`),
         ]);
+        // A guest whose roles include no board is told so with a 403. That is
+        // an answer, not a failure: there is simply nothing to draw.
+        if (taskRes.status === 403 || sprintRes.status === 403) {
+          if (!cancelled) {
+            setLoaded({ projectId: activeId, tasks: [], sprints: [] });
+            setSprintId(null);
+            setProjectLoading(false);
+          }
+          return;
+        }
+        if (!taskRes.ok || !sprintRes.ok) throw new Error("failed");
         const nextTasks = await taskRes.json();
         const nextSprints = await sprintRes.json();
         if (cancelled) return;
@@ -659,12 +674,15 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   const setMemberRoles = useCallback(
     async (projectId: string, developerId: string, roleIds: string[]) => {
       const previous = membershipsRef.current;
-      setMemberships((prev) => [
-        ...prev.filter(
-          (m) => !(m.projectId === projectId && m.developerId === developerId)
-        ),
-        { projectId, developerId, roleIds },
-      ]);
+      const isTheirs = (m: Membership) =>
+        m.projectId === projectId && m.developerId === developerId;
+      // Editing in place rather than removing and re-adding: this list is the
+      // order people are listed in, and ticking a role must not move anybody.
+      setMemberships((prev) =>
+        prev.some(isTheirs)
+          ? prev.map((m) => (isTheirs(m) ? { ...m, roleIds } : m))
+          : [...prev, { projectId, developerId, roleIds, invite: null }]
+      );
 
       const res = await fetch(`/api/projects/${projectId}/members`, {
         method: "PUT",
@@ -674,7 +692,14 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) {
         setMemberships(previous);
         notify("error", await errorMessage(res, "Could not save that."));
+        return;
       }
+      // Putting someone on a project mints their invite link, so the server's
+      // answer is what the row should show.
+      const saved: Membership = await res.json();
+      setMemberships((prev) =>
+        prev.map((m) => (isTheirs(m) ? saved : m))
+      );
     },
     [notify]
   );
@@ -683,6 +708,57 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     (projectId: string, developerId: string) =>
       setMemberRoles(projectId, developerId, []),
     [setMemberRoles]
+  );
+
+  /**
+   * A new link for someone, which is what makes their old one dead, or the end
+   * of the link they have. Both write the membership the server hands back.
+   */
+  const setInvite = useCallback(
+    async (projectId: string, developerId: string, method: "POST" | "DELETE") => {
+      const res = await fetch(`/api/projects/${projectId}/invites`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ developerId }),
+      });
+      if (!res.ok) {
+        notify(
+          "error",
+          await errorMessage(
+            res,
+            method === "POST"
+              ? "Could not make a new link."
+              : "Could not switch the link off."
+          )
+        );
+        return;
+      }
+      const saved: Membership = await res.json();
+      setMemberships((prev) =>
+        prev.map((m) =>
+          m.projectId === projectId && m.developerId === developerId ? saved : m
+        )
+      );
+      notify(
+        "success",
+        method === "POST"
+          ? "New invite link ready — the old one no longer works."
+          : "Invite link switched off."
+      );
+    },
+    [notify]
+  );
+
+  const rotateInvite = useCallback(
+    (projectId: string, developerId: string) =>
+      setInvite(projectId, developerId, "POST"),
+    [setInvite]
+  );
+
+  const revokeInvite = useCallback(
+    (projectId: string, developerId: string) =>
+      setInvite(projectId, developerId, "DELETE"),
+    [setInvite]
   );
 
   const removeMember = useCallback(
@@ -736,6 +812,8 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     addMember,
     removeMember,
     setMemberRoles,
+    rotateInvite,
+    revokeInvite,
     createRole,
     updateRole,
     deleteRole,
@@ -772,6 +850,8 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       addMember,
       removeMember,
       setMemberRoles,
+      rotateInvite,
+      revokeInvite,
       createRole,
       updateRole,
       deleteRole,

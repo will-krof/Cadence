@@ -10,7 +10,7 @@ export default function LoginPage() {
       <p className="mb-5 text-[0.8125rem] text-[var(--ink-secondary)]">
         Log in to your workspace.
       </p>
-      <AuthForm mode="login" />
+      <AuthForm />
     </>
   );
 }

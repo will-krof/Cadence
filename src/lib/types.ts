@@ -149,9 +149,31 @@ export interface Assignment {
   projectId: string;
 }
 
+/**
+ * The link that lets one person into one project as themselves. `token` is
+ * null once the link has been revoked — there is nothing left to copy, but the
+ * row still says there was one.
+ */
+export interface Invite {
+  token: string | null;
+  createdAt: string | null;
+  revoked: boolean;
+  /** When the link was first opened, or null if it never was. */
+  usedAt: string | null;
+}
+
 /** Someone's place on a project: which of its roles they hold, if any. */
 export interface Membership {
   projectId: string;
   developerId: string;
   roleIds: string[];
+  /** Only ever sent to the project's owner; a guest sees null. */
+  invite: Invite | null;
+}
+
+/** The full link an invite token stands for, in this browser's terms. */
+export function inviteLink(token: string) {
+  const origin =
+    typeof window === "undefined" ? "" : window.location.origin;
+  return `${origin}/invite/${token}`;
 }

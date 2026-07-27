@@ -2,16 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Field } from "@/components/ui";
 
-export function AuthForm({ mode }: { mode: "login" | "signup" }) {
+/**
+ * Logging in, and only logging in. Accounts aren't self-served: people join a
+ * project through an invite link, so there is nothing to sign up for.
+ */
+export function AuthForm() {
   const router = useRouter();
-  const isSignup = mode === "signup";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -21,12 +22,10 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
     setPending(true);
 
     try {
-      const res = await fetch(`/api/auth/${mode}`, {
+      const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          isSignup ? { email, password, name } : { email, password }
-        ),
+        body: JSON.stringify({ email, password }),
       });
 
       if (!res.ok) {
@@ -46,18 +45,6 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3.5">
-      {isSignup && (
-        <Field label="Name (optional)">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="input"
-            placeholder="Alex"
-            autoComplete="name"
-          />
-        </Field>
-      )}
-
       <Field label="Email">
         <input
           autoFocus
@@ -78,9 +65,8 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="input"
-          placeholder={isSignup ? "At least 8 characters" : "Your password"}
-          autoComplete={isSignup ? "new-password" : "current-password"}
-          minLength={isSignup ? 8 : undefined}
+          placeholder="Your password"
+          autoComplete="current-password"
         />
       </Field>
 
@@ -98,23 +84,12 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         disabled={pending}
         className="btn-primary mt-1 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {pending
-          ? isSignup
-            ? "Creating account…"
-            : "Signing in…"
-          : isSignup
-            ? "Create account"
-            : "Log in"}
+        {pending ? "Signing in…" : "Log in"}
       </button>
 
-      <p className="mt-1 text-center text-[0.75rem] text-[var(--ink-secondary)]">
-        {isSignup ? "Already have an account? " : "No account yet? "}
-        <Link
-          href={isSignup ? "/login" : "/signup"}
-          className="font-medium text-[var(--accent)] hover:underline"
-        >
-          {isSignup ? "Log in" : "Sign up"}
-        </Link>
+      <p className="mt-1 text-center text-[0.75rem] leading-relaxed text-[var(--ink-secondary)]">
+        Been sent an invite link? Open it — it takes you straight to the project,
+        no account needed.
       </p>
     </form>
   );

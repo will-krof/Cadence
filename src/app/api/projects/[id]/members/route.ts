@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import { newInviteToken } from "@/lib/invite";
+import { MEMBER_FIELDS, memberPayload } from "@/lib/member-select";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -66,27 +68,24 @@ export async function PUT(
       projectId: id,
       developerId,
       roles: { create: roleIds.map((roleId) => ({ roleId })) },
+      // Putting someone on a project is how they get in, so the link they get
+      // in with is made here rather than asked for separately.
+      inviteToken: newInviteToken(),
+      inviteCreatedAt: new Date(),
     },
     // Replacing the set outright keeps this the single description of what
-    // they hold, rather than something callers have to diff.
+    // they hold, rather than something callers have to diff. The link is left
+    // alone: changing what someone can see doesn't change how they get in.
     update: {
       roles: {
         deleteMany: {},
         create: roleIds.map((roleId) => ({ roleId })),
       },
     },
-    select: {
-      projectId: true,
-      developerId: true,
-      roles: { select: { roleId: true } },
-    },
+    select: MEMBER_FIELDS,
   });
 
-  return NextResponse.json({
-    projectId: member.projectId,
-    developerId: member.developerId,
-    roleIds: member.roles.map((r) => r.roleId),
-  });
+  return NextResponse.json(memberPayload(member));
 }
 
 /** Takes someone off the project. Their tasks are untouched. */

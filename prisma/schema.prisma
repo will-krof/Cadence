@@ -120,6 +120,18 @@ model ProjectMember {
   roles     MemberRole[]
   createdAt DateTime     @default(now())
 
+  /// The invite link that lets this person into the project as themselves,
+  /// seeing whatever their roles see. Made when they are put on the project;
+  /// rotating it replaces the token, which is what makes the old link dead.
+  /// Held as issued rather than hashed so the admin can copy it again later —
+  /// it grants one project's roles, and rotating or revoking it is one click.
+  inviteToken     String?   @unique
+  inviteCreatedAt DateTime?
+  /// Revoked links stay on the row: the admin can see there was one, and can
+  /// hand out a new one without the old one ever working again.
+  inviteRevoked   Boolean   @default(false)
+  inviteUsedAt    DateTime?
+
   @@unique([projectId, developerId])
   @@index([developerId])
 }

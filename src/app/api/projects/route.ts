@@ -1,14 +1,16 @@
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/api-auth";
+import { projectScope, requireUser } from "@/lib/api-auth";
+import { requireViewer } from "@/lib/viewer";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
-  const { user, response } = await requireUser();
+  // A guest sees one project — the one their invite link is for.
+  const { viewer, response } = await requireViewer();
   if (response) return response;
 
   const projects = await prisma.project.findMany({
-    where: { userId: user.id },
+    where: projectScope(viewer),
     orderBy: { createdAt: "asc" },
     include: { roles: { orderBy: { createdAt: "asc" } } },
   });

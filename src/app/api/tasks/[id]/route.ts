@@ -1,31 +1,38 @@
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/api-auth";
+import { projectFilter, workspaceOwnerId } from "@/lib/api-auth";
+import { guestDenied, requireViewer } from "@/lib/viewer";
 import { TASK_FIELDS } from "@/lib/task-select";
 import { NextRequest, NextResponse } from "next/server";
 
 const notFound = () =>
   NextResponse.json({ error: "Task not found" }, { status: 404 });
 
+const forbidden = () =>
+  NextResponse.json({ error: "Your role can't do that" }, { status: 403 });
+
 export async function PATCH(
   request: NextRequest,
   ctx: RouteContext<"/api/tasks/[id]">
 ) {
-  const { user, response } = await requireUser();
+  const { viewer, response } = await requireViewer();
   if (response) return response;
+  // Which project the task is in is settled by the lookup below; this is the
+  // role's say on whether a guest may touch tasks at all.
+  if (guestDenied(viewer, null)) return forbidden();
 
   const { id } = await ctx.params;
   const body = await request.json();
 
-  const owned = await prisma.task.findFirst({
-    where: { id, project: { userId: user.id } },
+  const reachable = await prisma.task.findFirst({
+    where: { id, ...projectFilter(viewer) },
     select: { id: true },
   });
-  if (!owned) return notFound();
+  if (!reachable) return notFound();
 
-  // Reassignment must stay within the caller's own roster.
+  // Reassignment must stay within the workspace's own roster.
   if (body.developerId) {
     const developer = await prisma.developer.findFirst({
-      where: { id: body.developerId, userId: user.id },
+      where: { id: body.developerId, userId: workspaceOwnerId(viewer) },
       select: { id: true },
     });
     if (!developer) {
@@ -59,13 +66,14 @@ export async function DELETE(
   _request: NextRequest,
   ctx: RouteContext<"/api/tasks/[id]">
 ) {
-  const { user, response } = await requireUser();
+  const { viewer, response } = await requireViewer();
   if (response) return response;
+  if (guestDenied(viewer, null)) return forbidden();
 
   const { id } = await ctx.params;
 
   const deleted = await prisma.task.deleteMany({
-    where: { id, project: { userId: user.id } },
+    where: { id, ...projectFilter(viewer) },
   });
   if (deleted.count === 0) return notFound();
 

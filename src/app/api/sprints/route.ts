@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/api-auth";
+import { projectFilter, requireUser } from "@/lib/api-auth";
+import { requireViewer } from "@/lib/viewer";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
-  const { user, response } = await requireUser();
+  const { viewer, response } = await requireViewer();
   if (response) return response;
 
   const projectId = request.nextUrl.searchParams.get("projectId");
@@ -11,8 +12,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "projectId is required" }, { status: 400 });
   }
 
+  if (viewer.kind === "guest" && projectId !== viewer.projectId) {
+    return NextResponse.json(
+      { error: "Your invite isn't for that project" },
+      { status: 403 }
+    );
+  }
+
   const sprints = await prisma.sprint.findMany({
-    where: { projectId, project: { userId: user.id } },
+    where: { projectId, ...projectFilter(viewer) },
     orderBy: { number: "asc" },
   });
   return NextResponse.json(sprints);

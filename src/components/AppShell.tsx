@@ -127,17 +127,33 @@ export interface ShellUser {
   name: string | null;
 }
 
-export default function AppShell({ user }: { user: ShellUser }) {
+/**
+ * Someone who came in through an invite link: one project, the roles that link
+ * carries, and no account behind them.
+ */
+export interface ShellGuest {
+  name: string;
+  projectId: string;
+  roleIds: string[];
+}
+
+export default function AppShell({
+  user,
+  guest,
+}: {
+  user?: ShellUser;
+  guest?: ShellGuest;
+}) {
   return (
     <FeedbackProvider>
       <BoardProvider>
-        <Shell user={user} />
+        <Shell user={user} guest={guest} />
       </BoardProvider>
     </FeedbackProvider>
   );
 }
 
-function Shell({ user }: { user: ShellUser }) {
+function Shell({ user, guest }: { user?: ShellUser; guest?: ShellGuest }) {
   const {
     loading,
     projectLoading,
@@ -164,29 +180,44 @@ function Shell({ user }: { user: ShellUser }) {
   const wide = !collapsed;
 
   // Roles belong to a project, so the chosen one is looked up rather than
-  // stored — switching projects falls back to that project's admin.
+  // stored — switching projects falls back to that project's admin. A guest
+  // doesn't choose: they are whatever their invite says they are.
   const role = useMemo(() => {
-    if (!activeProject) return null;
+    if (!activeProject || guest) return null;
     return (
       activeProject.roles.find((r) => r.id === roleId) ??
       activeProject.roles.find((r) => r.isAdmin) ??
       activeProject.roles[0] ??
       null
     );
-  }, [activeProject, roleId]);
+  }, [activeProject, roleId, guest]);
 
-  const isAdmin = role?.isAdmin ?? true;
+  /** The roles a guest actually holds here, as this project describes them. */
+  const heldRoles = useMemo(() => {
+    if (!guest || !activeProject) return [];
+    return activeProject.roles.filter((r) => guest.roleIds.includes(r.id));
+  }, [guest, activeProject]);
 
-  // A tool has to be enabled on the project *and* visible to the role. Overview
-  // is always there — it is the project's own card, not one of its tools — so a
-  // project with no board enabled still has somewhere to land.
+  // Only the workspace's owner edits a project. A guest reads it, however many
+  // roles they hold.
+  const isAdmin = guest ? false : role?.isAdmin ?? true;
+
+  // A tool has to be enabled on the project *and* visible to the viewer.
+  // Overview is always there — it is the project's own card, not one of its
+  // tools — so a project with no board enabled still has somewhere to land.
+  // Held roles are additive: whatever any one of them sees, the guest sees.
   const available: View[] = useMemo(() => {
     if (!activeProject) return [];
-    const admin = role?.isAdmin ?? true;
+    const admin = guest
+      ? heldRoles.some((r) => r.isAdmin)
+      : role?.isAdmin ?? true;
     const sees = (
       tool: boolean,
       key: "canViewTimeline" | "canViewTracker" | "canViewTeam"
-    ) => tool && (admin || role?.[key] === true);
+    ) =>
+      tool &&
+      (admin ||
+        (guest ? heldRoles.some((r) => r[key]) : role?.[key] === true));
 
     return [
       "overview" as View,
@@ -198,7 +229,7 @@ function Shell({ user }: { user: ShellUser }) {
         : []),
       ...(sees(activeProject.hasTeam, "canViewTeam") ? (["team"] as View[]) : []),
     ];
-  }, [activeProject, role]);
+  }, [activeProject, role, guest, heldRoles]);
 
   // A project may not have both tools enabled, so the shown view is derived
   // rather than synced — switching projects or roles can never leave it on a
@@ -223,7 +254,7 @@ function Shell({ user }: { user: ShellUser }) {
             </button>
           )}
           <ThemeToggle />
-          <AccountMenu user={user} />
+          {guest ? <GuestMenu guest={guest} /> : user && <AccountMenu user={user} />}
         </div>
       </header>
 
@@ -240,7 +271,11 @@ function Shell({ user }: { user: ShellUser }) {
                 wide ? "justify-between px-2" : "justify-center"
               }`}
             >
-              {wide && <span className="field-label">Projects</span>}
+              {wide && (
+                <span className="field-label">
+                  {guest ? "Your project" : "Projects"}
+                </span>
+              )}
               <button
                 onClick={toggleSidebar}
                 className="rounded p-1 text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
@@ -251,17 +286,19 @@ function Shell({ user }: { user: ShellUser }) {
                 <CollapseIcon pointsLeft={wide} />
               </button>
             </div>
-            <button
-              onClick={() => setShowNewProject(true)}
-              className={`flex items-center gap-2 rounded-[var(--radius)] p-2 text-[0.8125rem] text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] ${
-                wide ? "" : "justify-center"
-              }`}
-              aria-label="New project"
-              title="New project"
-            >
-              <PlusIcon />
-              {wide && <span>New project</span>}
-            </button>
+            {!guest && (
+              <button
+                onClick={() => setShowNewProject(true)}
+                className={`flex items-center gap-2 rounded-[var(--radius)] p-2 text-[0.8125rem] text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] ${
+                  wide ? "" : "justify-center"
+                }`}
+                aria-label="New project"
+                title="New project"
+              >
+                <PlusIcon />
+                {wide && <span>New project</span>}
+              </button>
+            )}
 
             {projects.map((p) => {
               const active = p.id === activeProject?.id;
@@ -346,7 +383,30 @@ function Shell({ user }: { user: ShellUser }) {
             </div>
           )}
 
-          {activeProject && activeProject.roles.length > 0 && wide && (
+          {/* A guest can't try other roles on: theirs came with the link. */}
+          {guest && wide && (
+            <div className="flex flex-col gap-1 border-t border-[var(--hairline)] px-2 pt-3">
+              <span className="field-label">Your role</span>
+              {heldRoles.length === 0 ? (
+                <span className="text-[0.75rem] text-[var(--ink-muted)]">
+                  No role yet — you can see the project card.
+                </span>
+              ) : (
+                <span className="flex flex-wrap gap-1">
+                  {heldRoles.map((r) => (
+                    <span
+                      key={r.id}
+                      className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--accent)]"
+                    >
+                      {r.name}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </div>
+          )}
+
+          {!guest && activeProject && activeProject.roles.length > 0 && wide && (
             <label className="flex flex-col gap-1 border-t border-[var(--hairline)] px-2 pt-3">
               <span className="field-label">Viewing as</span>
               <select
@@ -374,17 +434,24 @@ function Shell({ user }: { user: ShellUser }) {
             <Centered>Loading…</Centered>
           ) : !activeProject ? (
             <Centered>
-              <div className="flex flex-col items-center gap-3 text-center">
-                <p className="text-sm text-[var(--ink-secondary)]">
-                  No projects yet.
+              {guest ? (
+                <p className="max-w-sm text-center text-sm text-[var(--ink-secondary)]">
+                  This project is no longer open to you. Ask whoever runs it for
+                  a new invite link.
                 </p>
-                <button
-                  onClick={() => setShowNewProject(true)}
-                  className="btn-primary"
-                >
-                  Create your first project
-                </button>
-              </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <p className="text-sm text-[var(--ink-secondary)]">
+                    No projects yet.
+                  </p>
+                  <button
+                    onClick={() => setShowNewProject(true)}
+                    className="btn-primary"
+                  >
+                    Create your first project
+                  </button>
+                </div>
+              )}
             </Centered>
           ) : (
             <>
@@ -399,7 +466,7 @@ function Shell({ user }: { user: ShellUser }) {
                 )}
               </div>
               {activeView === "team" ? (
-                <TeamView />
+                <TeamView canEdit={!guest} />
               ) : activeView === "overview" ? (
                 <ProjectOverview
                   onOpenView={setView}
@@ -508,6 +575,79 @@ function AccountMenu({ user }: { user: ShellUser }) {
             className="mt-1 w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] disabled:opacity-60"
           >
             {signingOut ? "Signing out…" : "Sign out"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Who a guest is here, and the way out. Leaving forgets the link in this
+ * browser; the link itself keeps working until an admin says otherwise.
+ */
+function GuestMenu({ guest }: { guest: ShellGuest }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  async function leave() {
+    setLeaving(true);
+    await fetch("/api/invites/leave", { method: "POST" });
+    router.push("/");
+    router.refresh();
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-8 items-center gap-2 rounded-full border border-[var(--hairline)] px-2.5 text-[0.75rem] font-medium transition hover:bg-[var(--plane)]"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={`${guest.name} — invited guest`}
+      >
+        <span className="truncate">{guest.name}</span>
+        <span className="text-[0.625rem] uppercase tracking-wide text-[var(--ink-muted)]">
+          Guest
+        </span>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-10 z-50 w-60 rounded-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-1.5 shadow-xl"
+        >
+          <div className="border-b border-[var(--hairline)] px-2.5 pb-2 pt-1.5">
+            <p className="truncate text-[0.8125rem] font-medium">{guest.name}</p>
+            <p className="text-[0.75rem] leading-relaxed text-[var(--ink-muted)]">
+              Here on an invite link, with the roles it carries.
+            </p>
+          </div>
+          <button
+            onClick={leave}
+            disabled={leaving}
+            role="menuitem"
+            className="mt-1 w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] disabled:opacity-60"
+          >
+            {leaving ? "Leaving…" : "Leave this project"}
           </button>
         </div>
       )}

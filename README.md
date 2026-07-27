@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cadence
 
-## Getting Started
+Sprint planning with a Gantt timeline, a kanban tracker and a team roster over
+the same tasks. Built with Next.js, Prisma and SQLite.
 
-First, run the development server:
+## Getting started
 
 ```bash
+npm install
+echo 'DATABASE_URL="file:./dev.db"' > .env
+npx prisma migrate dev
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Accounts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+There is no sign-up. A workspace account is created out of band, and everyone
+else comes in through an invite link, so the only self-serve door into the app
+is a link an admin handed out.
 
-## Learn More
+To create the first account, hash a password and insert the row:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+HASH=$(node -e "const {randomBytes,scryptSync}=require('node:crypto');const s=randomBytes(16);process.stdout.write('scrypt\$'+s.toString('hex')+'\$'+scryptSync(process.argv[1],s,64).toString('hex'))" 'your-password')
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+npx prisma db execute --schema prisma/schema.prisma --stdin <<SQL
+INSERT INTO "User" ("id", "email", "name", "passwordHash", "createdAt")
+VALUES (lower(hex(randomblob(16))), 'you@example.com', 'Your Name', '$HASH', CURRENT_TIMESTAMP);
+SQL
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The hash format is the one `src/lib/auth.ts` reads: `scrypt$<salt-hex>$<key-hex>`.
 
-## Deploy on Vercel
+## Roles and invite links
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Every project has its own roles, and a role is a list of what it can open:
+timeline, tracker, team. One role per project is the admin, which always sees
+everything and is the only one that edits the project. Someone can hold several
+roles on the same project, and different roles on different projects.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Putting somebody on a project mints their invite link. Opening it lets them in
+as themselves, with the roles they hold, and without an account:
+
+- **Copy** hands the link over.
+- **Regenerate** issues a new token, which kills the link they had.
+- **Switch off** revokes the link, and whoever was using it is out on their next
+  request.
+
+Guests reach one project. Their roles decide which of its tools they can open;
+they can move the work on the boards they can see, and everything else — the
+project's settings, its roles, the roster, the links themselves — stays with the
+workspace's owner.

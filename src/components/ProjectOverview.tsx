@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
 import { useFeedback } from "@/components/Feedback";
+import { InviteRow } from "@/components/InviteRow";
 import {
   Avatar,
   CloseIcon,
@@ -56,6 +57,8 @@ export function ProjectOverview({
     addMember,
     removeMember,
     setMemberRoles,
+    rotateInvite,
+    revokeInvite,
     sprints,
     sprint,
     projectLoading,
@@ -89,20 +92,32 @@ export function ProjectOverview({
    * Who is on this project: everyone given a role on it, plus anyone carrying
    * its work — being handed a task puts you on the project as surely as being
    * named does.
+   *
+   * Walking the roster (rather than the memberships) is what fixes the order in
+   * place: the list reads the same however roles are edited, so ticking a role
+   * never makes the rows swap places under the cursor.
    */
   const people = useMemo(() => {
-    const byId = new Map<string, Developer>();
-    if (activeProject) {
-      for (const m of memberships) {
-        if (m.projectId !== activeProject.id) continue;
-        const person = developers.find((d) => d.id === m.developerId);
-        if (person) byId.set(person.id, person);
+    if (!activeProject) return [];
+    const onProject = new Set(
+      memberships
+        .filter((m) => m.projectId === activeProject.id)
+        .map((m) => m.developerId)
+    );
+    for (const t of tasks) if (t.developerId) onProject.add(t.developerId);
+
+    const roster = developers.filter((d) => onProject.has(d.id));
+    // Someone can carry a task without a profile in the roster we hold — take
+    // the copy joined onto the task so they still appear.
+    const known = new Set(roster.map((d) => d.id));
+    const strays: Developer[] = [];
+    for (const t of tasks) {
+      if (t.developer && !known.has(t.developer.id)) {
+        known.add(t.developer.id);
+        strays.push(t.developer);
       }
     }
-    for (const t of tasks) {
-      if (t.developer && !byId.has(t.developer.id)) byId.set(t.developer.id, t.developer);
-    }
-    return [...byId.values()];
+    return [...roster, ...strays];
   }, [activeProject, memberships, developers, tasks]);
 
   // Project-wide, whichever sprint the boards happen to be showing.
@@ -271,6 +286,8 @@ export function ProjectOverview({
           onAdd={addMember}
           onRemove={removeMember}
           onRolesChange={setMemberRoles}
+          onRotateInvite={rotateInvite}
+          onRevokeInvite={revokeInvite}
           onOpenTeam={
             visibleViews.includes("team") ? () => onOpenView("team") : undefined
           }
@@ -347,6 +364,8 @@ function PeopleSection({
   onAdd,
   onRemove,
   onRolesChange,
+  onRotateInvite,
+  onRevokeInvite,
   onOpenTeam,
 }: {
   project: Project;
@@ -363,15 +382,18 @@ function PeopleSection({
     developerId: string,
     roleIds: string[]
   ) => Promise<void>;
+  onRotateInvite: (projectId: string, developerId: string) => Promise<void>;
+  onRevokeInvite: (projectId: string, developerId: string) => Promise<void>;
   onOpenTeam?: () => void;
 }) {
   const { confirm } = useFeedback();
   const [adding, setAdding] = useState("");
 
-  const rolesOf = (developerId: string) =>
+  const membershipOf = (developerId: string) =>
     memberships.find(
       (m) => m.projectId === project.id && m.developerId === developerId
-    )?.roleIds ?? [];
+    );
+
 
   const onProject = new Set(people.map((p) => p.id));
   const available = developers.filter((d) => d.active && !onProject.has(d.id));
@@ -419,48 +441,63 @@ function PeopleSection({
             const open = tasks.filter(
               (t) => t.developerId === person.id && t.status !== "DONE"
             ).length;
-            const held = rolesOf(person.id);
+            const membership = membershipOf(person.id);
+            const held = membership?.roleIds ?? [];
             return (
               <li
                 key={person.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
+                className="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
               >
-                <Avatar person={person} size={24} />
-                <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
-                  {person.name}
-                  {person.role && (
-                    <span className="ml-2 text-[0.6875rem] text-[var(--ink-muted)]">
-                      {person.role}
-                    </span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <Avatar person={person} size={24} />
+                  <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
+                    {person.name}
+                    {person.role && (
+                      <span className="ml-2 text-[0.6875rem] text-[var(--ink-muted)]">
+                        {person.role}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
+                    {open} open
+                  </span>
+
+                  <RoleChips
+                    roles={project.roles}
+                    held={held}
+                    editable={canEdit}
+                    label={`${person.name} on ${project.name}`}
+                    onToggle={(roleId, on) =>
+                      onRolesChange(
+                        project.id,
+                        person.id,
+                        on ? [...held, roleId] : held.filter((r) => r !== roleId)
+                      )
+                    }
+                  />
+
+                  {canEdit && (
+                    <button
+                      onClick={() => remove(person)}
+                      className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
+                      aria-label={`Take ${person.name} off this project`}
+                      title="Take off project"
+                    >
+                      <CloseIcon />
+                    </button>
                   )}
-                </span>
-                <span className="text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
-                  {open} open
-                </span>
+                </div>
 
-                <RoleChips
-                  roles={project.roles}
-                  held={held}
-                  editable={canEdit}
-                  label={`${person.name} on ${project.name}`}
-                  onToggle={(roleId, on) =>
-                    onRolesChange(
-                      project.id,
-                      person.id,
-                      on ? [...held, roleId] : held.filter((r) => r !== roleId)
-                    )
-                  }
-                />
-
-                {canEdit && (
-                  <button
-                    onClick={() => remove(person)}
-                    className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
-                    aria-label={`Take ${person.name} off this project`}
-                    title="Take off project"
-                  >
-                    <CloseIcon />
-                  </button>
+                {/* Only the owner is handed the links, and only for people who
+                    were actually put on the project — carrying a task doesn't
+                    make one. */}
+                {canEdit && membership && (
+                  <InviteRow
+                    person={person}
+                    invite={membership.invite}
+                    onRotate={() => onRotateInvite(project.id, person.id)}
+                    onRevoke={() => onRevokeInvite(project.id, person.id)}
+                  />
                 )}
               </li>
             );

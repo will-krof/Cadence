@@ -1,20 +1,26 @@
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/api-auth";
+import { projectFilter, workspaceOwnerId } from "@/lib/api-auth";
+import { guestDenied, requireViewer } from "@/lib/viewer";
 import { TASK_FIELDS } from "@/lib/task-select";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
+const forbidden = () =>
+  NextResponse.json({ error: "Your role can't do that" }, { status: 403 });
+
 export async function GET(request: NextRequest) {
-  const { user, response } = await requireUser();
+  const { viewer, response } = await requireViewer();
   if (response) return response;
 
   const params = request.nextUrl.searchParams;
   const projectId = params.get("projectId");
+  if (guestDenied(viewer, projectId)) return forbidden();
+
   // scope=all powers the Team view, which only needs to know who works where —
   // not the tasks themselves.
   if (params.get("scope") === "all") {
     const assignments = await prisma.task.findMany({
-      where: { project: { userId: user.id }, developerId: { not: null } },
+      where: { ...projectFilter(viewer), developerId: { not: null } },
       select: { developerId: true, projectId: true },
       distinct: ["developerId", "projectId"],
     });
@@ -22,10 +28,10 @@ export async function GET(request: NextRequest) {
   }
 
   const tasks = await prisma.task.findMany({
-    // Scoping through the project relation keeps other users' tasks out even
-    // when an arbitrary projectId is supplied.
+    // Scoping through the project relation keeps other workspaces' tasks out
+    // even when an arbitrary projectId is supplied.
     where: {
-      project: { userId: user.id },
+      ...projectFilter(viewer),
       ...(projectId ? { projectId } : {}),
     },
     // The assignee's profile is left out on purpose: the client already holds
@@ -37,7 +43,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { user, response } = await requireUser();
+  const { viewer, response } = await requireViewer();
   if (response) return response;
 
   const body = await request.json();
@@ -49,19 +55,22 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  if (guestDenied(viewer, body.projectId)) return forbidden();
+
+  const ownerId = workspaceOwnerId(viewer);
 
   const project = await prisma.project.findFirst({
-    where: { id: body.projectId, userId: user.id },
+    where: { id: body.projectId, userId: ownerId },
     select: { id: true },
   });
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  // An assignee must come from the caller's own roster.
+  // An assignee must come from the workspace's own roster.
   if (body.developerId) {
     const developer = await prisma.developer.findFirst({
-      where: { id: body.developerId, userId: user.id },
+      where: { id: body.developerId, userId: ownerId },
       select: { id: true },
     });
     if (!developer) {
