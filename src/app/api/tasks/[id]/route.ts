@@ -31,9 +31,52 @@ export async function PATCH(
 
   const reachable = await prisma.task.findFirst({
     where: { id, ...boardFilter(viewer) },
-    select: { id: true, projectId: true },
+    select: { id: true, projectId: true, parentId: true },
   });
   if (!reachable) return notFound();
+
+  // Making a task a step of another, or lifting it back out. A task can't be
+  // its own parent, can't be filed under one of its own steps, and can't be
+  // filed under something that is a step itself.
+  let parentId: string | null | undefined;
+  if (body.parentId !== undefined) {
+    if (!body.parentId) {
+      parentId = null;
+    } else if (body.parentId === id) {
+      return NextResponse.json(
+        { error: "A task can’t be a step of itself" },
+        { status: 400 }
+      );
+    } else {
+      const parent = await prisma.task.findFirst({
+        where: { id: body.parentId, projectId: reachable.projectId },
+        select: { id: true, parentId: true },
+      });
+      if (!parent) {
+        return NextResponse.json(
+          { error: "That task is not on this project" },
+          { status: 404 }
+        );
+      }
+      if (parent.parentId) {
+        return NextResponse.json(
+          { error: "A subtask can’t have subtasks of its own" },
+          { status: 400 }
+        );
+      }
+      const hasSteps = await prisma.task.findFirst({
+        where: { parentId: id },
+        select: { id: true },
+      });
+      if (hasSteps) {
+        return NextResponse.json(
+          { error: "This task has steps of its own" },
+          { status: 400 }
+        );
+      }
+      parentId = parent.id;
+    }
+  }
 
   // Reassignment must stay within the workspace's own roster.
   if (body.developerId) {
@@ -67,6 +110,7 @@ export async function PATCH(
       developerId:
         body.developerId === undefined ? undefined : body.developerId || null,
       sprintId: body.sprintId === undefined ? undefined : body.sprintId || null,
+      parentId,
     },
     select: TASK_FIELDS,
   });

@@ -102,6 +102,29 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // A subtask is a step of a task on the same project, and only of a task that
+  // is not a step itself: the parts of a job are one level down, not a tree.
+  let parentId: string | null = null;
+  if (body.parentId) {
+    const parent = await prisma.task.findFirst({
+      where: { id: body.parentId, projectId },
+      select: { id: true, parentId: true },
+    });
+    if (!parent) {
+      return NextResponse.json(
+        { error: "That task is not on this project" },
+        { status: 404 }
+      );
+    }
+    if (parent.parentId) {
+      return NextResponse.json(
+        { error: "A subtask can’t have subtasks of its own" },
+        { status: 400 }
+      );
+    }
+    parentId = parent.id;
+  }
+
   const maxOrder = await prisma.task.aggregate({
     where: { projectId },
     _max: { order: true },
@@ -117,6 +140,7 @@ export async function POST(request: NextRequest) {
       projectId,
       developerId: body.developerId || null,
       sprintId: body.sprintId || null,
+      parentId,
       order: (maxOrder._max.order ?? 0) + 1,
     },
     select: TASK_FIELDS,

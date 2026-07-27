@@ -196,16 +196,22 @@ model WikiPage {
   id      String @id @default(cuid())
   title   String
   content String @default("")
-  /// Hand-ordered, so a wiki reads in the order somebody arranged it rather
-  /// than the order pages happened to be written.
+  /// Hand-ordered among its siblings, so a wiki reads in the order somebody
+  /// arranged it rather than the order pages happened to be written.
   order   Int    @default(0)
+
+  /// A section, a section of a section, as deep as a project needs. Null is a
+  /// page at the top of the wiki. Deleting a section takes what is under it.
+  parentId String?
+  parent   WikiPage?  @relation("WikiTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children WikiPage[] @relation("WikiTree")
 
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([projectId, order])
+  @@index([projectId, parentId, order])
 }
 
 model Task {
@@ -221,6 +227,13 @@ model Task {
   project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   developerId String?
   developer   Developer? @relation(fields: [developerId], references: [id], onDelete: SetNull)
+  /// The task this one is a step of, if it is one. Subtasks go one level deep:
+  /// a step of a step is a task in its own right, and the board says so.
+  /// Deleting a task takes its subtasks — they are parts of it, not work that
+  /// outlives it.
+  parentId    String?
+  parent      Task?      @relation("Subtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks    Task[]     @relation("Subtasks")
   // Deleting a sprint leaves its tasks behind rather than taking them with it.
   sprintId    String?
   sprint      Sprint?    @relation(fields: [sprintId], references: [id], onDelete: SetNull)
@@ -234,6 +247,8 @@ model Task {
   // person/project pairs the team roster groups by.
   @@index([developerId, projectId])
   @@index([sprintId, order])
+  // The parts of one task, read together with it.
+  @@index([parentId])
 }
 
 /// A project runs a series of these. Each one is its own board: a task belongs

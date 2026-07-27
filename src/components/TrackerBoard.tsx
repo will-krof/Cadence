@@ -9,7 +9,7 @@ import {
   SprintPicker,
   StatusPill,
 } from "@/components/ui";
-import { TaskModal } from "@/components/TaskModal";
+import { TaskEditModal } from "@/components/TaskEditModal";
 import { Developer, STATUS_OPTIONS, Task, TaskStatus } from "@/lib/types";
 import { useHiddenStatuses } from "@/lib/prefs";
 import { formatDay, formatDayShort } from "@/lib/dates";
@@ -43,7 +43,6 @@ export function TrackerBoard() {
     hasUnplanned,
     selectSprint,
     updateTask,
-    deleteTask,
   } = useBoard();
   const [assignee, setAssignee] = useState("");
   // Only the identity of what is being dragged lives in state; where it is
@@ -78,6 +77,28 @@ export function TrackerBoard() {
   // status put away here stops being one of the states work is counted in.
   const [hidden, { hide: hideColumn, show: showColumn, showAll }] =
     useHiddenStatuses();
+
+  /**
+   * What a card says about the steps around it: how far a task's own steps
+   * have got, and which task a step belongs to — a column sorts by status, so
+   * a step can sit a long way from its parent.
+   */
+  const stepCounts = useMemo(() => {
+    const counts = new Map<string, { done: number; total: number }>();
+    for (const task of tasks) {
+      if (!task.parentId) continue;
+      const at = counts.get(task.parentId) ?? { done: 0, total: 0 };
+      at.total++;
+      if (task.status === "DONE") at.done++;
+      counts.set(task.parentId, at);
+    }
+    return counts;
+  }, [tasks]);
+
+  const titles = useMemo(
+    () => new Map(tasks.map((t) => [t.id, t.title])),
+    [tasks]
+  );
 
   const columns = useMemo(
     () =>
@@ -297,6 +318,10 @@ export function TrackerBoard() {
                   <TaskCard
                     key={task.id}
                     task={task}
+                    steps={stepCounts.get(task.id)}
+                    parentTitle={
+                      task.parentId ? titles.get(task.parentId) : undefined
+                    }
                     dragging={dragging?.taskId === task.id}
                     onDragStart={beginDrag}
                     onStatusChange={handleStatus}
@@ -333,18 +358,9 @@ export function TrackerBoard() {
       )}
 
       {editingTask && (
-        <TaskModal
+        <TaskEditModal
           task={editingTask}
-          developers={developers}
           onClose={() => setEditingId(null)}
-          onSubmit={async (values) => {
-            await updateTask(editingTask.id, values);
-            setEditingId(null);
-          }}
-          onDelete={async () => {
-            await deleteTask(editingTask.id);
-            setEditingId(null);
-          }}
         />
       )}
     </div>
@@ -393,6 +409,8 @@ function Column({
 
 const TaskCard = memo(function TaskCard({
   task,
+  steps,
+  parentTitle,
   developers,
   dragging,
   onDragStart,
@@ -401,6 +419,10 @@ const TaskCard = memo(function TaskCard({
   onOpen,
 }: {
   task: Task;
+  /** How many of this task's steps are done, when it has any. */
+  steps?: { done: number; total: number };
+  /** The task this card is a step of, when it is one. */
+  parentTitle?: string;
   developers: Developer[];
   dragging: boolean;
   onDragStart: (state: DragState) => void;
@@ -448,6 +470,15 @@ const TaskCard = memo(function TaskCard({
           : "cursor-grab hover:border-[var(--baseline)] active:cursor-grabbing"
       }`}
     >
+      {parentTitle && (
+        <p
+          className="mb-1 flex items-center gap-1 truncate text-[0.6875rem] text-[var(--ink-muted)]"
+          title={`A step of ${parentTitle}`}
+        >
+          <span aria-hidden="true">↳</span>
+          {parentTitle}
+        </p>
+      )}
       <div className="flex items-start gap-1.5">
         {link ? (
           <a
@@ -462,6 +493,14 @@ const TaskCard = memo(function TaskCard({
           <h4 className="flex-1 text-[0.8125rem] font-medium leading-snug">
             {task.title}
           </h4>
+        )}
+        {steps && (
+          <span
+            className="mt-0.5 shrink-0 rounded-full border border-[var(--hairline)] px-1.5 text-[0.625rem] tabular-nums text-[var(--ink-muted)]"
+            title={`${steps.done} of ${steps.total} steps done`}
+          >
+            {steps.done}/{steps.total}
+          </span>
         )}
         <button
           onClick={() => onOpen(task.id)}

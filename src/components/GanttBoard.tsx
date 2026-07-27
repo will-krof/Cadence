@@ -21,7 +21,7 @@ import {
   Stat,
   StatusPill,
 } from "@/components/ui";
-import { TaskModal } from "@/components/TaskModal";
+import { TaskEditModal } from "@/components/TaskEditModal";
 
 const ROW_HEIGHT = 44;
 /** Rows kept rendered beyond the viewport, so scrolling doesn't flicker. */
@@ -72,10 +72,23 @@ export function GanttBoard() {
     selectSprint,
     stats,
     updateTask,
-    deleteTask,
   } = useBoard();
 
   const [hiddenStatuses] = useHiddenStatuses();
+
+  // How far along each task's steps are, counted once for the whole board
+  // rather than per row: a row only needs its own pair of numbers.
+  const stepCounts = useMemo(() => {
+    const counts = new Map<string, { done: number; total: number }>();
+    for (const task of tasks) {
+      if (!task.parentId) continue;
+      const at = counts.get(task.parentId) ?? { done: 0, total: 0 };
+      at.total++;
+      if (task.status === "DONE") at.done++;
+      counts.set(task.parentId, at);
+    }
+    return counts;
+  }, [tasks]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const barDragRef = useRef<BarDrag | null>(null);
   // Bars and their tooltips are addressed directly while dragging.
@@ -526,6 +539,7 @@ export function GanttBoard() {
             <TableRow
               key={task.id}
               task={task}
+              steps={stepCounts.get(task.id)}
               developers={developers}
               gridTemplateColumns={gridTemplateColumns}
               onEdit={openEditor}
@@ -708,18 +722,9 @@ export function GanttBoard() {
       </div>
 
       {editingTask && (
-        <TaskModal
+        <TaskEditModal
           task={editingTask}
-          developers={developers}
           onClose={() => setEditingId(null)}
-          onSubmit={async (values) => {
-            await updateTask(editingTask.id, values);
-            setEditingId(null);
-          }}
-          onDelete={async () => {
-            await deleteTask(editingTask.id);
-            setEditingId(null);
-          }}
         />
       )}
     </div>
@@ -732,12 +737,15 @@ export function GanttBoard() {
  */
 const TableRow = memo(function TableRow({
   task,
+  steps,
   developers,
   gridTemplateColumns,
   onEdit,
   onChange,
 }: {
   task: Task;
+  /** How many of this task's steps are done, when it has any. */
+  steps?: { done: number; total: number };
   developers: Developer[];
   gridTemplateColumns: string;
   onEdit: (id: string) => void;
@@ -752,7 +760,20 @@ const TableRow = memo(function TableRow({
       className="group grid items-center border-b border-[var(--hairline)] transition-colors hover:bg-[var(--plane)]"
       style={{ height: ROW_HEIGHT, gridTemplateColumns }}
     >
-      <div className="flex min-w-0 items-center gap-1 px-3 text-[0.8125rem]">
+      <div
+        className="flex min-w-0 items-center gap-1 px-3 text-[0.8125rem]"
+        style={task.parentId ? { paddingLeft: "1.75rem" } : undefined}
+      >
+        {/* A step reads under the task it belongs to, and says so. */}
+        {task.parentId && (
+          <span
+            className="shrink-0 text-[var(--ink-muted)]"
+            aria-label="Subtask"
+            title="A step of the task above"
+          >
+            ↳
+          </span>
+        )}
         {link ? (
           <a
             href={link}
@@ -766,6 +787,14 @@ const TableRow = memo(function TableRow({
         ) : (
           <span className="truncate" title={task.description || undefined}>
             {task.title}
+          </span>
+        )}
+        {steps && (
+          <span
+            className="shrink-0 rounded-full border border-[var(--hairline)] px-1.5 text-[0.625rem] tabular-nums text-[var(--ink-muted)]"
+            title={`${steps.done} of ${steps.total} steps done`}
+          >
+            {steps.done}/{steps.total}
           </span>
         )}
         <button

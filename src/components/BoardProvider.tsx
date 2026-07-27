@@ -32,6 +32,10 @@ interface TaskInput {
   endDate: string;
   status?: TaskStatus;
   developerId: string | null;
+  /** The task this one is a step of, if it is one. */
+  parentId?: string | null;
+  /** Steps to create with it, as titles — they inherit its dates and board. */
+  subtasks?: string[];
 }
 
 interface RolePatch {
@@ -201,10 +205,25 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     boardSprintIdRef.current = boardSprintId;
   }, [boardSprintId]);
 
-  const boardRows = useMemo(
-    () => rows.filter((row) => (row.sprintId ?? null) === boardSprintId),
-    [rows, boardSprintId]
-  );
+  const boardRows = useMemo(() => {
+    const mine = rows.filter((row) => (row.sprintId ?? null) === boardSprintId);
+    // Steps read under the task they belong to. A subtask whose parent is on
+    // another board stands on its own, in its own place — it is still work.
+    const parents = new Set(mine.filter((r) => !r.parentId).map((r) => r.id));
+    const steps = new Map<string, TaskRow[]>();
+    for (const row of mine) {
+      if (!row.parentId || !parents.has(row.parentId)) continue;
+      steps.set(row.parentId, [...(steps.get(row.parentId) ?? []), row]);
+    }
+    if (steps.size === 0) return mine;
+
+    const out: TaskRow[] = [];
+    for (const row of mine) {
+      if (row.parentId && parents.has(row.parentId)) continue;
+      out.push(row, ...(steps.get(row.id) ?? []));
+    }
+    return out;
+  }, [rows, boardSprintId]);
 
   // The server sends an assignee id; boards want the person. Joining here means
   // one pass when either side changes, instead of a copy of every profile
@@ -470,7 +489,30 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const created = await res.json();
-      setTasks((prev) => [...prev, created]);
+
+      // The steps a task was created with. Each is a task in its own right —
+      // same dates, same board — so it is created the same way, under the one
+      // that was just made.
+      const steps: TaskRow[] = [];
+      for (const title of input.subtasks ?? []) {
+        const stepRes = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            startDate: input.startDate,
+            endDate: input.endDate,
+            developerId: input.developerId,
+            projectId: activeId,
+            sprintId: boardSprintIdRef.current,
+            parentId: created.id,
+          }),
+        });
+        if (stepRes.ok) steps.push(await stepRes.json());
+        else notify("error", `Could not add the step “${title}”.`);
+      }
+
+      setTasks((prev) => [...prev, created, ...steps]);
       notify("success", `Task “${created.title}” created.`);
     },
     [activeId, setTasks, notify]

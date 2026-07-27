@@ -12,6 +12,7 @@ const WIKI_FIELDS = {
   title: true,
   content: true,
   order: true,
+  parentId: true,
   updatedAt: true,
 } as const;
 
@@ -58,11 +59,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  // A new page goes to the end of the list rather than the top: a wiki is read
-  // in the order somebody arranged it in, and the page written first is usually
-  // the one that should still be read first.
+  // A section of a section, as deep as the project needs — the parent only has
+  // to be a page of the same project.
+  let parentId: string | null = null;
+  if (body.parentId) {
+    const parent = await prisma.wikiPage.findFirst({
+      where: { id: body.parentId, projectId },
+      select: { id: true },
+    });
+    if (!parent) {
+      return NextResponse.json(
+        { error: "That section is not in this wiki" },
+        { status: 404 }
+      );
+    }
+    parentId = parent.id;
+  }
+
+  // A new page goes to the end of its section rather than the top: a wiki is
+  // read in the order somebody arranged it in.
   const last = await prisma.wikiPage.findFirst({
-    where: { projectId },
+    where: { projectId, parentId },
     orderBy: { order: "desc" },
     select: { order: true },
   });
@@ -70,6 +87,7 @@ export async function POST(request: NextRequest) {
   const page = await prisma.wikiPage.create({
     data: {
       projectId,
+      parentId,
       title: titled.value,
       order: (last?.order ?? -1) + 1,
     },

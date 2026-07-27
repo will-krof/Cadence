@@ -124,6 +124,8 @@ export interface TaskRow {
   developerId: string | null;
   /** The sprint this task is planned into, if any. */
   sprintId: string | null;
+  /** The task this one is a step of, if it is one. */
+  parentId: string | null;
 }
 
 /** A task as boards use it, with the assignee joined in from the roster. */
@@ -202,5 +204,7 @@ export interface WikiPage {
   title: string;
   content: string;
   order: number;
+  /** The section this page sits in, or null at the top of the wiki. */
+  parentId: string | null;
   updatedAt: string;
 }
