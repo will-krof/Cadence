@@ -14,7 +14,6 @@ import {
   statusMeta,
   Assignment,
   DeveloperTask,
-  Membership,
   Project,
   ProjectRole,
 } from "@/lib/types";
@@ -63,12 +62,15 @@ export function TeamView() {
   const {
     developers,
     projects,
+    memberships,
+    setMemberRole,
+    removeMember,
     createDeveloper,
     updateDeveloper,
     setDeveloperActive,
     deleteDeveloper,
   } = useBoard();
-  const { confirm, notify } = useFeedback();
+  const { confirm } = useFeedback();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -77,25 +79,15 @@ export function TeamView() {
   // Who works on what lives in the tasks, which span every project — the board
   // itself only holds the active one.
   const [assignments, setAssignments] = useState<Assignment[] | null>(null);
-  // Roles are held per project, so who-holds-what is its own small list.
-  const [memberships, setMemberships] = useState<Membership[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [taskRes, memberRes] = await Promise.all([
-          fetch("/api/tasks?scope=all"),
-          fetch("/api/members"),
-        ]);
-        if (!taskRes.ok || !memberRes.ok) throw new Error("failed");
-        const [tasks, members] = await Promise.all([
-          taskRes.json(),
-          memberRes.json(),
-        ]);
-        if (cancelled) return;
-        setAssignments(tasks);
-        setMemberships(members);
+        const res = await fetch("/api/tasks?scope=all");
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        if (!cancelled) setAssignments(data);
       } catch {
         if (!cancelled) setAssignments([]);
       }
@@ -114,34 +106,13 @@ export function TeamView() {
     [memberships]
   );
 
-  const setMemberRole = useCallback(
-    async (projectId: string, developerId: string, roleId: string | null) => {
-      const previous = memberships;
-      setMemberships((prev) => {
-        const rest = prev.filter(
-          (m) => !(m.projectId === projectId && m.developerId === developerId)
-        );
-        return roleId ? [...rest, { projectId, developerId, roleId }] : rest;
-      });
-
-      const res = await fetch(`/api/projects/${projectId}/members`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ developerId, roleId }),
-      });
-      if (!res.ok) {
-        setMemberships(previous);
-        let message = "Could not save that role.";
-        try {
-          const body = await res.json();
-          if (typeof body?.error === "string") message = body.error;
-        } catch {
-          // Keep the generic message.
-        }
-        notify("error", message);
-      }
-    },
-    [memberships, notify]
+  /** An empty pick means "not on this project" rather than "no role yet". */
+  const chooseRole = useCallback(
+    (projectId: string, developerId: string, roleId: string | null) =>
+      roleId
+        ? setMemberRole(projectId, developerId, roleId)
+        : removeMember(projectId, developerId),
+    [setMemberRole, removeMember]
   );
 
   const selected = useMemo(
@@ -344,7 +315,7 @@ export function TeamView() {
             person={selected}
             projects={projects.filter((p) => p.hasTeam)}
             roleFor={roleFor}
-            onRoleChange={setMemberRole}
+            onRoleChange={chooseRole}
             onEdit={() => setEditingId(selected.id)}
             onBack={() => setSelectedId(null)}
             onDelete={() => removePerson(selected)}

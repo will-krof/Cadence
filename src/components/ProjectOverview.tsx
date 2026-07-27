@@ -3,7 +3,13 @@
 import { useMemo, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
 import { useFeedback } from "@/components/Feedback";
-import { Avatar, CloseIcon, Field, ToolCheckbox } from "@/components/ui";
+import {
+  Avatar,
+  CloseIcon,
+  Field,
+  LazySelect,
+  ToolCheckbox,
+} from "@/components/ui";
 import {
   addDays,
   diffDays,
@@ -13,6 +19,7 @@ import {
 } from "@/lib/dates";
 import {
   Developer,
+  Membership,
   Project,
   ProjectRole,
   ROLE_VIEWS,
@@ -43,6 +50,11 @@ export function ProjectOverview({
     updateProject,
     deleteProject,
     projectTasks,
+    developers,
+    memberships,
+    addMember,
+    removeMember,
+    setMemberRole,
     sprints,
     sprint,
     projectLoading,
@@ -72,14 +84,25 @@ export function ProjectOverview({
     return start && end ? { start, end, days: diffDays(start, end) + 1 } : null;
   }, [tasks]);
 
-  /** Everyone with at least one task here, in the order they first appear. */
+  /**
+   * Who is on this project: everyone given a role on it, plus anyone carrying
+   * its work — being handed a task puts you on the project as surely as being
+   * named does.
+   */
   const people = useMemo(() => {
     const byId = new Map<string, Developer>();
+    if (activeProject) {
+      for (const m of memberships) {
+        if (m.projectId !== activeProject.id) continue;
+        const person = developers.find((d) => d.id === m.developerId);
+        if (person) byId.set(person.id, person);
+      }
+    }
     for (const t of tasks) {
       if (t.developer && !byId.has(t.developer.id)) byId.set(t.developer.id, t.developer);
     }
     return [...byId.values()];
-  }, [tasks]);
+  }, [activeProject, memberships, developers, tasks]);
 
   // Project-wide, whichever sprint the boards happen to be showing.
   const stats = useMemo(() => {
@@ -236,51 +259,21 @@ export function ProjectOverview({
           onDelete={deleteSprint}
         />
 
-        <section>
-          <h3 className="mb-2 text-[0.8125rem] font-semibold tracking-tight">
-            Developers
-            {!projectLoading && (
-              <span className="ml-2 font-normal text-[var(--ink-muted)]">
-                {people.length}
-              </span>
-            )}
-          </h3>
-          {projectLoading ? (
-            <p className="text-[0.8125rem] text-[var(--ink-muted)]">Loading…</p>
-          ) : people.length === 0 ? (
-            <p className="text-[0.8125rem] text-[var(--ink-muted)]">
-              Nobody is assigned to this project yet.
-            </p>
-          ) : (
-            <ul className="flex flex-wrap gap-2">
-              {people.map((person) => {
-                const open = tasks.filter(
-                  (t) => t.developerId === person.id && t.status !== "DONE"
-                ).length;
-                return (
-                  <li
-                    key={person.id}
-                    className="flex items-center gap-2 rounded-full border border-[var(--hairline)] py-1 pl-1 pr-3"
-                  >
-                    <Avatar person={person} size={24} />
-                    <span className="text-[0.8125rem]">{person.name}</span>
-                    <span className="text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
-                      {open} open
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {visibleViews.includes("team") && (
-            <button
-              onClick={() => onOpenView("team")}
-              className="btn-secondary mt-2.5"
-            >
-              Open Team
-            </button>
-          )}
-        </section>
+        <PeopleSection
+          project={activeProject}
+          people={people}
+          developers={developers}
+          memberships={memberships}
+          tasks={tasks}
+          loading={projectLoading}
+          canEdit={canEdit}
+          onAdd={addMember}
+          onRemove={removeMember}
+          onRoleChange={setMemberRole}
+          onOpenTeam={
+            visibleViews.includes("team") ? () => onOpenView("team") : undefined
+          }
+        />
 
         {canEdit ? (
           <RolesSection
@@ -334,6 +327,193 @@ export function ProjectOverview({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The people on this project. Anyone already in the workspace can be put on it
+ * and given one of its roles; being handed a task puts them here too, which is
+ * why someone can appear without a role.
+ */
+function PeopleSection({
+  project,
+  people,
+  developers,
+  memberships,
+  tasks,
+  loading,
+  canEdit,
+  onAdd,
+  onRemove,
+  onRoleChange,
+  onOpenTeam,
+}: {
+  project: Project;
+  people: Developer[];
+  developers: Developer[];
+  memberships: Membership[];
+  tasks: { developerId: string | null; status: string }[];
+  loading: boolean;
+  canEdit: boolean;
+  onAdd: (projectId: string, developerId: string) => Promise<void>;
+  onRemove: (projectId: string, developerId: string) => Promise<void>;
+  onRoleChange: (
+    projectId: string,
+    developerId: string,
+    roleId: string | null
+  ) => Promise<void>;
+  onOpenTeam?: () => void;
+}) {
+  const { confirm } = useFeedback();
+  const [adding, setAdding] = useState("");
+
+  const roleOf = (developerId: string) =>
+    memberships.find(
+      (m) => m.projectId === project.id && m.developerId === developerId
+    )?.roleId ?? null;
+
+  const onProject = new Set(people.map((p) => p.id));
+  const available = developers.filter((d) => d.active && !onProject.has(d.id));
+
+  async function remove(person: Developer) {
+    const open = tasks.filter(
+      (t) => t.developerId === person.id && t.status !== "DONE"
+    ).length;
+    const ok = await confirm({
+      title: `Take ${person.name} off ${project.name}?`,
+      body: open
+        ? `Their ${open} open task${open === 1 ? "" : "s"} stay where they are — reassign them first if they shouldn't.`
+        : "They keep their profile and their work elsewhere.",
+      confirmLabel: "Take off project",
+      destructive: true,
+    });
+    if (ok) await onRemove(project.id, person.id);
+  }
+
+  return (
+    <section className="flex flex-col gap-2.5">
+      <div>
+        <h3 className="text-[0.8125rem] font-semibold tracking-tight">
+          People
+          {!loading && (
+            <span className="ml-2 font-normal text-[var(--ink-muted)]">
+              {people.length}
+            </span>
+          )}
+        </h3>
+        <p className="text-[0.75rem] text-[var(--ink-muted)]">
+          Who works on this project, and in which of its roles.
+        </p>
+      </div>
+
+      {loading ? (
+        <p className="text-[0.8125rem] text-[var(--ink-muted)]">Loading…</p>
+      ) : people.length === 0 ? (
+        <p className="text-[0.8125rem] text-[var(--ink-muted)]">
+          Nobody on this project yet.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {people.map((person) => {
+            const open = tasks.filter(
+              (t) => t.developerId === person.id && t.status !== "DONE"
+            ).length;
+            const held = roleOf(person.id);
+            const current = project.roles.some((r) => r.id === held)
+              ? held ?? ""
+              : "";
+            return (
+              <li
+                key={person.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius)] border border-[var(--hairline)] px-3 py-2"
+              >
+                <Avatar person={person} size={24} />
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
+                  {person.name}
+                  {person.role && (
+                    <span className="ml-2 text-[0.6875rem] text-[var(--ink-muted)]">
+                      {person.role}
+                    </span>
+                  )}
+                </span>
+                <span className="text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
+                  {open} open
+                </span>
+
+                {canEdit ? (
+                  <LazySelect
+                    value={current}
+                    onChange={(roleId) =>
+                      onRoleChange(project.id, person.id, roleId || null)
+                    }
+                    options={[
+                      { value: "", label: "No role" },
+                      ...project.roles.map((role) => ({
+                        value: role.id,
+                        label: role.name,
+                      })),
+                    ]}
+                    className="select w-36"
+                    ariaLabel={`${person.name}’s role on ${project.name}`}
+                  />
+                ) : (
+                  <span className="text-[0.75rem] text-[var(--ink-secondary)]">
+                    {project.roles.find((r) => r.id === current)?.name ??
+                      "No role"}
+                  </span>
+                )}
+
+                {canEdit && (
+                  <button
+                    onClick={() => remove(person)}
+                    className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
+                    aria-label={`Take ${person.name} off this project`}
+                    title="Take off project"
+                  >
+                    <CloseIcon />
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {canEdit && (
+        <div className="flex flex-wrap items-center gap-2">
+          <LazySelect
+            value={adding}
+            onChange={async (developerId) => {
+              if (!developerId) return;
+              setAdding("");
+              await onAdd(project.id, developerId);
+            }}
+            options={[
+              {
+                value: "",
+                label: available.length
+                  ? "Add someone from the team…"
+                  : "Everyone is already on this project",
+              },
+              ...available.map((d) => ({ value: d.id, label: d.name })),
+            ]}
+            className="select w-60"
+            ariaLabel="Add someone to this project"
+          />
+          {onOpenTeam && (
+            <button onClick={onOpenTeam} className="btn-secondary">
+              Open Team
+            </button>
+          )}
+        </div>
+      )}
+
+      {!canEdit && onOpenTeam && (
+        <button onClick={onOpenTeam} className="btn-secondary self-start">
+          Open Team
+        </button>
+      )}
+    </section>
   );
 }
 

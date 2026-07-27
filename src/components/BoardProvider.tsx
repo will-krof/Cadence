@@ -12,6 +12,7 @@ import {
 import {
   Developer,
   DeveloperInput,
+  Membership,
   Project,
   ProjectRole,
   Sprint,
@@ -61,6 +62,15 @@ interface BoardContextValue {
   createProject: (input: ProjectInput) => Promise<Project | null>;
   updateProject: (id: string, input: Partial<ProjectInput>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
+
+  memberships: Membership[];
+  addMember: (projectId: string, developerId: string) => Promise<void>;
+  removeMember: (projectId: string, developerId: string) => Promise<void>;
+  setMemberRole: (
+    projectId: string,
+    developerId: string,
+    roleId: string | null
+  ) => Promise<void>;
 
   createRole: (projectId: string, name: string) => Promise<ProjectRole | null>;
   updateRole: (
@@ -133,6 +143,9 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [developers, setDevelopers] = useState<Developer[]>([]);
+  // Who is on which project, in which role. Small enough to hold for the whole
+  // workspace, and both the project card and the roster read it.
+  const [memberships, setMemberships] = useState<Membership[]>([]);
   const [loading, setLoading] = useState(true);
   const [projectLoading, setProjectLoading] = useState(false);
 
@@ -214,6 +227,11 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     rowsRef.current = rows;
   }, [rows]);
 
+  const membershipsRef = useRef(memberships);
+  useEffect(() => {
+    membershipsRef.current = memberships;
+  }, [memberships]);
+
   const setTasks = useCallback(
     (update: TaskRow[] | ((prev: TaskRow[]) => TaskRow[])) => {
       setLoaded((prev) => ({
@@ -228,13 +246,15 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const [projectRes, devRes] = await Promise.all([
+        const [projectRes, devRes, memberRes] = await Promise.all([
           fetch("/api/projects"),
           fetch("/api/developers"),
+          fetch("/api/members"),
         ]);
         const loadedProjects: Project[] = await projectRes.json();
         setProjects(loadedProjects);
         setDevelopers(await devRes.json());
+        setMemberships(await memberRes.json());
         setActiveId(loadedProjects[0]?.id ?? null);
       } catch {
         notify("error", "Could not load your workspace.");
@@ -635,6 +655,64 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
 
   const selectSprint = useCallback((id: string | null) => setSprintId(id), []);
 
+  /** Puts someone on a project, in one of its roles or in none yet. */
+  const putMember = useCallback(
+    async (projectId: string, developerId: string, roleId: string | null) => {
+      const previous = membershipsRef.current;
+      setMemberships((prev) => [
+        ...prev.filter(
+          (m) => !(m.projectId === projectId && m.developerId === developerId)
+        ),
+        { projectId, developerId, roleId },
+      ]);
+
+      const res = await fetch(`/api/projects/${projectId}/members`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ developerId, roleId }),
+      });
+      if (!res.ok) {
+        setMemberships(previous);
+        notify("error", await errorMessage(res, "Could not save that."));
+      }
+    },
+    [notify]
+  );
+
+  const setMemberRole = useCallback(
+    (projectId: string, developerId: string, roleId: string | null) =>
+      putMember(projectId, developerId, roleId),
+    [putMember]
+  );
+
+  const addMember = useCallback(
+    (projectId: string, developerId: string) =>
+      putMember(projectId, developerId, null),
+    [putMember]
+  );
+
+  const removeMember = useCallback(
+    async (projectId: string, developerId: string) => {
+      const previous = membershipsRef.current;
+      setMemberships((prev) =>
+        prev.filter(
+          (m) => !(m.projectId === projectId && m.developerId === developerId)
+        )
+      );
+
+      const res = await fetch(`/api/projects/${projectId}/members`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ developerId }),
+      });
+      if (!res.ok) {
+        setMemberships(previous);
+        notify("error", await errorMessage(res, "Could not remove them."));
+      }
+    },
+    [notify]
+  );
+
   // The boards show one sprint, so their tally counts that sprint's work.
   const stats = useMemo(() => {
     const total = boardRows.length;
@@ -660,6 +738,10 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     createProject,
     updateProject,
     deleteProject,
+    memberships,
+    addMember,
+    removeMember,
+    setMemberRole,
     createRole,
     updateRole,
     deleteRole,
@@ -692,6 +774,10 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       createProject,
       updateProject,
       deleteProject,
+      memberships,
+      addMember,
+      removeMember,
+      setMemberRole,
       createRole,
       updateRole,
       deleteRole,
