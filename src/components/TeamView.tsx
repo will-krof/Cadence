@@ -68,10 +68,18 @@ async function fileToAvatar(file: File): Promise<string> {
  * a project, and inviting them once they hold a role there, is the project's
  * business.
  *
- * A signed-in team member reads this where a role lets them; changing the team
- * stays with the workspace's owner.
+ * Only the workspace's owner reads the whole of it. Anyone else arrives here
+ * through a project whose role opens the roster, and sees that project's
+ * people: `scope` is the projects they were let in by.
  */
-export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
+export function TeamView({
+  canEdit = true,
+  scope = null,
+}: {
+  canEdit?: boolean;
+  /** Project ids to read the team through, or null for the whole workspace. */
+  scope?: string[] | null;
+}) {
   const {
     developers,
     projects,
@@ -89,12 +97,29 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
-  // Who works on what lives in the tasks, which span every project — the board
-  // itself only holds the active one.
+  // The projects this roster is read through: the ones carrying the tool, and
+  // for anyone but the owner only those they were let in by.
   const teamProjects = useMemo(
-    () => projects.filter((p) => p.hasTeam),
-    [projects]
+    () =>
+      projects.filter(
+        (p) => p.hasTeam && (scope === null || scope.includes(p.id))
+      ),
+    [projects, scope]
   );
+
+  /**
+   * Whose profiles the viewer may read. The owner's workspace is whole — people
+   * on no project at all, an HR hire among them, are still on the team. Anyone
+   * else sees the people of the projects that let them in, and nobody else.
+   */
+  const roster = useMemo(() => {
+    if (scope === null) return developers;
+    const shown = new Set<string>();
+    for (const m of memberships) {
+      if (scope.includes(m.projectId)) shown.add(m.developerId);
+    }
+    return developers.filter((d) => shown.has(d.id));
+  }, [developers, memberships, scope]);
 
   /**
    * Writes what the form staged: only the projects whose answer changed, so
@@ -129,24 +154,23 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
   );
 
   const selected = useMemo(
-    () => developers.find((d) => d.id === selectedId) ?? null,
-    [developers, selectedId]
+    () => roster.find((d) => d.id === selectedId) ?? null,
+    [roster, selectedId]
   );
 
-  // Counted once instead of scanning every membership for every row drawn.
+  // Counted once instead of scanning every membership for every row drawn, and
+  // counting only the projects the viewer is allowed to know about.
   const projectCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const m of memberships) {
+      if (scope !== null && !scope.includes(m.projectId)) continue;
       counts.set(m.developerId, (counts.get(m.developerId) ?? 0) + 1);
     }
     return counts;
-  }, [memberships]);
+  }, [memberships, scope]);
 
-  const active = useMemo(() => developers.filter((d) => d.active), [developers]);
-  const archived = useMemo(
-    () => developers.filter((d) => !d.active),
-    [developers]
-  );
+  const active = useMemo(() => roster.filter((d) => d.active), [roster]);
+  const archived = useMemo(() => roster.filter((d) => !d.active), [roster]);
 
   const showingDetail = creating || selected != null;
   const editing = creating || (selected != null && editingId === selected.id);
@@ -198,9 +222,11 @@ export function TeamView({ canEdit = true }: { canEdit?: boolean }) {
           )}
         </div>
 
-        {developers.length === 0 && (
+        {roster.length === 0 && (
           <p className="text-[0.8125rem] text-[var(--ink-muted)]">
-            No one on the team yet.
+            {scope === null
+              ? "No one on the team yet."
+              : "No one on your projects yet."}
           </p>
         )}
 

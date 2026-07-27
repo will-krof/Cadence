@@ -221,21 +221,40 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   }, [activeProject, role, member, heldRoles]);
 
   /**
-   * The roster is the workspace's, so it isn't a project's to grant: the owner
-   * always has it. A member is let in by any project that carries the tool and
-   * a role there that opens it — one project saying yes is enough, since what
-   * they'd read is the same list either way.
+   * Which projects' people the viewer may read — `null` for the whole
+   * workspace, which is the owner's own reach and nobody else's.
+   *
+   * The roster stands beside the projects, but the right to it is still a
+   * project's to give: an HR role that opens Team on Somnium opens Somnium's
+   * people, and no one else's. Empty means the roster isn't theirs at all.
    */
-  const canSeeTeam = useMemo(() => {
-    if (!member) return true;
-    return projects.some((p) => {
-      if (!p.hasTeam) return false;
-      const held =
-        member.places.find((place) => place.projectId === p.id)?.roleIds ?? [];
-      const roles = p.roles.filter((r) => held.includes(r.id));
-      return roles.some((r) => r.isAdmin || r.canViewTeam);
-    });
-  }, [member, projects]);
+  const teamScope = useMemo<string[] | null>(() => {
+    const opensTeam = (project: (typeof projects)[number], roleIds: string[]) =>
+      project.hasTeam &&
+      project.roles.some(
+        (r) => roleIds.includes(r.id) && (r.isAdmin || r.canViewTeam)
+      );
+
+    if (member) {
+      return projects
+        .filter((p) =>
+          opensTeam(
+            p,
+            member.places.find((place) => place.projectId === p.id)?.roleIds ??
+              []
+          )
+        )
+        .map((p) => p.id);
+    }
+
+    // The owner, unless they are trying a role on for size: then they are shown
+    // what that role sees, which is the one project the role belongs to.
+    if (!role || role.isAdmin) return null;
+    if (!activeProject) return [];
+    return opensTeam(activeProject, [role.id]) ? [activeProject.id] : [];
+  }, [member, projects, role, activeProject]);
+
+  const canSeeTeam = teamScope === null || teamScope.length > 0;
 
   // A project may not have both tools enabled, so the shown view is derived
   // rather than synced — switching projects or roles can never leave it on a
@@ -465,10 +484,12 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                   Team
                 </h2>
                 <p className="truncate text-[0.75rem] text-[var(--ink-muted)]">
-                  Everyone in the workspace, across every project.
+                  {teamScope === null
+                    ? "Everyone in the workspace, across every project."
+                    : "The people on the projects you can see."}
                 </p>
               </div>
-              <TeamView canEdit={!member} />
+              <TeamView canEdit={!member && teamScope === null} scope={teamScope} />
             </>
           ) : !activeProject ? (
             <Centered>
