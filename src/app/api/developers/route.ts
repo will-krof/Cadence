@@ -1,17 +1,19 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { parseDeveloper } from "@/lib/developer-input";
+import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const { user, response } = await requireUser();
   if (response) return response;
 
+  // Profiles carry avatars, so this is the other response worth compressing.
   const developers = await prisma.developer.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "asc" },
   });
-  return NextResponse.json(developers);
+  return jsonResponse(request, developers);
 }
 
 export async function POST(request: NextRequest) {

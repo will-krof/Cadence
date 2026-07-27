@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import { TASK_FIELDS } from "@/lib/task-select";
+import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -8,25 +10,30 @@ export async function GET(request: NextRequest) {
 
   const params = request.nextUrl.searchParams;
   const projectId = params.get("projectId");
-  // scope=all powers the Team view, which spans every project.
-  const allProjects = params.get("scope") === "all";
+  // scope=all powers the Team view, which only needs to know who works where —
+  // not the tasks themselves.
+  if (params.get("scope") === "all") {
+    const assignments = await prisma.task.findMany({
+      where: { project: { userId: user.id }, developerId: { not: null } },
+      select: { developerId: true, projectId: true },
+      distinct: ["developerId", "projectId"],
+    });
+    return jsonResponse(request, assignments);
+  }
 
   const tasks = await prisma.task.findMany({
     // Scoping through the project relation keeps other users' tasks out even
     // when an arbitrary projectId is supplied.
     where: {
       project: { userId: user.id },
-      ...(projectId && !allProjects ? { projectId } : {}),
+      ...(projectId ? { projectId } : {}),
     },
-    include: {
-      developer: true,
-      ...(allProjects
-        ? { project: { select: { id: true, name: true } } }
-        : {}),
-    },
+    // The assignee's profile is left out on purpose: the client already holds
+    // the roster, and repeating it per task (avatars and all) dwarfed the tasks.
+    select: TASK_FIELDS,
     orderBy: { order: "asc" },
   });
-  return NextResponse.json(tasks);
+  return jsonResponse(request, tasks);
 }
 
 export async function POST(request: NextRequest) {
@@ -82,7 +89,7 @@ export async function POST(request: NextRequest) {
       developerId: body.developerId || null,
       order: (maxOrder._max.order ?? 0) + 1,
     },
-    include: { developer: true },
+    select: TASK_FIELDS,
   });
   return NextResponse.json(task, { status: 201 });
 }

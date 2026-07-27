@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -15,6 +16,7 @@ import {
   ProjectRole,
   Sprint,
   Task,
+  TaskRow,
   TaskStatus,
 } from "@/lib/types";
 import { toISODate } from "@/lib/dates";
@@ -78,7 +80,7 @@ interface BoardContextValue {
     progress: number;
   };
   createTask: (input: TaskInput) => Promise<void>;
-  updateTask: (id: string, data: Partial<Task>) => Promise<void>;
+  updateTask: (id: string, data: Partial<TaskRow>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   createDeveloper: (input: Partial<DeveloperInput>) => Promise<Developer | null>;
   updateDeveloper: (id: string, input: Partial<DeveloperInput>) => Promise<void>;
@@ -96,6 +98,7 @@ export function useBoard() {
 }
 
 /** Stable identity so consumers don't re-render on every empty state. */
+const EMPTY_ROWS: TaskRow[] = [];
 const EMPTY_TASKS: Task[] = [];
 
 /** Pulls the server's error message out of a failed response, if there is one. */
@@ -123,15 +126,34 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   // are still loading.
   const [loaded, setLoaded] = useState<{
     projectId: string | null;
-    tasks: Task[];
+    tasks: TaskRow[];
     sprint: Sprint | null;
   }>({ projectId: null, tasks: [], sprint: null });
 
-  const tasks = loaded.projectId === activeId ? loaded.tasks : EMPTY_TASKS;
+  const rows = loaded.projectId === activeId ? loaded.tasks : EMPTY_ROWS;
   const sprint = loaded.projectId === activeId ? loaded.sprint : null;
 
+  // The server sends an assignee id; boards want the person. Joining here means
+  // one pass when either side changes, instead of a copy of every profile
+  // travelling inside every task.
+  const tasks = useMemo(() => {
+    if (rows === EMPTY_ROWS) return EMPTY_TASKS;
+    const byId = new Map(developers.map((d) => [d.id, d]));
+    return rows.map((row) => ({
+      ...row,
+      developer: row.developerId ? byId.get(row.developerId) ?? null : null,
+    }));
+  }, [rows, developers]);
+
+  // Rollback needs the rows as they are now, but reading them from state would
+  // give every task edit a new callback identity — and re-render every board.
+  const rowsRef = useRef(rows);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+
   const setTasks = useCallback(
-    (update: Task[] | ((prev: Task[]) => Task[])) => {
+    (update: TaskRow[] | ((prev: TaskRow[]) => TaskRow[])) => {
       setLoaded((prev) => ({
         ...prev,
         tasks: typeof update === "function" ? update(prev.tasks) : update,
@@ -347,8 +369,8 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateTask = useCallback(
-    async (id: string, data: Partial<Task>) => {
-      const previous = loaded.tasks;
+    async (id: string, data: Partial<TaskRow>) => {
+      const previous = rowsRef.current;
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...data } : t)));
 
       const res = await fetch(`/api/tasks/${id}`, {
@@ -365,12 +387,12 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       const updated = await res.json();
       setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
     },
-    [loaded.tasks, setTasks, notify]
+    [setTasks, notify]
   );
 
   const deleteTask = useCallback(
     async (id: string) => {
-      const previous = loaded.tasks;
+      const previous = rowsRef.current;
       const title = previous.find((t) => t.id === id)?.title ?? "Task";
       setTasks((prev) => prev.filter((t) => t.id !== id));
 
@@ -382,7 +404,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       }
       notify("success", `“${title}” deleted.`);
     },
-    [loaded.tasks, setTasks, notify]
+    [setTasks, notify]
   );
 
   const createDeveloper = useCallback(
@@ -417,13 +439,10 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       }
       const updated: Developer = await res.json();
       setDevelopers((prev) => prev.map((d) => (d.id === id ? updated : d)));
-      // Assignee chips on tasks carry a copy of the person, so refresh those.
-      setTasks((prev) =>
-        prev.map((t) => (t.developerId === id ? { ...t, developer: updated } : t))
-      );
+      // Tasks pick the new profile up through the roster join.
       notify("success", `${updated.name}’s profile saved.`);
     },
-    [setTasks, notify]
+    [notify]
   );
 
   /** Archiving keeps the person and their history; it just files them away. */
@@ -446,15 +465,12 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       }
       const updated: Developer = await res.json();
       setDevelopers((prev) => prev.map((d) => (d.id === id ? updated : d)));
-      setTasks((prev) =>
-        prev.map((t) => (t.developerId === id ? { ...t, developer: updated } : t))
-      );
       notify(
         "success",
         active ? `${updated.name} restored.` : `${updated.name} archived.`
       );
     },
-    [setTasks, notify]
+    [notify]
   );
 
   const deleteDeveloper = useCallback(
@@ -466,10 +482,9 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setDevelopers((prev) => prev.filter((d) => d.id !== id));
+      // The database nulls the assignee on their tasks; mirror that here.
       setTasks((prev) =>
-        prev.map((t) =>
-          t.developerId === id ? { ...t, developerId: null, developer: null } : t
-        )
+        prev.map((t) => (t.developerId === id ? { ...t, developerId: null } : t))
       );
       notify("success", `${name} removed from the team.`);
     },
@@ -512,7 +527,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   );
 
   const stats = useMemo(() => {
-    const total = tasks.length;
+    const total = rows.length;
     const counts: Record<TaskStatus, number> = {
       TODO: 0,
       IN_PROGRESS: 0,
@@ -520,12 +535,15 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       ON_HOLD: 0,
       DONE: 0,
     };
-    for (const t of tasks) counts[t.status]++;
+    for (const t of rows) counts[t.status]++;
     const progress = total === 0 ? 0 : (counts.DONE / total) * 100;
     return { total, counts, progress };
-  }, [tasks]);
+  }, [rows]);
 
-  const value: BoardContextValue = {
+  // Memoised: without it every provider render hands consumers a new object and
+  // re-renders every board, however little actually changed.
+  const value: BoardContextValue = useMemo(
+    () => ({
     projects,
     activeProject,
     selectProject,
@@ -549,7 +567,33 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     setDeveloperActive,
     deleteDeveloper,
     updateSprint,
-  };
+    }),
+    [
+      projects,
+      activeProject,
+      selectProject,
+      createProject,
+      updateProject,
+      deleteProject,
+      createRole,
+      updateRole,
+      deleteRole,
+      tasks,
+      developers,
+      sprint,
+      loading,
+      projectLoading,
+      stats,
+      createTask,
+      updateTask,
+      deleteTask,
+      createDeveloper,
+      updateDeveloper,
+      setDeveloperActive,
+      deleteDeveloper,
+      updateSprint,
+    ]
+  );
 
   return <BoardContext.Provider value={value}>{children}</BoardContext.Provider>;
 }

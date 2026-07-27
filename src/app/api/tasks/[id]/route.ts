@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import { TASK_FIELDS } from "@/lib/task-select";
 import { NextRequest, NextResponse } from "next/server";
 
 const notFound = () =>
@@ -48,7 +49,7 @@ export async function PATCH(
         body.developerId === undefined ? undefined : body.developerId || null,
       order: typeof body.order === "number" ? body.order : undefined,
     },
-    include: { developer: true },
+    select: TASK_FIELDS,
   });
   return NextResponse.json(task);
 }

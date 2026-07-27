@@ -100,7 +100,8 @@ export interface Project {
   createdAt: string;
 }
 
-export interface Task {
+/** A task as it travels: the assignee is an id, not a copy of their profile. */
+export interface TaskRow {
   id: string;
   title: string;
   projectId: string;
@@ -111,6 +112,10 @@ export interface Task {
   endDate: string;
   order: number;
   developerId: string | null;
+}
+
+/** A task as boards use it, with the assignee joined in from the roster. */
+export interface Task extends TaskRow {
   developer: Developer | null;
 }
 
@@ -123,7 +128,17 @@ export interface Sprint {
   updatedAt: string;
 }
 
-/** A task as returned by the per-person endpoint, which names its project. */
-export interface TaskWithProject extends Task {
+/** What the per-person endpoint returns: enough to list someone's work. */
+export interface DeveloperTask {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  endDate: string;
   project: { id: string; name: string };
+}
+
+/** Who works on what, for grouping the team — one row per person per project. */
+export interface Assignment {
+  developerId: string;
+  projectId: string;
 }

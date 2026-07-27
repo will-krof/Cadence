@@ -1,7 +1,97 @@
 "use client";
 
-import { useEffect } from "react";
+import { memo, useEffect, useState } from "react";
 import { Developer, STATUS_OPTIONS, TaskStatus, statusMeta } from "@/lib/types";
+
+/**
+ * A `<select>` that only holds its options once someone reaches for them.
+ *
+ * A board row carries two of these, and a few hundred rows meant thousands of
+ * `<option>` elements built for a list nobody had opened yet — on a busy board
+ * they outnumbered everything else on the page. The options are filled in on
+ * the interaction that precedes the dropdown (pointer, focus or key), so the
+ * list is complete by the time it can be seen.
+ */
+export function LazySelect({
+  value,
+  onChange,
+  options,
+  className,
+  style,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  className?: string;
+  style?: React.CSSProperties;
+  ariaLabel: string;
+}) {
+  const [ready, setReady] = useState(false);
+  const fill = () => setReady(true);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onPointerDown={fill}
+      onFocus={fill}
+      onKeyDown={fill}
+      className={className}
+      style={style}
+      aria-label={ariaLabel}
+    >
+      {ready ? (
+        options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))
+      ) : (
+        <option value={value}>{selected?.label ?? ""}</option>
+      )}
+    </select>
+  );
+}
+
+/** The assignee picker shared by both boards. */
+export const AssigneeSelect = memo(function AssigneeSelect({
+  developerId,
+  developer,
+  developers,
+  onChange,
+  emptyLabel,
+  taskTitle,
+}: {
+  developerId: string | null;
+  developer: Developer | null;
+  developers: Developer[];
+  onChange: (developerId: string | null) => void;
+  emptyLabel: string;
+  taskTitle: string;
+}) {
+  return (
+    <div className="relative flex min-w-0 flex-1 items-center">
+      {developer && (
+        <span className="pointer-events-none absolute left-1.5 z-10">
+          <Avatar person={developer} size={18} />
+        </span>
+      )}
+      <LazySelect
+        value={developerId ?? ""}
+        onChange={(next) => onChange(next || null)}
+        options={[
+          { value: "", label: emptyLabel },
+          ...developers.map((d) => ({ value: d.id, label: d.name })),
+        ]}
+        className={`select truncate ${developer ? "pl-7" : ""}`}
+        ariaLabel={`Assignee for ${taskTitle}`}
+      />
+    </div>
+  );
+});
 
 export function Stat({
   label,
@@ -40,22 +130,17 @@ export function StatusPill({
         className="pointer-events-none absolute left-2 h-1.5 w-1.5 shrink-0 rounded-full"
         style={{ background: meta.color }}
       />
-      <select
+      <LazySelect
         value={status}
-        onChange={(e) => onChange(e.target.value as TaskStatus)}
+        onChange={(next) => onChange(next as TaskStatus)}
+        options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
         className="select truncate pl-[1.375rem] font-medium"
         style={{
           background: `color-mix(in srgb, ${meta.color} 12%, var(--surface-raised))`,
           borderColor: `color-mix(in srgb, ${meta.color} 28%, transparent)`,
         }}
-        aria-label="Task status"
-      >
-        {STATUS_OPTIONS.map((s) => (
-          <option key={s.value} value={s.value}>
-            {s.label}
-          </option>
-        ))}
-      </select>
+        ariaLabel="Task status"
+      />
     </div>
   );
 }

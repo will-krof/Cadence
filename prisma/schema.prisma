@@ -117,7 +117,12 @@ model Task {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  @@index([projectId])
+  // The board reads one project's tasks in `order`, so the index carries the
+  // sort as well as the filter; the roster reads one person's tasks.
+  @@index([projectId, order])
+  // Carries "one person's tasks" and, as a covering index, the distinct
+  // person/project pairs the team roster groups by.
+  @@index([developerId, projectId])
 }
 
 model Sprint {

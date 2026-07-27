@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
+import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const { user, response } = await requireUser();
   if (response) return response;
 
@@ -11,7 +12,7 @@ export async function GET() {
     orderBy: { createdAt: "asc" },
     include: { roles: { orderBy: { createdAt: "asc" } } },
   });
-  return NextResponse.json(projects);
+  return jsonResponse(request, projects);
 }
 
 export async function POST(request: NextRequest) {

@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
-import { Avatar, StatusPill } from "@/components/ui";
+import { AssigneeSelect, Avatar, StatusPill } from "@/components/ui";
 import { TaskModal } from "@/components/TaskModal";
-import { STATUS_OPTIONS, Task, TaskStatus } from "@/lib/types";
+import { Developer, STATUS_OPTIONS, Task, TaskStatus } from "@/lib/types";
 import { toISODate } from "@/lib/dates";
 
 /** Pointer travel before a press turns into a drag rather than a click. */
 const DRAG_THRESHOLD = 5;
+/** Cards built per column up front; more follow as the column is scrolled. */
+const COLUMN_PAGE = 25;
 
 interface DragState {
   taskId: string;
@@ -26,10 +28,23 @@ interface DragState {
 export function TrackerBoard() {
   const { tasks, developers, updateTask, deleteTask } = useBoard();
   const [assignee, setAssignee] = useState("");
-  const [drag, setDrag] = useState<DragState | null>(null);
+  // Only the identity of what is being dragged lives in state; where it is
+  // lives in a ref and goes straight to the preview element.
+  const [dragging, setDragging] = useState<{
+    taskId: string;
+    width: number;
+    /** Where the preview starts; later moves are written to the element. */
+    x: number;
+    y: number;
+  } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<TaskStatus | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const tasksRef = useRef(tasks);
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
 
   const visible = useMemo(
     () => (assignee ? tasks.filter((t) => t.developerId === assignee) : tasks),
@@ -53,71 +68,96 @@ export function TrackerBoard() {
     return (el?.dataset.status as TaskStatus | undefined) ?? null;
   }
 
-  const beginDrag = useCallback((state: DragState) => {
-    dragRef.current = state;
-    setDrag(state);
-  }, []);
+  /**
+   * Pointer events (rather than HTML5 drag-and-drop) so dragging works with
+   * touch and pen as well as a mouse. The preview follows the pointer through
+   * its own element: putting the coordinates in state re-rendered every card in
+   * every column on every move.
+   */
+  const beginDrag = useCallback(
+    (state: DragState) => {
+      dragRef.current = state;
 
-  // Pointer events (rather than HTML5 drag-and-drop) so dragging works with
-  // touch and pen as well as a mouse.
-  useEffect(() => {
-    if (!drag) return;
+      function place(x: number, y: number) {
+        const el = previewRef.current;
+        const d = dragRef.current;
+        if (!el || !d) return;
+        el.style.transform = `translate3d(${x - d.offsetX}px, ${y - d.offsetY}px, 0)`;
+      }
 
-    function onMove(e: PointerEvent) {
-      const d = dragRef.current;
-      if (!d || e.pointerId !== d.pointerId) return;
+      function onMove(e: PointerEvent) {
+        const d = dragRef.current;
+        if (!d || e.pointerId !== d.pointerId) return;
 
-      const moved =
-        Math.abs(e.clientX - d.startX) > DRAG_THRESHOLD ||
-        Math.abs(e.clientY - d.startY) > DRAG_THRESHOLD;
+        if (!d.active) {
+          const moved =
+            Math.abs(e.clientX - d.startX) > DRAG_THRESHOLD ||
+            Math.abs(e.clientY - d.startY) > DRAG_THRESHOLD;
+          if (!moved) return;
+          d.active = true;
+          // One render to mount the preview and dim the card it came from.
+          setDragging({
+            taskId: d.taskId,
+            width: d.width,
+            x: e.clientX - d.offsetX,
+            y: e.clientY - d.offsetY,
+          });
+        }
 
-      const next = {
-        ...d,
-        x: e.clientX,
-        y: e.clientY,
-        active: d.active || moved,
-      };
-      dragRef.current = next;
-      setDrag(next);
-
-      if (next.active) {
         e.preventDefault();
+        d.x = e.clientX;
+        d.y = e.clientY;
+        place(e.clientX, e.clientY);
         setDropTarget(statusAtPoint(e.clientX, e.clientY));
       }
-    }
 
-    function onUp(e: PointerEvent) {
-      const d = dragRef.current;
-      dragRef.current = null;
-      setDrag(null);
-      setDropTarget(null);
-      if (!d || e.pointerId !== d.pointerId || !d.active) return;
+      function finish() {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+        dragRef.current = null;
+        setDragging(null);
+        setDropTarget(null);
+      }
 
-      const status = statusAtPoint(e.clientX, e.clientY);
-      if (!status) return;
-      const task = tasks.find((t) => t.id === d.taskId);
-      if (!task || task.status === status) return;
-      updateTask(d.taskId, { status });
-    }
+      function onUp(e: PointerEvent) {
+        const d = dragRef.current;
+        const wasActive = d?.active === true;
+        finish();
+        if (!d || e.pointerId !== d.pointerId || !wasActive) return;
 
-    function onCancel() {
-      dragRef.current = null;
-      setDrag(null);
-      setDropTarget(null);
-    }
+        const status = statusAtPoint(e.clientX, e.clientY);
+        if (!status) return;
+        const task = tasksRef.current.find((t) => t.id === d.taskId);
+        if (!task || task.status === status) return;
+        updateTask(d.taskId, { status });
+      }
 
-    window.addEventListener("pointermove", onMove, { passive: false });
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onCancel);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onCancel);
-    };
-  }, [drag, tasks, updateTask]);
+      function onCancel() {
+        finish();
+      }
 
-  const draggedTask = drag?.active
-    ? tasks.find((t) => t.id === drag.taskId) ?? null
+      window.addEventListener("pointermove", onMove, { passive: false });
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
+    },
+    [updateTask]
+  );
+
+  // Stable per-board handlers, so a card only re-renders when its own task
+  // changes — not whenever the drop target moves.
+  const handleStatus = useCallback(
+    (id: string, status: TaskStatus) => updateTask(id, { status }),
+    [updateTask]
+  );
+  const handleAssign = useCallback(
+    (id: string, developerId: string | null) => updateTask(id, { developerId }),
+    [updateTask]
+  );
+  const handleOpen = useCallback((id: string) => setEditingId(id), []);
+
+  const draggedTask = dragging
+    ? tasks.find((t) => t.id === dragging.taskId) ?? null
     : null;
 
   const editingTask = tasks.find((t) => t.id === editingId) ?? null;
@@ -172,40 +212,33 @@ export function TrackerBoard() {
                 </span>
               </header>
 
-              <div className="thin-scroll flex flex-1 flex-col gap-2 overflow-y-auto p-2">
+              <Column count={col.items.length} isTarget={isTarget}>
                 {col.items.map((task) => (
                   <TaskCard
                     key={task.id}
                     task={task}
-                    dragging={drag?.active === true && drag.taskId === task.id}
+                    dragging={dragging?.taskId === task.id}
                     onDragStart={beginDrag}
-                    onStatusChange={(status) => updateTask(task.id, { status })}
-                    onAssign={(developerId) =>
-                      updateTask(task.id, { developerId })
-                    }
-                    onOpen={() => setEditingId(task.id)}
+                    onStatusChange={handleStatus}
+                    onAssign={handleAssign}
+                    onOpen={handleOpen}
                     developers={developers}
                   />
                 ))}
-                {col.items.length === 0 && (
-                  <p className="px-1 py-3 text-[0.75rem] text-[var(--ink-muted)]">
-                    {isTarget ? "Drop here" : "Nothing here."}
-                  </p>
-                )}
-              </div>
+              </Column>
             </section>
           );
         })}
       </div>
 
       {/* Drag preview follows the pointer and must not intercept hit-testing. */}
-      {draggedTask && drag && (
+      {draggedTask && dragging && (
         <div
-          className="pointer-events-none fixed z-50 rotate-2 rounded-[var(--radius)] border border-[var(--accent)] bg-[var(--surface-raised)] p-2.5 shadow-xl"
+          ref={previewRef}
+          className="pointer-events-none fixed left-0 top-0 z-50 rotate-2 rounded-[var(--radius)] border border-[var(--accent)] bg-[var(--surface-raised)] p-2.5 shadow-xl"
           style={{
-            left: drag.x - drag.offsetX,
-            top: drag.y - drag.offsetY,
-            width: drag.width,
+            width: dragging.width,
+            transform: `translate3d(${dragging.x}px, ${dragging.y}px, 0)`,
           }}
         >
           <div className="flex items-center gap-2">
@@ -238,7 +271,47 @@ export function TrackerBoard() {
   );
 }
 
-function TaskCard({
+/**
+ * A column renders a page of its cards and asks for more as it nears its own
+ * bottom, so opening a board with hundreds of tasks costs a screenful, not all
+ * of them.
+ */
+function Column({
+  count,
+  isTarget,
+  children,
+}: {
+  count: number;
+  isTarget: boolean;
+  children: React.ReactNode[];
+}) {
+  // Only ever a ceiling: if a filter shortens the column, slicing takes care
+  // of it without resetting what has already been shown.
+  const [shown, setShown] = useState(COLUMN_PAGE);
+
+  function onScroll(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 400) {
+      setShown((prev) => (prev >= count ? prev : prev + COLUMN_PAGE));
+    }
+  }
+
+  return (
+    <div
+      onScroll={onScroll}
+      className="thin-scroll flex flex-1 flex-col gap-2 overflow-y-auto p-2"
+    >
+      {children.slice(0, shown)}
+      {count === 0 && (
+        <p className="px-1 py-3 text-[0.75rem] text-[var(--ink-muted)]">
+          {isTarget ? "Drop here" : "Nothing here."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+const TaskCard = memo(function TaskCard({
   task,
   developers,
   dragging,
@@ -248,12 +321,12 @@ function TaskCard({
   onOpen,
 }: {
   task: Task;
-  developers: { id: string; name: string; color: string }[];
+  developers: Developer[];
   dragging: boolean;
   onDragStart: (state: DragState) => void;
-  onStatusChange: (status: TaskStatus) => void;
-  onAssign: (developerId: string | null) => void;
-  onOpen: () => void;
+  onStatusChange: (id: string, status: TaskStatus) => void;
+  onAssign: (id: string, developerId: string | null) => void;
+  onOpen: (id: string) => void;
 }) {
   const start = toISODate(new Date(task.startDate));
   const end = toISODate(new Date(task.endDate));
@@ -281,6 +354,9 @@ function TaskCard({
   return (
     <article
       onPointerDown={handlePointerDown}
+      // A column can hold hundreds of cards; this lets the browser skip
+      // rendering the ones scrolled out of view, at their reserved height.
+      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 132px" }}
       // touch-none keeps a touch drag from scrolling the column instead.
       className={`group touch-none rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-2.5 shadow-sm transition select-none ${
         dragging
@@ -304,7 +380,7 @@ function TaskCard({
           </h4>
         )}
         <button
-          onClick={onOpen}
+          onClick={() => onOpen(task.id)}
           className="mt-0.5 shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100"
           aria-label={`Edit ${task.title}`}
           title="Edit task"
@@ -332,29 +408,20 @@ function TaskCard({
 
       <div className="mt-2.5 flex items-center gap-1.5">
         <div className="min-w-0 flex-1">
-          <StatusPill status={task.status} onChange={onStatusChange} />
+          <StatusPill
+            status={task.status}
+            onChange={(status) => onStatusChange(task.id, status)}
+          />
         </div>
-        <div className="relative flex min-w-0 flex-1 items-center">
-          {task.developer && (
-            <span className="pointer-events-none absolute left-1.5 z-10">
-              <Avatar person={task.developer} size={18} />
-            </span>
-          )}
-          <select
-            value={task.developerId ?? ""}
-            onChange={(e) => onAssign(e.target.value || null)}
-            className={`select truncate ${task.developer ? "pl-7" : ""}`}
-            aria-label={`Assignee for ${task.title}`}
-          >
-            <option value="">Unassigned</option>
-            {developers.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <AssigneeSelect
+          developerId={task.developerId}
+          developer={task.developer}
+          developers={developers}
+          onChange={(developerId) => onAssign(task.id, developerId)}
+          emptyLabel="Unassigned"
+          taskTitle={task.title}
+        />
       </div>
     </article>
   );
-}
+})

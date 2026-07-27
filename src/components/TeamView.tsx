@@ -12,7 +12,8 @@ import {
   EMPLOYMENT_TYPES,
   EmploymentType,
   statusMeta,
-  TaskWithProject,
+  Assignment,
+  DeveloperTask,
 } from "@/lib/types";
 import { toISODate } from "@/lib/dates";
 
@@ -72,7 +73,7 @@ export function TeamView() {
 
   // Who works on what lives in the tasks, which span every project — the board
   // itself only holds the active one.
-  const [assignments, setAssignments] = useState<TaskWithProject[] | null>(null);
+  const [assignments, setAssignments] = useState<Assignment[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,11 +106,10 @@ export function TeamView() {
   /** Active people bucketed by the projects they have tasks in. */
   const groups = useMemo(() => {
     const byProject = new Map<string, Set<string>>();
-    for (const task of assignments ?? []) {
-      if (!task.developerId || !task.project) continue;
-      const set = byProject.get(task.project.id) ?? new Set<string>();
-      set.add(task.developerId);
-      byProject.set(task.project.id, set);
+    for (const { developerId, projectId } of assignments ?? []) {
+      const set = byProject.get(projectId) ?? new Set<string>();
+      set.add(developerId);
+      byProject.set(projectId, set);
     }
 
     const assignedAnywhere = new Set<string>();
@@ -340,7 +340,7 @@ function ProfileCard({
   onDelete: () => void;
   onToggleArchive: () => void;
 }) {
-  const [tasks, setTasks] = useState<TaskWithProject[] | null>(null);
+  const [tasks, setTasks] = useState<DeveloperTask[] | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
