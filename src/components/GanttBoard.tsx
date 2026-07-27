@@ -31,6 +31,11 @@ import {
 import { TaskEditModal } from "@/components/TaskEditModal";
 
 const ROW_HEIGHT = 44;
+/** A step is a smaller thing than a task, and its row says so. */
+const STEP_ROW_HEIGHT = 30;
+
+const rowHeight = (task: { parentId: string | null }) =>
+  task.parentId ? STEP_ROW_HEIGHT : ROW_HEIGHT;
 /** Rows kept rendered beyond the viewport, so scrolling doesn't flicker. */
 const ROW_OVERSCAN = 6;
 const DAY_WIDTH = 44;
@@ -79,7 +84,7 @@ export function GanttBoard() {
     selectSprint,
     stats,
     updateTask,
-    pauseTask,
+    reorderTasks,
   } = useBoard();
 
   const [hiddenStatuses] = useHiddenStatuses();
@@ -115,6 +120,11 @@ export function GanttBoard() {
     [tasks]
   );
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Which row is being dragged, and where it would land.
+  const [dragRow, setDragRow] = useState<string | null>(null);
+  const [dropRow, setDropRow] = useState<{ id: string; after: boolean } | null>(
+    null
+  );
   const barDragRef = useRef<BarDrag | null>(null);
   // Bars and their tooltips are addressed directly while dragging.
   const barRefs = useRef(new Map<string, HTMLDivElement>());
@@ -323,81 +333,113 @@ export function GanttBoard() {
     trackScroll(outerScroll.current, null);
   }
 
+  /**
+   * Where every row starts, and how tall the lot is. Rows are no longer all one
+   * height — a step is shorter than a task — so the window can't be worked out
+   * with a division, and this is what it looks the answer up in.
+   */
+  const offsets = useMemo(() => {
+    const tops = new Array<number>(rows.length + 1);
+    let at = 0;
+    for (let i = 0; i < rows.length; i++) {
+      tops[i] = at;
+      at += rowHeight(rows[i]);
+    }
+    tops[rows.length] = at;
+    return tops;
+  }, [rows]);
+
   const rowWindow = useMemo(() => {
+    const total = offsets[rows.length] ?? 0;
     // The header sits in the same scroller, so the first row starts a row down.
-    const first = Math.max(
-      0,
-      Math.floor((window_.top - ROW_HEIGHT) / ROW_HEIGHT) - ROW_OVERSCAN
+    const top = window_.top - ROW_HEIGHT;
+
+    /** The last row starting at or before a point, by bisection. */
+    const rowAt = (y: number) => {
+      let lo = 0;
+      let hi = rows.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (offsets[mid] <= y) lo = mid + 1;
+        else hi = mid;
+      }
+      return Math.max(0, lo - 1);
+    };
+
+    const first = Math.max(0, rowAt(top) - ROW_OVERSCAN);
+    const last = Math.min(
+      rows.length,
+      rowAt(top + window_.height) + 1 + ROW_OVERSCAN
     );
-    const visible = Math.ceil(window_.height / ROW_HEIGHT) + ROW_OVERSCAN * 2;
-    const last = Math.min(rows.length, first + visible);
     return {
       first,
       last,
-      before: first * ROW_HEIGHT,
-      after: Math.max(0, (rows.length - last) * ROW_HEIGHT),
+      before: offsets[first] ?? 0,
+      after: Math.max(0, total - (offsets[last] ?? total)),
       rows: rows.slice(first, last),
     };
-  }, [rows, window_]);
+  }, [rows, offsets, window_]);
 
-  /**
-   * Where each task's bar sits, and where the work stopped inside it.
-   *
-   * A pause doesn't move a task — it ran from the day it started to the day it
-   * ended, whatever happened in between — so the span stays whole and the
-   * stretches that were worked are cut out of it. They are held as fractions of
-   * the bar, which is what keeps them in place while it is being dragged.
-   */
+  /** Where each task's bar sits, recomputed only when the calendar moves. */
   const spans = useMemo(() => {
-    type Run = { from: number; to: number };
-    const map = new Map<
-      string,
-      { left: number; width: number; worked: Run[]; waited: Run[] }
-    >();
-
+    const map = new Map<string, { left: number; width: number }>();
     for (const task of rows) {
-      const from = startOfDay(new Date(task.startDate));
-      const to = startOfDay(new Date(task.endDate));
-      const span = columnSpan(from, to);
-      if (!span) continue;
-
-      // Each pause, clamped to the task and measured across its span.
-      const total = diffDays(from, to) + 1;
-      const gaps: Run[] = [];
-      for (const pause of task.breaks) {
-        const gapStart = startOfDay(new Date(pause.startDate));
-        // An open pause runs to the end: the work has not been picked up.
-        const gapEnd = pause.endDate
-          ? addDays(startOfDay(new Date(pause.endDate)), -1)
-          : to;
-        const a = Math.max(0, diffDays(from, gapStart));
-        const b = Math.min(total - 1, diffDays(from, gapEnd));
-        if (b < a || a > total - 1 || b < 0) continue;
-        gaps.push({ from: a / total, to: (b + 1) / total });
-      }
-      gaps.sort((x, y) => x.from - y.from);
-
-      // Overlapping pauses read as one stretch of standing still.
-      const waited: Run[] = [];
-      for (const gap of gaps) {
-        const last = waited[waited.length - 1];
-        if (last && gap.from <= last.to) last.to = Math.max(last.to, gap.to);
-        else waited.push({ ...gap });
-      }
-
-      // What is left is what was worked.
-      const worked: Run[] = [];
-      let at = 0;
-      for (const gap of waited) {
-        if (gap.from > at) worked.push({ from: at, to: gap.from });
-        at = Math.max(at, gap.to);
-      }
-      if (at < 1) worked.push({ from: at, to: 1 });
-
-      map.set(task.id, { ...span, worked, waited });
+      const span = columnSpan(
+        startOfDay(new Date(task.startDate)),
+        startOfDay(new Date(task.endDate))
+      );
+      if (span) map.set(task.id, span);
     }
     return map;
   }, [rows, columnSpan]);
+
+  /**
+   * Moving a row. A task takes its steps with it and lands between two other
+   * tasks; a step only moves among the steps of its own task, because a step
+   * of another task is that task's business. What comes back is the whole list
+   * renumbered, which is what the server is sent.
+   */
+  const moveRow = useCallback(
+    (dragId: string, targetId: string, after: boolean) => {
+      if (dragId === targetId) return;
+
+      const moved = tasks.find((t) => t.id === dragId);
+      const target = tasks.find((t) => t.id === targetId);
+      if (!moved || !target) return;
+
+      // A step among its own steps; anything else is refused rather than
+      // guessed at — dropping a step onto another task would be a re-parenting,
+      // and that is the form's business.
+      if ((moved.parentId ?? null) !== (target.parentId ?? null)) return;
+
+      // A task travels with its steps, so the block that moves is the row and
+      // everything filed under it.
+      const block = tasks.filter(
+        (t) => t.id === dragId || (moved.parentId == null && t.parentId === dragId)
+      );
+      const blockIds = new Set(block.map((t) => t.id));
+
+      const rest = tasks.filter((t) => !blockIds.has(t.id));
+      // Land after the target's own steps, so a task doesn't come to rest
+      // inside another one.
+      const anchor = after
+        ? rest.reduce(
+            (last, t, i) =>
+              t.id === targetId || (target.parentId == null && t.parentId === targetId)
+                ? i
+                : last,
+            -1
+          ) + 1
+        : rest.findIndex((t) => t.id === targetId);
+      if (anchor < 0) return;
+
+      const next = [...rest.slice(0, anchor), ...block, ...rest.slice(anchor)];
+      const order = next.map((t, i) => ({ id: t.id, order: i * 10 }));
+      const changed = order.filter((row, i) => row.order !== next[i].order);
+      if (changed.length > 0) reorderTasks(changed);
+    },
+    [tasks, reorderTasks]
+  );
 
   /** Column indices a drag would land on, given how far the pointer moved. */
   function draggedTo(d: BarDrag, shift: number) {
@@ -627,7 +669,15 @@ export function GanttBoard() {
               gridTemplateColumns={gridTemplateColumns}
               onEdit={openEditor}
               onChange={updateTask}
-              onPause={pauseTask}
+              dragging={dragRow === task.id}
+              dropping={dropRow?.id === task.id ? dropRow.after : null}
+              onDragRow={setDragRow}
+              onDragOverRow={setDropRow}
+              onDropRow={(targetId, after) => {
+                if (dragRow) moveRow(dragRow, targetId, after);
+                setDragRow(null);
+                setDropRow(null);
+              }}
             />
           ))}
           <div style={{ height: rowWindow.after }} />
@@ -734,7 +784,7 @@ export function GanttBoard() {
                   key={task.id}
                   className="relative border-b border-[var(--hairline)]"
                   style={{
-                    height: ROW_HEIGHT,
+                    height: rowHeight(task),
                     backgroundImage: `linear-gradient(to right, var(--hairline) 0 1px, transparent 1px ${dayWidth}px)`,
                     backgroundSize: `${dayWidth}px 100%`,
                   }}
@@ -757,16 +807,15 @@ export function GanttBoard() {
                       /* A step is drawn thinner than the task it belongs to, so
                          a plan reads as its shape before it reads as its
                          labels. */
-                      className={`group/bar absolute flex cursor-grab touch-none select-none items-center rounded-md px-2 text-left text-[0.6875rem] font-medium leading-none ${
-                        task.parentId ? "top-3.5 bottom-3.5" : "top-2 bottom-2"
-                      }`}
+                      /* The same inset in a shorter row: a step's bar comes out
+                         half the height of the task it belongs to, so a plan
+                         reads as its shape before it reads as its labels. */
+                      className="group/bar absolute top-2 bottom-2 flex cursor-grab touch-none select-none items-center rounded-md px-2 text-left text-[0.6875rem] font-medium leading-none shadow-sm ring-2 ring-[var(--surface)] hover:brightness-95"
                       style={{
                         left: bar.left + 2,
                         width: bar.width - 4,
-                        // A bar that is all pause has no fill under its label.
-                        color: bar.worked.length
-                          ? contrastText(color)
-                          : "var(--ink)",
+                        background: color,
+                        color: contrastText(color),
                       }}
                       title={
                         task.developer
@@ -774,59 +823,26 @@ export function GanttBoard() {
                           : task.title
                       }
                     >
-                      {/* The stretches that were worked. A pause leaves a gap
-                          rather than shortening the bar: the work ran as long
-                          as it ran, and this is where it waited. */}
-                      {bar.worked.map((run, i) => (
-                        <span
-                          key={i}
-                          className="pointer-events-none absolute inset-y-0 rounded-md shadow-sm ring-2 ring-[var(--surface)]"
-                          style={{
-                            left: `${run.from * 100}%`,
-                            width: `${(run.to - run.from) * 100}%`,
-                            background: color,
-                          }}
-                          aria-hidden="true"
-                        />
-                      ))}
-                      {/* And the stretches it stood still for, drawn as the
-                          same bar waiting: an outline where the work would have
-                          been, so a task that is entirely on hold still has a
-                          place on the chart rather than vanishing from it. */}
-                      {bar.waited.map((run, i) => (
-                        <span
-                          key={`w${i}`}
-                          className="pointer-events-none absolute inset-y-0 rounded-md border border-dashed"
-                          style={{
-                            left: `${run.from * 100}%`,
-                            width: `${(run.to - run.from) * 100}%`,
-                            borderColor: color,
-                            background: `color-mix(in srgb, ${color} 12%, transparent)`,
-                          }}
-                          aria-hidden="true"
-                        />
-                      ))}
-
                       {/* Grab either end to reschedule just that date. */}
                       <span
                         onPointerDown={(e) => beginBarDrag(e, task, "start", bar)}
-                        className="absolute left-0 top-0 bottom-0 z-10 w-2 cursor-ew-resize rounded-l-md opacity-0 transition group-hover/bar:opacity-100"
+                        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md opacity-0 transition group-hover/bar:opacity-100"
                         style={{ background: "rgba(255,255,255,0.45)" }}
                         aria-hidden="true"
                       />
                       <span
                         onPointerDown={(e) => beginBarDrag(e, task, "end", bar)}
-                        className="absolute right-0 top-0 bottom-0 z-10 w-2 cursor-ew-resize rounded-r-md opacity-0 transition group-hover/bar:opacity-100"
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-r-md opacity-0 transition group-hover/bar:opacity-100"
                         style={{ background: "rgba(255,255,255,0.45)" }}
                         aria-hidden="true"
                       />
 
                       {task.developer && !task.parentId && (
-                        <span className="relative mr-1.5 -ml-0.5 shrink-0">
+                        <span className="mr-1.5 -ml-0.5 shrink-0">
                           <Avatar person={task.developer} size={16} />
                         </span>
                       )}
-                      <span className="relative truncate">{task.title}</span>
+                      <span className="truncate">{task.title}</span>
 
                       <span
                         ref={(el) => {
@@ -867,7 +883,11 @@ const TableRow = memo(function TableRow({
   gridTemplateColumns,
   onEdit,
   onChange,
-  onPause,
+  dragging,
+  dropping,
+  onDragRow,
+  onDragOverRow,
+  onDropRow,
 }: {
   task: Task;
   /** How many of this task's steps are done, when it has any. */
@@ -878,25 +898,83 @@ const TableRow = memo(function TableRow({
   gridTemplateColumns: string;
   onEdit: (id: string) => void;
   onChange: (id: string, data: Partial<TaskRow>) => void;
-  /** Stops the work where it stands, or picks it up again. */
-  onPause: (id: string, paused: boolean) => void;
+  /** This row is the one being dragged. */
+  dragging: boolean;
+  /** A row would land here: below it when true, above it when false. */
+  dropping: boolean | null;
+  onDragRow: (id: string | null) => void;
+  onDragOverRow: (at: { id: string; after: boolean } | null) => void;
+  onDropRow: (targetId: string, after: boolean) => void;
 }) {
-  const paused = task.breaks.some((b) => b.endDate == null);
   // Checked here as well as on the way in: a title is a link to whatever the
   // row holds, and only http and https belong in one.
   const link = isHttpUrl(task.link) ? task.link : null;
 
+  // A step's row is shorter than a task's, so what sits in it is smaller too:
+  // the selects lose a little padding rather than overflowing the row.
+  const step = task.parentId != null;
+
+  /** Which half of the row the pointer is in — above it, or below it. */
+  function landsAfter(e: React.DragEvent) {
+    const box = e.currentTarget.getBoundingClientRect();
+    return e.clientY - box.top > box.height / 2;
+  }
+
   return (
     <div
-      className="group grid items-center border-b border-[var(--hairline)] transition-colors hover:bg-[var(--plane)]"
-      style={{ height: ROW_HEIGHT, gridTemplateColumns }}
+      draggable
+      onDragStart={(e) => {
+        // Firefox refuses to start a drag without something on the transfer.
+        e.dataTransfer.setData("text/plain", task.id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragRow(task.id);
+      }}
+      onDragEnd={() => {
+        onDragRow(null);
+        onDragOverRow(null);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOverRow({ id: task.id, after: landsAfter(e) });
+      }}
+      onDragLeave={() => onDragOverRow(null)}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDropRow(task.id, landsAfter(e));
+      }}
+      className={`group relative grid items-center border-b border-[var(--hairline)] transition-colors hover:bg-[var(--plane)] ${
+        dragging ? "opacity-40" : ""
+      } ${
+        step
+          ? "[&_select]:py-0.5 [&_select]:text-[0.75rem] [&_select]:leading-tight"
+          : ""
+      }`}
+      style={{ height: rowHeight(task), gridTemplateColumns }}
     >
+      {/* The line a row would land on, drawn where it would land. */}
+      {dropping != null && (
+        <span
+          className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 bg-[var(--accent)] ${
+            dropping ? "bottom-0" : "top-0"
+          }`}
+          aria-hidden="true"
+        />
+      )}
       <div
-        className="flex min-w-0 items-center gap-1 px-3 text-[0.8125rem]"
-        style={task.parentId ? { paddingLeft: "1.75rem" } : undefined}
+        className={`flex min-w-0 items-center gap-1 px-3 ${
+          step ? "text-[0.75rem]" : "text-[0.8125rem]"
+        }`}
+        style={step ? { paddingLeft: "1.75rem" } : undefined}
       >
+        <span
+          className="shrink-0 cursor-grab text-[var(--ink-muted)] opacity-0 transition group-hover:opacity-100 active:cursor-grabbing"
+          title="Drag to reorder"
+          aria-hidden="true"
+        >
+          <GripIcon />
+        </span>
         {/* A step reads under the task it belongs to, and says so. */}
-        {task.parentId && (
+        {step && (
           <span
             className="shrink-0 text-[var(--ink-muted)]"
             aria-label="Subtask"
@@ -928,27 +1006,9 @@ const TableRow = memo(function TableRow({
             {steps.done}/{steps.total}
           </span>
         )}
-        {/* Stopping and starting the work is a timeline gesture, so it sits on
-            the row rather than behind the form. Putting a task on hold does the
-            same thing from the status pill. */}
-        <button
-          onClick={() => onPause(task.id, !paused)}
-          className={`ml-auto shrink-0 rounded p-0.5 transition focus-visible:opacity-100 group-hover:opacity-100 ${
-            paused
-              ? "text-[var(--accent)] opacity-100"
-              : "text-[var(--ink-muted)] opacity-0 hover:text-[var(--ink)]"
-          }`}
-          title={paused ? "Pick this back up today" : "Pause this from today"}
-          aria-label={
-            paused ? `Resume ${task.title}` : `Pause ${task.title}`
-          }
-          aria-pressed={paused}
-        >
-          {paused ? <ResumeIcon /> : <PauseIcon />}
-        </button>
-        <button
+                <button
           onClick={() => onEdit(task.id)}
-          className="shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100"
+          className="ml-auto shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100"
           title="Edit task"
           aria-label={`Edit ${task.title}`}
         >
@@ -985,29 +1045,15 @@ const TableRow = memo(function TableRow({
   );
 });
 
-function PauseIcon() {
+function GripIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path
-        d="M5 2.5v9M9 2.5v9"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function ResumeIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path
-        d="M4 2.6l7 4.4-7 4.4V2.6z"
-        fill="currentColor"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-      />
+    <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor">
+      <circle cx="3" cy="2" r="1" />
+      <circle cx="7" cy="2" r="1" />
+      <circle cx="3" cy="6" r="1" />
+      <circle cx="7" cy="6" r="1" />
+      <circle cx="3" cy="10" r="1" />
+      <circle cx="7" cy="10" r="1" />
     </svg>
   );
 }

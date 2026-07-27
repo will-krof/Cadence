@@ -121,6 +121,17 @@ export async function requireViewer(): Promise<
   return { viewer };
 }
 
+/**
+ * Whoever is asking, as they are called right now. A task's history keeps the
+ * name rather than a link to it: what happened, happened, and a profile that is
+ * renamed later shouldn't rewrite the record.
+ */
+export function viewerName(viewer: Viewer) {
+  return viewer.kind === "owner"
+    ? viewer.user.name || viewer.user.email
+    : viewer.developerName;
+}
+
 /** The projects a member is on. */
 export function memberProjectIds(member: MemberViewer) {
   return member.places.map((p) => p.projectId);

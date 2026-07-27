@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { boardFilter, workspaceOwnerId } from "@/lib/api-auth";
-import { memberDenied, requireViewer } from "@/lib/viewer";
+import { memberDenied, requireViewer, viewerName } from "@/lib/viewer";
 import { TASK_FIELDS } from "@/lib/task-select";
 import { parseTask } from "@/lib/task-input";
 import { LIMITS } from "@/lib/sanitize";
@@ -134,20 +134,33 @@ export async function POST(request: NextRequest) {
       status: parsed.data.status ?? "TODO",
       parentId,
       order: from,
+      // The first line of its history is being written down at all.
+      events: {
+        create: {
+          status: parsed.data.status ?? "TODO",
+          by: viewerName(viewer),
+        },
+      },
     },
     select: TASK_FIELDS,
   });
 
   if (steps.length === 0) return NextResponse.json(task, { status: 201 });
 
-  await prisma.task.createMany({
-    data: steps.map((stepTitle: string, i: number) => ({
-      ...common,
-      title: stepTitle,
-      parentId: task.id,
-      order: from + i + 1,
-    })),
-  });
+  await prisma.$transaction(
+    steps.map((stepTitle: string, i: number) =>
+      prisma.task.create({
+        data: {
+          ...common,
+          title: stepTitle,
+          parentId: task.id,
+          order: from + i + 1,
+          events: { create: { status: "TODO", by: viewerName(viewer) } },
+        },
+        select: { id: true },
+      })
+    )
+  );
   const subtasks = await prisma.task.findMany({
     where: { parentId: task.id },
     select: TASK_FIELDS,

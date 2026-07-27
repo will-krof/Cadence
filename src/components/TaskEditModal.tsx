@@ -23,7 +23,6 @@ export function TaskEditModal({
     createTask,
     updateTask,
     deleteTask,
-    clearPause,
   } = useBoard();
 
   // Every step of this task, wherever its board is: a step planned into another
@@ -63,7 +62,6 @@ export function TaskEditModal({
         updateTask(id, patch)
       }
       onDeleteSubtask={(id) => deleteTask(id)}
-      onClearPause={(breakId) => clearPause(task.id, breakId)}
     />
   );
 }

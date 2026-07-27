@@ -126,18 +126,18 @@ export interface TaskRow {
   sprintId: string | null;
   /** The task this one is a step of, if it is one. */
   parentId: string | null;
-  /** Stretches it stood still for, breaking its bar on the timeline. */
-  breaks: TaskBreak[];
 }
 
 /**
- * A pause in a task. `endDate` is null while it is still paused, which on the
- * timeline reads as a gap running to the end of the task.
+ * One thing that happened to a task. `from` is null on the first line, which is
+ * the task being written; `by` is whoever moved it, as they were called then.
  */
-export interface TaskBreak {
+export interface TaskEvent {
   id: string;
-  startDate: string;
-  endDate: string | null;
+  status: TaskStatus;
+  from: TaskStatus | null;
+  by: string | null;
+  at: string;
 }
 
 /** A task as boards use it, with the assignee joined in from the roster. */

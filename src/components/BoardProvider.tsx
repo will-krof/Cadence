@@ -109,10 +109,8 @@ interface BoardContextValue {
   };
   createTask: (input: TaskInput) => Promise<void>;
   updateTask: (id: string, data: Partial<TaskRow>) => Promise<void>;
-  /** Stops a task where it stands, or picks it up again, as of today. */
-  pauseTask: (id: string, paused: boolean) => Promise<void>;
-  /** Forgets a pause, as though the work never stopped. */
-  clearPause: (taskId: string, breakId: string) => Promise<void>;
+  /** Writes the order the rows were dragged into, for the whole list. */
+  reorderTasks: (order: { id: string; order: number }[]) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   createDeveloper: (input: Partial<DeveloperInput>) => Promise<Developer | null>;
   updateDeveloper: (id: string, input: Partial<DeveloperInput>) => Promise<void>;
@@ -210,7 +208,13 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   }, [boardSprintId]);
 
   const boardRows = useMemo(() => {
-    const mine = rows.filter((row) => (row.sprintId ?? null) === boardSprintId);
+    // Sorted here rather than trusted from the server: dragging a row rewrites
+    // the order in place, and the list has to move with it before the write
+    // comes back.
+    const mine = rows
+      .filter((row) => (row.sprintId ?? null) === boardSprintId)
+      .slice()
+      .sort((a, b) => a.order - b.order);
     // Steps read under the task they belong to. A subtask whose parent is on
     // another board stands on its own, in its own place — it is still work.
     const parents = new Set(mine.filter((r) => !r.parentId).map((r) => r.id));
@@ -503,38 +507,6 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     [activeId, setTasks, notify]
   );
 
-  /**
-   * A pause on the timeline. The server answers with the whole task, because a
-   * bar is drawn from its dates and its gaps together and the two must agree.
-   */
-  const writeBreak = useCallback(
-    async (id: string, method: "POST" | "PATCH" | "DELETE", body?: object) => {
-      const res = await fetch(`/api/tasks/${id}/breaks`, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body ?? {}),
-      });
-      if (!res.ok) {
-        notify("error", await errorMessage(res, "Could not change that pause."));
-        return;
-      }
-      const updated: TaskRow = await res.json();
-      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
-    },
-    [setTasks, notify]
-  );
-
-  const pauseTask = useCallback(
-    (id: string, paused: boolean) => writeBreak(id, paused ? "POST" : "PATCH"),
-    [writeBreak]
-  );
-
-  const clearPause = useCallback(
-    (taskId: string, breakId: string) =>
-      writeBreak(taskId, "DELETE", { breakId }),
-    [writeBreak]
-  );
-
   const updateTask = useCallback(
     async (id: string, data: Partial<TaskRow>) => {
       const previous = rowsRef.current;
@@ -553,19 +525,35 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       }
       const updated: TaskRow = await res.json();
       setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    },
+    [setTasks, notify]
+  );
 
-      // Putting work on hold is what a pause *is*, so the timeline follows the
-      // status rather than asking for the same fact twice: it stops the day it
-      // goes on hold and picks up the day it comes off. A pause put in by hand
-      // is left alone — the task is already standing still, and this would
-      // start a second one.
-      if (data.status !== undefined) {
-        const paused = updated.breaks.some((b) => b.endDate == null);
-        if (data.status === "ON_HOLD" && !paused) await writeBreak(id, "POST");
-        if (data.status !== "ON_HOLD" && paused) await writeBreak(id, "PATCH");
+  /**
+   * Where the rows sit. A task carries its steps when it moves, so one drag can
+   * renumber the list — it is written in one request, and put back as it was if
+   * the write is refused.
+   */
+  const reorderTasks = useCallback(
+    async (order: { id: string; order: number }[]) => {
+      if (order.length === 0) return;
+      const previous = rowsRef.current;
+      const at = new Map(order.map((row) => [row.id, row.order]));
+      setTasks((prev) =>
+        prev.map((t) => (at.has(t.id) ? { ...t, order: at.get(t.id)! } : t))
+      );
+
+      const res = await fetch("/api/tasks/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order }),
+      });
+      if (!res.ok) {
+        setTasks(previous);
+        notify("error", await errorMessage(res, "Could not reorder those."));
       }
     },
-    [setTasks, notify, writeBreak]
+    [setTasks, notify]
   );
 
   const deleteTask = useCallback(
@@ -907,8 +895,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     stats,
     createTask,
     updateTask,
-    pauseTask,
-    clearPause,
+    reorderTasks,
     deleteTask,
     createDeveloper,
     updateDeveloper,
@@ -947,8 +934,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       stats,
       createTask,
       updateTask,
-      pauseTask,
-      clearPause,
+      reorderTasks,
       deleteTask,
       createDeveloper,
       updateDeveloper,

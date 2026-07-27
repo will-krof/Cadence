@@ -234,10 +234,8 @@ model Task {
   parentId    String?
   parent      Task?      @relation("Subtasks", fields: [parentId], references: [id], onDelete: Cascade)
   subtasks    Task[]     @relation("Subtasks")
-  /// The stretches this task stood still for. They break its bar rather than
-  /// move it: work that was put on hold and picked up again ran as long as it
-  /// ran, and the timeline should say where the gap was.
-  breaks      TaskBreak[]
+  /// What happened to it, in order: every status it was moved to, and when.
+  events      TaskEvent[]
   // Deleting a sprint leaves its tasks behind rather than taking them with it.
   sprintId    String?
   sprint      Sprint?    @relation(fields: [sprintId], references: [id], onDelete: SetNull)
@@ -257,18 +255,25 @@ model Task {
 
 /// A project runs a series of these. Each one is its own board: a task belongs
 /// to a sprint, so a sprint created ahead of time starts empty.
-/// A stretch a task was paused for. `endDate` is null while it is still
-/// paused — the pause runs to the end of the task until somebody resumes it.
-model TaskBreak {
+/// One thing that happened to a task: it was moved to a status, on a day, by
+/// somebody. The row is the record — a task's own history, kept as it was
+/// written rather than worked out afterwards from the state it ended in.
+model TaskEvent {
   id     String @id @default(cuid())
   taskId String
   task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
-  startDate DateTime
-  endDate   DateTime?
-  createdAt DateTime  @default(now())
+  status TaskStatus
+  /// What it was before, so a line reads as a move rather than a state. Null on
+  /// the first event, which is the task being written.
+  from   TaskStatus?
+  /// Who moved it, as they were called at the time. A name rather than a link:
+  /// this is a record of what happened, and it shouldn't change when a profile
+  /// is renamed or deleted.
+  by     String?
+  at     DateTime   @default(now())
 
-  @@index([taskId, startDate])
+  @@index([taskId, at])
 }
 
 model Sprint {

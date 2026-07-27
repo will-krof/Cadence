@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { boardFilter, workspaceOwnerId } from "@/lib/api-auth";
-import { memberDenied, requireViewer } from "@/lib/viewer";
+import { memberDenied, requireViewer, viewerName } from "@/lib/viewer";
 import { TASK_FIELDS } from "@/lib/task-select";
 import { parseTask } from "@/lib/task-input";
 import { ownedDeveloper } from "@/lib/owned";
@@ -25,7 +25,7 @@ export async function PATCH(
 
   const reachable = await prisma.task.findFirst({
     where: { id, ...boardFilter(viewer) },
-    select: { id: true, projectId: true, parentId: true },
+    select: { id: true, projectId: true, parentId: true, status: true },
   });
   if (!reachable) return notFound("Task");
 
@@ -84,6 +84,20 @@ export async function PATCH(
     },
     select: TASK_FIELDS,
   });
+
+  // A task's history is written as it happens: this is the only place a status
+  // moves, so it is the only place that has to remember it.
+  if (parsed.data.status && parsed.data.status !== reachable.status) {
+    await prisma.taskEvent.create({
+      data: {
+        taskId: id,
+        status: parsed.data.status,
+        from: reachable.status,
+        by: viewerName(viewer),
+      },
+    });
+  }
+
   return NextResponse.json(task);
 }
 

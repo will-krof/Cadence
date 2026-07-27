@@ -16,9 +16,4 @@ export const TASK_FIELDS = {
   developerId: true,
   sprintId: true,
   parentId: true,
-  /** The stretches it stood still for, in the order they happened. */
-  breaks: {
-    select: { id: true, startDate: true, endDate: true },
-    orderBy: { startDate: "asc" },
-  },
 } as const;
