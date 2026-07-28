@@ -12,9 +12,9 @@
     "make-superadmin": "node scripts/set-superadmin.mjs"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "6.19.3",
     "next": "16.2.10",
-    "prisma": "^6.19.3",
+    "prisma": "6.19.3",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
