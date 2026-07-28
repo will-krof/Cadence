@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "postinstall": "prisma generate",
+    "predev": "node scripts/check-prisma.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/check-prisma.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
