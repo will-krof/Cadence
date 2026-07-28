@@ -84,15 +84,27 @@ function useStoredSet<T extends string>(
   return [list, set];
 }
 
-/** A remembered yes or no, stored as the same kind of list as the sets above. */
-function useStoredFlag(key: string): [boolean, (on: boolean) => void] {
+/**
+ * A remembered yes or no, stored as the same kind of list as the sets above.
+ * Both answers are written down — "off" rather than nothing — so a preference
+ * that starts life switched on can be switched off and stay that way.
+ */
+function useStoredFlag(
+  key: string,
+  fallback = false
+): [boolean, (on: boolean) => void] {
   const raw = useSyncExternalStore(
     subscribe,
     () => snapshot(key),
     () => EMPTY
   );
-  const set = useCallback((on: boolean) => store(key, on ? ["on"] : []), [key]);
-  return [raw.includes("on"), set];
+  const set = useCallback(
+    (on: boolean) => store(key, [on ? "on" : "off"]),
+    [key]
+  );
+  if (raw.includes("on")) return [true, set];
+  if (raw.includes("off")) return [false, set];
+  return [fallback, set];
 }
 
 const STATUS_KEY = "hidden-statuses";
@@ -155,6 +167,23 @@ export function useHiddenViews(): [
  */
 export function useFoldedSteps() {
   return useStoredFlag("folded-steps");
+}
+
+/**
+ * Whether the timeline draws the links between tasks that wait on each other.
+ * On to begin with: a plan that has dependencies at all is a plan whose shape
+ * is mostly in them, and a board without any draws nothing either way.
+ */
+export function useShowDependencies() {
+  return useStoredFlag("show-dependencies", true);
+}
+
+/**
+ * And whether it picks out the longest chain through those links — the run of
+ * work where a day lost is a day off the end of everything.
+ */
+export function useShowCriticalPath() {
+  return useStoredFlag("show-critical-path", true);
 }
 
 /**

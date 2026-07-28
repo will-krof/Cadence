@@ -1,4 +1,4 @@
-import { TaskStatus } from "@/lib/types";
+import { TaskPriority, TaskStatus } from "@/lib/types";
 import { boundedText, LIMITS, safeHttpUrl } from "@/lib/sanitize";
 
 const STATUSES: TaskStatus[] = [
@@ -9,11 +9,14 @@ const STATUSES: TaskStatus[] = [
   "DONE",
 ];
 
+const PRIORITIES: TaskPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
+
 export interface ParsedTask {
   title?: string;
   description?: string | null;
   link?: string | null;
   status?: TaskStatus;
+  priority?: TaskPriority;
   startDate?: Date;
   endDate?: Date;
   order?: number;
@@ -72,6 +75,12 @@ export function parseTask(
     const status = body.status as TaskStatus;
     if (!STATUSES.includes(status)) return { error: "Unknown status" };
     data.status = status;
+  }
+
+  if (body.priority !== undefined) {
+    const priority = body.priority as TaskPriority;
+    if (!PRIORITIES.includes(priority)) return { error: "Unknown priority" };
+    data.priority = priority;
   }
 
   if (body.startDate !== undefined) {

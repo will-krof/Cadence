@@ -19,15 +19,19 @@ import {
   TaskStatus,
   statusMeta,
 } from "@/lib/types";
+import { analyseNetwork, Link } from "@/lib/critical-path";
 import { useBoard } from "@/components/BoardProvider";
 import {
   useColumnWidths,
   useFoldedSteps,
   useHiddenStatuses,
+  useShowCriticalPath,
+  useShowDependencies,
 } from "@/lib/prefs";
 import {
   AssigneeSelect,
   Avatar,
+  PriorityMark,
   SprintPicker,
   Stat,
   StatusPill,
@@ -49,6 +53,30 @@ const MIN_DAYS_AFTER_TODAY = 21;
 const MIN_COL_WIDTH = 64;
 /** Pointer travel before a press on a bar becomes a drag rather than a click. */
 const BAR_DRAG_THRESHOLD = 4;
+
+/**
+ * The colour of the longest chain, and of a link the plan already breaks. It
+ * is never the only thing saying so — critical bars carry a mark, and a broken
+ * link is drawn dashed as well as red.
+ */
+const CRITICAL = "#d03b3b";
+/** How far a dependency line stands off the bar it leaves and the one it enters. */
+const LINK_STUB = 9;
+
+/**
+ * One dependency line: out of the right end of the blocker, along, and into the
+ * left end of the task that waits. When the two bars leave no room between them
+ * — which is exactly the case a dependency is meant to catch — the line steps
+ * out of the blocker's row first and comes back, rather than running backwards
+ * through both bars.
+ */
+function linkPath(x1: number, y1: number, x2: number, y2: number, rowH: number) {
+  const leave = x1 + LINK_STUB;
+  const enter = x2 - LINK_STUB;
+  if (enter >= leave) return `M${x1},${y1}H${leave}V${y2}H${x2}`;
+  const skirt = y1 + (y2 >= y1 ? rowH / 2 - 1 : 1 - rowH / 2);
+  return `M${x1},${y1}H${leave}V${skirt}H${enter}V${y2}H${x2}`;
+}
 
 /** Keeps a column index inside the rendered range. */
 function clampIdx(i: number, length: number) {
@@ -73,6 +101,15 @@ interface BarDrag {
 
 type ColKey = "task" | "status" | "developer";
 type ColWidths = Record<ColKey, number>;
+
+/** Left to right, which is the order the handles and the header read in. */
+const COL_ORDER: ColKey[] = ["task", "status", "developer"];
+
+const COL_LABELS: Record<ColKey, string> = {
+  task: "Task",
+  status: "Status",
+  developer: "Developer",
+};
 
 const COL_WIDTHS_WIDE: ColWidths = { task: 240, status: 132, developer: 132 };
 const COL_WIDTHS_COMPACT: ColWidths = { task: 132, status: 104, developer: 96 };
@@ -123,6 +160,29 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
     () => tasks.some((t) => t.parentId),
     [tasks]
   );
+
+  const [showLinks, setShowLinks] = useShowDependencies();
+  const [showCritical, setShowCritical] = useShowCriticalPath();
+
+  /**
+   * Who blocks whom on the board as drawn, and the longest chain through it.
+   * Read from `rows` rather than every task: a link to a bar that isn't there —
+   * a step folded away, work planned into another sprint — has nowhere to land.
+   */
+  const network = useMemo(() => analyseNetwork(rows), [rows]);
+  /** Where each row sits, for drawing a line from one bar to another. */
+  const rowIndex = useMemo(
+    () => new Map(rows.map((t, i) => [t.id, i])),
+    [rows]
+  );
+  /** How many tasks each one is holding up, for the chip on its row. */
+  const blockCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const link of network.links) {
+      counts.set(link.from, (counts.get(link.from) ?? 0) + 1);
+    }
+    return counts;
+  }, [network]);
   const [editingId, setEditingId] = useState<string | null>(null);
   // Which row is being dragged, and where it would land.
   const [dragRow, setDragRow] = useState<string | null>(null);
@@ -411,6 +471,36 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
   }, [rows, columnSpan]);
 
   /**
+   * The lines between bars, worked out once for the board rather than per row.
+   * A link needs both its ends drawn — the row's place in the list for the y,
+   * its bar's span for the x — so anything half on screen is left out.
+   */
+  const linkLines = useMemo(() => {
+    if (!showLinks) return [];
+    const lines: (Link & { d: string; head: string })[] = [];
+    for (const link of network.links) {
+      const from = spans.get(link.from);
+      const to = spans.get(link.to);
+      const fromRow = rowIndex.get(link.from);
+      const toRow = rowIndex.get(link.to);
+      if (!from || !to || fromRow === undefined || toRow === undefined) continue;
+
+      const y1 = ROW_HEIGHT + offsets[fromRow] + rowHeight(rows[fromRow]) / 2;
+      const y2 = ROW_HEIGHT + offsets[toRow] + rowHeight(rows[toRow]) / 2;
+      // Bars sit two pixels inside their span at each end; the line meets the
+      // bar rather than the column.
+      const x1 = from.left + from.width - 2;
+      const x2 = to.left + 2;
+      lines.push({
+        ...link,
+        d: linkPath(x1, y1, x2, y2, rowHeight(rows[fromRow])),
+        head: `${x2},${y2} ${x2 - 6},${y2 - 4} ${x2 - 6},${y2 + 4}`,
+      });
+    }
+    return lines;
+  }, [showLinks, network, spans, rowIndex, offsets, rows]);
+
+  /**
    * Moving a row. A task takes its steps with it and lands between two other
    * tasks; a step only moves among the steps of its own task, because a step
    * of another task is that task's business. What comes back is the whole list
@@ -617,6 +707,23 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
             <span className="text-[0.6875rem] tabular-nums text-[var(--ink-secondary)]">
               {stats.progress.toFixed(0)}% done
             </span>
+            {/* What the chain of blocked work actually costs, which is the one
+                number a list of tasks can't be read off. */}
+            {network.critical.size > 0 && (
+              <span
+                className="flex items-center gap-1.5 text-[0.6875rem] text-[var(--ink-secondary)]"
+                title="The longest chain of tasks waiting on each other — a day lost here is a day off the end"
+              >
+                <span
+                  className="h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ background: CRITICAL }}
+                />
+                Critical path
+                <span className="font-semibold tabular-nums text-[var(--ink)]">
+                  {network.critical.size} · {network.span}d
+                </span>
+              </span>
+            )}
           </div>
         </div>
 
@@ -648,6 +755,29 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
               Fold subtasks
             </label>
           )}
+          {/* Nothing to offer on a board where nothing waits on anything. */}
+          {network.links.length > 0 && (
+            <>
+              <label className="flex cursor-pointer select-none items-center gap-2 pb-2 text-xs text-[var(--ink-secondary)]">
+                <input
+                  type="checkbox"
+                  checked={showLinks}
+                  onChange={(e) => setShowLinks(e.target.checked)}
+                  className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
+                />
+                Dependencies
+              </label>
+              <label className="flex cursor-pointer select-none items-center gap-2 pb-2 text-xs text-[var(--ink-secondary)]">
+                <input
+                  type="checkbox"
+                  checked={showCritical}
+                  onChange={(e) => setShowCritical(e.target.checked)}
+                  className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
+                />
+                Critical path
+              </label>
+            </>
+          )}
         </div>
       </div>
 
@@ -660,22 +790,29 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
           compact ? "thin-scroll overflow-auto" : ""
         }`}
       >
-        {/* Left panel: task table */}
+        {/* Left panel: task table. The frame around it doesn't scroll, which is
+            what the resize handles hang off: inside the scroller the last one
+            sat under the scrollbar and half outside the panel, so the one
+            column at the edge — Developer — was the one that couldn't be
+            dragged. */}
+        <div
+          className="relative shrink-0 border-r border-[var(--hairline)]"
+          style={{ width: leftPanelWidth }}
+        >
         <div
           ref={leftScroll}
           onScroll={compact ? undefined : onLeftScroll}
-          className={`relative shrink-0 border-r border-[var(--hairline)] ${
-            compact ? "" : "thin-scroll overflow-y-auto"
-          }`}
-          style={{ width: leftPanelWidth }}
+          className={compact ? "" : "thin-scroll h-full overflow-y-auto"}
         >
           <div
             className="sticky top-0 z-20 grid items-center border-b border-[var(--hairline)] bg-[var(--surface)] text-[0.6875rem] font-medium uppercase tracking-wide text-[var(--ink-muted)]"
             style={{ height: ROW_HEIGHT, gridTemplateColumns }}
           >
-            <div className="truncate px-3">Task</div>
-            <div className="truncate px-2">Status</div>
-            <div className="truncate px-2">Developer</div>
+            {COL_ORDER.map((key) => (
+              <div key={key} className={key === "task" ? "truncate px-3" : "truncate px-2"}>
+                {COL_LABELS[key]}
+              </div>
+            ))}
           </div>
 
           <div style={{ height: rowWindow.before }} />
@@ -684,6 +821,8 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
               key={task.id}
               task={task}
               steps={stepCounts.get(task.id)}
+              blocks={blockCounts.get(task.id) ?? 0}
+              critical={showCritical && network.critical.has(task.id)}
               hiddenStatuses={hiddenStatuses}
               developers={developers}
               gridTemplateColumns={gridTemplateColumns}
@@ -709,21 +848,29 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
             </div>
           )}
 
-          {/* Column resize handles — pointer only */}
-          {!compact && (
-            <>
+        </div>
+
+        {/* Column resize handles — pointer only. Every column has one,
+            Developer included: it is the one holding names, which are the
+            least predictable thing on the row. */}
+        {!compact &&
+          COL_ORDER.map((key, i) => {
+            const left = COL_ORDER.slice(0, i + 1).reduce(
+              (at, k) => at + colWidths[k],
+              0
+            );
+            return (
               <div
-                onMouseDown={(e) => beginResize(e, "task")}
+                key={key}
+                onMouseDown={(e) => beginResize(e, key)}
+                role="separator"
+                aria-orientation="vertical"
+                aria-label={`Resize the ${COL_LABELS[key]} column`}
                 className="absolute top-0 bottom-0 z-30 -ml-[3px] w-1.5 cursor-col-resize transition-colors hover:bg-[var(--accent)]/40"
-                style={{ left: colWidths.task }}
+                style={{ left }}
               />
-              <div
-                onMouseDown={(e) => beginResize(e, "status")}
-                className="absolute top-0 bottom-0 z-30 -ml-[3px] w-1.5 cursor-col-resize transition-colors hover:bg-[var(--accent)]/40"
-                style={{ left: colWidths.task + colWidths.status }}
-              />
-            </>
-          )}
+            );
+          })}
         </div>
 
         {/* Right panel: timeline */}
@@ -796,10 +943,49 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
               ))}
             </div>
 
+            {/* Who blocks whom, over the rows and under nothing: the lines end
+                at the bars they join, so a head landing on a bar is the point.
+                Drawn for the whole board rather than the window — there are far
+                fewer links than rows, and a line whose other end is scrolled
+                away still has to leave the screen in the right direction. */}
+            {linkLines.length > 0 && (
+              <svg
+                className="pointer-events-none absolute left-0 top-0 z-10 overflow-visible"
+                width={days.length * dayWidth}
+                height={ROW_HEIGHT + (offsets[rows.length] ?? 0)}
+                aria-hidden="true"
+              >
+                {linkLines.map((line) => {
+                  const onPath = showCritical && line.critical;
+                  const color = onPath
+                    ? CRITICAL
+                    : line.late
+                      ? "#ec835a"
+                      : "var(--baseline)";
+                  return (
+                    <g key={`${line.from}-${line.to}`}>
+                      <path
+                        d={line.d}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth={onPath ? 2 : 1.5}
+                        // A link the plan already breaks — the blocker finishes
+                        // after the task waiting on it starts — is drawn broken.
+                        strokeDasharray={line.late ? "3 3" : undefined}
+                        strokeLinejoin="round"
+                      />
+                      <polygon points={line.head} fill={color} />
+                    </g>
+                  );
+                })}
+              </svg>
+            )}
+
             <div style={{ height: rowWindow.before }} />
             {rowWindow.rows.map((task) => {
               const bar = spans.get(task.id);
               const color = task.developer?.color ?? statusMeta(task.status).color;
+              const critical = showCritical && network.critical.has(task.id);
               return (
                 <div
                   key={task.id}
@@ -839,12 +1025,19 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
                         width: bar.width - 4,
                         background: color,
                         color: contrastText(color),
+                        // Outline rather than the ring, which the bar already
+                        // uses to lift itself off the row behind it.
+                        ...(critical
+                          ? { outline: `2px solid ${CRITICAL}`, outlineOffset: 1 }
+                          : null),
                       }}
-                      title={
-                        task.developer
-                          ? `${task.title} — ${task.developer.name}`
-                          : task.title
-                      }
+                      title={[
+                        task.title,
+                        task.developer?.name,
+                        critical ? "on the critical path" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" — ")}
                     >
                       {/* Grab either end to reschedule just that date. */}
                       {canEdit && (
@@ -905,6 +1098,8 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
 const TableRow = memo(function TableRow({
   task,
   steps,
+  blocks,
+  critical,
   hiddenStatuses,
   developers,
   gridTemplateColumns,
@@ -920,6 +1115,10 @@ const TableRow = memo(function TableRow({
   task: Task;
   /** How many of this task's steps are done, when it has any. */
   steps?: { done: number; total: number };
+  /** How many tasks on this board are waiting on this one. */
+  blocks: number;
+  /** This task is on the longest chain of blocked work. */
+  critical: boolean;
   /** Read once for the board and handed down, not read per row. */
   hiddenStatuses: TaskStatus[];
   developers: Developer[];
@@ -1016,6 +1215,9 @@ const TableRow = memo(function TableRow({
             ↳
           </span>
         )}
+        {/* Not a kind of status, so it sits beside the title rather than in
+            the status column: this says which of two waiting tasks goes first. */}
+        <PriorityMark priority={task.priority} />
         {link ? (
           <a
             href={link}
@@ -1029,6 +1231,43 @@ const TableRow = memo(function TableRow({
         ) : (
           <span className="truncate" title={task.description || undefined}>
             {task.title}
+          </span>
+        )}
+        {/* One chip for both halves of the same fact: what this waits on, and
+            what waits on it. A task on the critical path is always one with
+            links, so its chip is the same chip — marked with a diamond and
+            said in full in the tooltip, rather than told by its colour. */}
+        {(task.blockedBy.length > 0 || blocks > 0) && (
+          <span
+            className={`shrink-0 rounded-full px-1.5 text-[0.625rem] tabular-nums ${
+              critical
+                ? "font-medium"
+                : "border border-[var(--hairline)] text-[var(--ink-muted)]"
+            }`}
+            style={
+              critical
+                ? {
+                    color: CRITICAL,
+                    background: `color-mix(in srgb, ${CRITICAL} 14%, transparent)`,
+                  }
+                : undefined
+            }
+            title={[
+              critical
+                ? "On the critical path — a day lost here is a day off the end"
+                : null,
+              task.blockedBy.length > 0
+                ? `Waits on ${task.blockedBy.length}`
+                : null,
+              blocks > 0 ? `Blocks ${blocks}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          >
+            {critical && "◆"}
+            {task.blockedBy.length > 0 && `⇢${task.blockedBy.length}`}
+            {task.blockedBy.length > 0 && blocks > 0 && " "}
+            {blocks > 0 && `${blocks}⇢`}
           </span>
         )}
         {steps && (

@@ -21,6 +21,41 @@ export function statusMeta(status: TaskStatus) {
 }
 
 /**
+ * How much a task wants doing before the others. A different question from
+ * status — that one says where the work is, this one says which of two waiting
+ * tasks is picked up first — so it is drawn as a separate mark rather than
+ * folded into the status pill.
+ */
+export type TaskPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+
+/**
+ * Ordered least to most urgent, which is the order they are offered in and the
+ * order `priorityRank` reads them by. The colours run cool to warm and each one
+ * always travels with its label, so urgency is never carried by colour alone.
+ */
+export const PRIORITY_OPTIONS: {
+  value: TaskPriority;
+  label: string;
+  /** The one-character mark a board row has room for. */
+  mark: string;
+  color: string;
+}[] = [
+  { value: "LOW", label: "Low", mark: "↓", color: "#898781" },
+  { value: "MEDIUM", label: "Medium", mark: "–", color: "#2a78d6" },
+  { value: "HIGH", label: "High", mark: "↑", color: "#ec835a" },
+  { value: "URGENT", label: "Urgent", mark: "!", color: "#e34948" },
+];
+
+export function priorityMeta(priority: TaskPriority) {
+  return PRIORITY_OPTIONS.find((p) => p.value === priority) ?? PRIORITY_OPTIONS[1];
+}
+
+/** Higher is more urgent, for sorting a list by what matters most. */
+export function priorityRank(priority: TaskPriority) {
+  return PRIORITY_OPTIONS.findIndex((p) => p.value === priority);
+}
+
+/**
  * Categorical identity palette for developers, in fixed slot order — validated
  * for colour-vision separation against both the light and dark chart surface.
  * Assign in order; never cycle a generated hue.
@@ -210,6 +245,8 @@ export interface TaskRow {
   description: string | null;
   link: string | null;
   status: TaskStatus;
+  /** What it is worth doing first. Ordinary work unless somebody says so. */
+  priority: TaskPriority;
   startDate: string;
   endDate: string;
   order: number;
@@ -218,6 +255,12 @@ export interface TaskRow {
   sprintId: string | null;
   /** The task this one is a step of, if it is one. */
   parentId: string | null;
+  /**
+   * The tasks this one is waiting on, by id. Flattened from the join rows on
+   * the way out: a board asks "what blocks this" far more often than it needs
+   * to know when the link was made.
+   */
+  blockedBy: string[];
 }
 
 /**

@@ -3,9 +3,12 @@
 import { memo, useEffect, useState } from "react";
 import {
   Developer,
+  PRIORITY_OPTIONS,
   Sprint,
+  TaskPriority,
   TaskStatus,
   UNPLANNED,
+  priorityMeta,
   statusMeta,
 } from "@/lib/types";
 import { formatRange } from "@/lib/dates";
@@ -318,6 +321,65 @@ export function StatusPill({
 }
 
 /**
+ * How urgent a task is, as a mark rather than a word. Boards are already full
+ * of words, and this one has to sit beside a title without pushing it off the
+ * row — so the label rides along as the tooltip and the accessible name, and
+ * the colour is never the only thing saying it.
+ */
+export function PriorityMark({ priority }: { priority: TaskPriority }) {
+  const meta = priorityMeta(priority);
+  // Ordinary work is the common case and says nothing; a row is quieter for it.
+  if (priority === "MEDIUM") return null;
+  return (
+    <span
+      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[0.625rem] font-bold leading-none"
+      style={{
+        color: meta.color,
+        background: `color-mix(in srgb, ${meta.color} 16%, transparent)`,
+      }}
+      title={`${meta.label} priority`}
+      aria-label={`${meta.label} priority`}
+    >
+      {meta.mark}
+    </span>
+  );
+}
+
+/** The picker both task forms use, so the wording can't drift between them. */
+export function PrioritySelect({
+  priority,
+  onChange,
+  disabled,
+}: {
+  priority: TaskPriority;
+  onChange: (priority: TaskPriority) => void;
+  disabled?: boolean;
+}) {
+  const meta = priorityMeta(priority);
+  return (
+    <div className="relative flex items-center">
+      <span
+        className="pointer-events-none absolute left-2 h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ background: meta.color }}
+      />
+      <select
+        value={priority}
+        onChange={(e) => onChange(e.target.value as TaskPriority)}
+        disabled={disabled}
+        className="select truncate pl-[1.375rem] font-medium"
+        aria-label="Task priority"
+      >
+        {PRIORITY_OPTIONS.map((p) => (
+          <option key={p.value} value={p.value}>
+            {p.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/**
  * A section that can be folded away. Used where a list has no natural length —
  * the people on a project, the sprints that have been archived — so one long
  * list can't push everything else off the card.
@@ -406,10 +468,18 @@ export function CloseIcon({ size = 12 }: { size?: number }) {
 export function Modal({
   title,
   onClose,
+  wide = false,
   children,
 }: {
   title: string;
   onClose: () => void;
+  /**
+   * A dialog that is a workspace rather than a question. Editing a task is the
+   * one place everything about it is on offer at once — dates, people, steps,
+   * what it waits on, what happened to it — and a phone-width column made that
+   * a scroll through a queue instead of a form you can see.
+   */
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   useEffect(() => {
@@ -426,7 +496,11 @@ export function Modal({
       onClick={onClose}
     >
       <div
-        className="thin-scroll max-h-[90vh] w-full overflow-y-auto rounded-t-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-5 shadow-xl sm:max-w-md sm:rounded-[var(--radius-lg)]"
+        className={`thin-scroll w-full overflow-y-auto rounded-t-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-5 shadow-xl sm:rounded-[var(--radius-lg)] ${
+          wide
+            ? "max-h-[94vh] sm:max-w-5xl sm:p-6"
+            : "max-h-[90vh] sm:max-w-md"
+        }`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

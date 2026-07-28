@@ -28,6 +28,16 @@ enum TaskStatus {
   DONE
 }
 
+/// How much a task wants doing before the others. Kept apart from status: one
+/// says where the work is, this says which of two waiting tasks is picked up
+/// first. Everything written without an answer is ordinary work.
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
 model User {
   id           String     @id @default(cuid())
   email        String     @unique
@@ -235,6 +245,8 @@ model Task {
   description String?
   link        String?
   status      TaskStatus @default(TODO)
+  /// What it is worth doing first. Ordinary work until somebody says otherwise.
+  priority    TaskPriority @default(MEDIUM)
   startDate   DateTime
   endDate     DateTime
   order       Int        @default(0)
@@ -251,6 +263,10 @@ model Task {
   subtasks    Task[]     @relation("Subtasks")
   /// What happened to it, in order: every status it was moved to, and when.
   events      TaskEvent[]
+  /// The work this task is waiting on, and the work waiting on it. Two sides of
+  /// the same row — a dependency is one fact, read from either end.
+  blockedBy   TaskDependency[] @relation("Blocked")
+  blocks      TaskDependency[] @relation("Blocker")
   // Deleting a sprint leaves its tasks behind rather than taking them with it.
   sprintId    String?
   sprint      Sprint?    @relation(fields: [sprintId], references: [id], onDelete: SetNull)
@@ -289,6 +305,31 @@ model TaskEvent {
   at     DateTime   @default(now())
 
   @@index([taskId, at])
+}
+
+/// One task waiting on another: the blocker has to finish before the blocked
+/// one can start. Both ends are tasks of the same project — the routes check
+/// that, because a plan that reaches across projects is a plan nobody's board
+/// can draw. Deleting either task takes the link with it: a dependency on work
+/// that no longer exists is not a dependency.
+model TaskDependency {
+  id String @id @default(cuid())
+
+  /// The one that has to finish.
+  blockerId String
+  blocker   Task   @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+
+  /// The one that is waiting.
+  blockedId String
+  blocked   Task   @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  /// Said twice is said once: a pair is a link or it isn't.
+  @@unique([blockerId, blockedId])
+  /// Read from either end — "what is this waiting on" and "what waits on this".
+  @@index([blockedId])
+  @@index([blockerId])
 }
 
 model Sprint {

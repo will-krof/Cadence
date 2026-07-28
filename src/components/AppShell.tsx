@@ -138,6 +138,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
     createProject,
     assignable,
     createTask,
+    projectTasks,
   } = useBoard();
 
   const [view, setView] = useState<View>("overview");
@@ -684,6 +685,9 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
       {showAddTask && activeProject && (
         <TaskModal
           developers={assignable}
+          // A task can be written already waiting on something, so the form
+          // needs the plan it is being written into.
+          projectTasks={projectTasks}
           onClose={() => setShowAddTask(false)}
           onSubmit={async (values) => {
             await createTask(values);

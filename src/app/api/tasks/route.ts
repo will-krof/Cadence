@@ -6,8 +6,9 @@ import {
   requireViewer,
   viewerName,
 } from "@/lib/viewer";
-import { TASK_FIELDS } from "@/lib/task-select";
+import { TASK_FIELDS, taskPayload, taskPayloads } from "@/lib/task-select";
 import { parseTask } from "@/lib/task-input";
+import { blockerProblem, parseBlockers } from "@/lib/task-deps";
 import { LIMITS } from "@/lib/sanitize";
 import { ownedDeveloper, ownedProject } from "@/lib/owned";
 import { badRequest, forbidden, notFound } from "@/lib/responses";
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
     select: TASK_FIELDS,
     orderBy: { order: "asc" },
   });
-  return jsonResponse(request, tasks);
+  return jsonResponse(request, taskPayloads(tasks));
 }
 
 export async function POST(request: NextRequest) {
@@ -60,6 +61,8 @@ export async function POST(request: NextRequest) {
 
   const parsed = parseTask(body);
   if ("error" in parsed) return badRequest(parsed.error);
+  const waiting = parseBlockers(body.blockedBy);
+  if (waiting.error) return badRequest(waiting.error);
   const { title, startDate, endDate } = parsed.data;
   if (!projectId || !title || !startDate || !endDate) {
     return badRequest("projectId, title, startDate and endDate are required");
@@ -99,6 +102,12 @@ export async function POST(request: NextRequest) {
     }
     parentId = parent.id;
   }
+
+  // What the task is waiting on. Nothing can be looping back to a task that
+  // doesn't exist yet, so only the two rules about the ends are in play here.
+  const blockers = waiting.blockers ?? [];
+  const blockerFault = await blockerProblem(projectId, null, blockers);
+  if (blockerFault) return badRequest(blockerFault);
 
   const maxOrder = await prisma.task.aggregate({
     where: { projectId },
@@ -153,7 +162,7 @@ export async function POST(request: NextRequest) {
     sprintId: body.sprintId || null,
   };
 
-  const task = await prisma.task.create({
+  const created = await prisma.task.create({
     data: {
       ...parsed.data,
       ...common,
@@ -161,6 +170,9 @@ export async function POST(request: NextRequest) {
       status: parsed.data.status ?? "TODO",
       parentId,
       order: from,
+      // What it waits on, written with it: a task that arrives already blocked
+      // should never be drawn for a moment as though it weren't.
+      blockedBy: { create: blockers.map((blockerId) => ({ blockerId })) },
       // The first line of its history is being written down at all.
       events: {
         create: {
@@ -171,6 +183,7 @@ export async function POST(request: NextRequest) {
     },
     select: TASK_FIELDS,
   });
+  const task = taskPayload(created);
 
   if (steps.length === 0) return NextResponse.json(task, { status: 201 });
 
@@ -197,5 +210,8 @@ export async function POST(request: NextRequest) {
     orderBy: { order: "asc" },
   });
 
-  return NextResponse.json({ ...task, subtasks }, { status: 201 });
+  return NextResponse.json(
+    { ...task, subtasks: taskPayloads(subtasks) },
+    { status: 201 }
+  );
 }

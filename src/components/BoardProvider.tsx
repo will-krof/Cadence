@@ -17,6 +17,7 @@ import {
   ProjectRole,
   Sprint,
   Task,
+  TaskPriority,
   TaskRow,
   TaskStatus,
   UNPLANNED,
@@ -31,7 +32,11 @@ interface TaskInput {
   startDate: string;
   endDate: string;
   status?: TaskStatus;
+  /** What it is worth doing first. Ordinary work when nobody says otherwise. */
+  priority?: TaskPriority;
   developerId: string | null;
+  /** The tasks it waits on, by id — written with it rather than after it. */
+  blockedBy?: string[];
   /** The task this one is a step of, if it is one. */
   parentId?: string | null;
   /** Steps to create with it. They take its dates and board, and their own
@@ -575,7 +580,17 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     async (id: string) => {
       const previous = rowsRef.current;
       const title = previous.find((t) => t.id === id)?.title ?? "Task";
-      setTasks((prev) => prev.filter((t) => t.id !== id));
+      // The database drops the links pointing at it; the board has to say the
+      // same thing, or an arrow is left hanging off work that is gone.
+      setTasks((prev) =>
+        prev
+          .filter((t) => t.id !== id)
+          .map((t) =>
+            t.blockedBy.includes(id)
+              ? { ...t, blockedBy: t.blockedBy.filter((b) => b !== id) }
+              : t
+          )
+      );
 
       const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
       if (!res.ok) {

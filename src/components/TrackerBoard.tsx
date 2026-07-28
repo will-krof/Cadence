@@ -6,6 +6,7 @@ import {
   AssigneeSelect,
   Avatar,
   CloseIcon,
+  PriorityMark,
   SprintPicker,
   StatusPill,
 } from "@/components/ui";
@@ -493,6 +494,11 @@ const TaskCard = memo(function TaskCard({
         </p>
       )}
       <div className="flex items-start gap-1.5">
+        {/* A column already says where the work is; this says which of two
+            cards in it gets picked up first. */}
+        <span className="mt-0.5">
+          <PriorityMark priority={task.priority} />
+        </span>
         {link ? (
           <a
             href={link}

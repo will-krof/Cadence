@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { boardFilter, workspaceOwnerId } from "@/lib/api-auth";
 import { memberDenied, requireViewer, viewerName } from "@/lib/viewer";
-import { TASK_FIELDS } from "@/lib/task-select";
+import { TASK_FIELDS, taskPayload } from "@/lib/task-select";
 import { parseTask } from "@/lib/task-input";
+import { blockerProblem, parseBlockers, setBlockers } from "@/lib/task-deps";
 import { ownedDeveloper } from "@/lib/owned";
 import { badRequest, done, forbidden, notFound } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
@@ -22,6 +23,8 @@ export async function PATCH(
 
   const parsed = parseTask(body);
   if ("error" in parsed) return badRequest(parsed.error);
+  const waiting = parseBlockers(body.blockedBy);
+  if (waiting.error) return badRequest(waiting.error);
 
   const reachable = await prisma.task.findFirst({
     where: { id, ...boardFilter(viewer) },
@@ -73,7 +76,20 @@ export async function PATCH(
     if (!sprint) return notFound("That sprint is not on this project —");
   }
 
-  const task = await prisma.task.update({
+  // What this task waits on, when the request says so at all. Checked before
+  // anything is written: a set that would close a loop is refused whole rather
+  // than half-applied.
+  if (waiting.blockers) {
+    const fault = await blockerProblem(
+      reachable.projectId,
+      id,
+      waiting.blockers
+    );
+    if (fault) return badRequest(fault);
+    await setBlockers(id, waiting.blockers);
+  }
+
+  const updated = await prisma.task.update({
     where: { id },
     data: {
       ...parsed.data,
@@ -84,6 +100,7 @@ export async function PATCH(
     },
     select: TASK_FIELDS,
   });
+  const task = taskPayload(updated);
 
   // A task's history is written as it happens: this is the only place a status
   // moves, so it is the only place that has to remember it.

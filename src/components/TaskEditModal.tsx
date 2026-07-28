@@ -36,6 +36,10 @@ export function TaskEditModal({
     <TaskModal
       task={task}
       subtasks={subtasks}
+      // The whole project, so the form can walk the links for itself: what may
+      // be waited on is a question about the shape of the plan, not about this
+      // one row.
+      projectTasks={projectTasks}
       developers={assignable}
       onClose={onClose}
       onSubmit={async (values) => {
