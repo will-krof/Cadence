@@ -149,6 +149,10 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   const [roleId, setRoleId] = useState<string | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
+  // The project just made, if the card hasn't been told what it is made of yet.
+  // A new project arrives with nothing switched on, so its settings are the
+  // first thing it shows — and stop being forced open once they are left.
+  const [freshProjectId, setFreshProjectId] = useState<string | null>(null);
   // Reading the stored preference through a store (rather than mirroring it
   // into state in an effect) keeps the server render and hydration agreed.
   const collapsed = useSyncExternalStore(
@@ -669,6 +673,10 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
               </div>
               {activeView === "overview" ? (
                 <ProjectOverview
+                  // Its own state per project: a form left open on one doesn't
+                  // follow you to the next, and a project just made opens into
+                  // the settings it was created without.
+                  key={activeProject.id}
                   onOpenView={(v) => (v === "team" ? setOnTeam(true) : openView(v))}
                   visibleViews={[
                     ...shown.filter(
@@ -678,6 +686,12 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                     ...(canSeeTeam ? (["team"] as const) : []),
                   ]}
                   canEdit={isAdmin}
+                  startEditing={
+                    isAdmin && activeProject?.id === freshProjectId
+                  }
+                  onEditingChange={(editing) => {
+                    if (!editing) setFreshProjectId(null);
+                  }}
                 />
               ) : projectLoading ? (
                 <Centered>Loading project…</Centered>
@@ -712,7 +726,12 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
           onClose={() => setShowNewProject(false)}
           onSubmit={async (values) => {
             const created = await createProject(values);
-            if (created) setShowNewProject(false);
+            if (!created) return;
+            setShowNewProject(false);
+            // Straight onto its card, with the form already open: a project
+            // made of nothing is a question, and this is where it is answered.
+            setFreshProjectId(created.id);
+            openProject(created.id);
           }}
         />
       )}

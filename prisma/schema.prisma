@@ -118,20 +118,24 @@ model Project {
   id          String   @id @default(cuid())
   name        String
   description String?
-  hasTimeline Boolean  @default(true)
-  hasTracker  Boolean  @default(true)
+  /// Every tool starts off. A new project is a name and a description, and
+  /// what it is made of is the first thing its owner is asked — which is a
+  /// shorter question than working out what to take away from a project that
+  /// arrived with everything.
+  hasTimeline Boolean  @default(false)
+  hasTracker  Boolean  @default(false)
   /// The team roster is not a tool a project switches off — every project has
   /// people — so there is no `hasTeam` here. Who may open it is the role's.
-  hasWiki     Boolean  @default(true)
+  hasWiki     Boolean  @default(false)
   /// Whether the work is planned in sprints at all. Off, the boards show the
   /// project's whole plan at once and nothing asks which sprint to put a task
   /// in. Sprints already planned are kept, not deleted — turning the tool back
   /// on finds them where they were.
-  hasSprints  Boolean  @default(true)
+  hasSprints  Boolean  @default(false)
   /// Whether this project is run through roles. Off, the roles it has stop
   /// being offered or asked about — for a project one person runs, a table of
   /// permissions is a screen of questions nobody has.
-  hasRoles    Boolean  @default(true)
+  hasRoles    Boolean  @default(false)
 
   /// When the project runs, said rather than worked out. A project that plans
   /// in sprints gets its span from them and leaves these null; one that doesn't
@@ -143,11 +147,11 @@ model Project {
   /// writes a link, or never argues about priority, shouldn't have to look at
   /// the field that asks — so each one can be put away, and what is already
   /// written stays in the row either way.
-  taskHasPriority Boolean @default(true)
-  taskHasLink     Boolean @default(true)
-  taskHasDates    Boolean @default(true)
-  taskHasHistory  Boolean @default(true)
-  taskHasComments Boolean @default(true)
+  taskHasPriority Boolean @default(false)
+  taskHasLink     Boolean @default(false)
+  taskHasDates    Boolean @default(false)
+  taskHasHistory  Boolean @default(false)
+  taskHasComments Boolean @default(false)
   /// Put away: still openable and still holding its work, but out of the run of
   /// projects being worked on.
   archived    Boolean  @default(false)

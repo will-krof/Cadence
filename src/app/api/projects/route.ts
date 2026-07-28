@@ -35,10 +35,11 @@ export async function POST(request: NextRequest) {
   const name = named.value;
   if (!name) return badRequest("Name is required");
 
-  // The tools and the task fields are the project's to switch off. Its people
-  // are not: every project has a team, so a project with no tool at all is
-  // still a project somebody can open.
-  const flags = parseFlags(body, { fillIn: true });
+  // A project arrives with nothing switched on and is built up on its own card,
+  // so anything the request doesn't mention falls to the column default — which
+  // is off. A project with no tool at all is still a project somebody can open:
+  // its card is its own, not one of its tools.
+  const flags = parseFlags(body);
 
   // A project can say when it runs rather than leaving it to its tasks — which
   // is what a team that doesn't plan in sprints needs.

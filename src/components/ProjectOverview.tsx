@@ -26,12 +26,21 @@ export function ProjectOverview({
   onOpenView,
   visibleViews,
   canEdit,
+  startEditing = false,
+  onEditingChange,
 }: {
   onOpenView: (view: OpenableView) => void;
   /** What the current role is allowed to open from here. */
   visibleViews: OpenableView[];
   /** Only an admin changes the project's settings; everyone else reads them. */
   canEdit: boolean;
+  /**
+   * Open straight into the settings form. A project is created with a name and
+   * nothing switched on, so what it is made of is the first thing it asks.
+   */
+  startEditing?: boolean;
+  /** Told when the form is left, so the caller can stop asking for it. */
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const {
     activeProject,
@@ -58,7 +67,15 @@ export function ProjectOverview({
   const tasks = projectTasks;
   const { confirm } = useFeedback();
 
-  const [editing, setEditing] = useState(false);
+  // Keyed on the project by its caller, so this starts fresh for each one:
+  // switching projects closes a form left open on the last, and a project just
+  // created opens straight into it.
+  const [editing, setEditingState] = useState(startEditing);
+
+  const setEditing = (next: boolean) => {
+    setEditingState(next);
+    onEditingChange?.(next);
+  };
 
   /**
    * When the project runs. A project can say so itself — which is what a team

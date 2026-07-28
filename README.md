@@ -90,11 +90,16 @@ anything.
 
 ## What a project is made of
 
-A project is pared back to what its team actually uses, on the project card
-under **Edit project**. The Gantt chart, the tracker, sprints, the wiki and
-roles are each a checkbox; the team roster is not, because every project has
-people. Switching a tool off hides it — the sprints and roles already made are
-kept, waiting where they were if it comes back.
+**A project starts with nothing switched on.** Creating one asks for a name and
+a description, and then drops you on its card with the settings open — because
+what a project is made of is a shorter question than what to take away from a
+project that arrived with everything.
+
+Everything is there: the Gantt chart, the tracker, sprints, the wiki and roles
+are each a checkbox, and the team roster is not, because every project has
+people. Tick what this project needs; come back under **Edit project** whenever
+that changes. Switching a tool off later hides it — the sprints and roles
+already made are kept, waiting where they were if it comes back.
 
 With **sprints** off, the boards stop being one round's worth of work and show
 the project's whole plan at once; nothing asks which sprint a new task belongs

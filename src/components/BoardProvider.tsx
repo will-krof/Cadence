@@ -62,11 +62,15 @@ interface SprintPatch {
 interface ProjectInput {
   name: string;
   description: string;
-  hasTimeline: boolean;
-  hasTracker: boolean;
-  hasWiki: boolean;
-  hasSprints: boolean;
-  hasRoles: boolean;
+  /**
+   * What the project is made of. All optional, and all off to begin with: a
+   * project is created with a name and built up on its own card.
+   */
+  hasTimeline?: boolean;
+  hasTracker?: boolean;
+  hasWiki?: boolean;
+  hasSprints?: boolean;
+  hasRoles?: boolean;
   /** Stated by hand, or empty to leave the span to the work. */
   startDate?: string | null;
   endDate?: string | null;

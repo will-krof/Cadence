@@ -1,22 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { Field, Modal, ToolCheckbox } from "@/components/ui";
+import { Field, Modal } from "@/components/ui";
 
 export interface ProjectFormValues {
   name: string;
   description: string;
-  hasTimeline: boolean;
-  hasTracker: boolean;
-  hasWiki: boolean;
-  hasSprints: boolean;
-  hasRoles: boolean;
-  /** Empty leaves the span to the work — the earliest task to the latest. */
-  startDate: string | null;
-  endDate: string | null;
 }
 
-/** Creating a project. Editing one happens on its card, in the Overview view. */
+/**
+ * Creating a project: what it is called, and what it is about. Nothing else.
+ *
+ * Everything a project is made of — its boards, its sprints, its roles, when it
+ * runs, which of a task's fields its forms ask about — is decided on the card
+ * that opens the moment it is created, where the answers can be seen against
+ * each other and changed again later. A project arrives empty and is built up,
+ * rather than arriving with everything and having to be pared back through a
+ * modal nobody reads on the way to naming a thing.
+ */
 export function ProjectModal({
   onClose,
   onSubmit,
@@ -26,34 +27,13 @@ export function ProjectModal({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [hasTimeline, setHasTimeline] = useState(true);
-  const [hasTracker, setHasTracker] = useState(true);
-  const [hasWiki, setHasWiki] = useState(true);
-  const [hasSprints, setHasSprints] = useState(true);
-  const [hasRoles, setHasRoles] = useState(true);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
   const [pending, setPending] = useState(false);
-
-  // Said here rather than only refused by the server: the two fields are side
-  // by side, and the answer is one glance away from the mistake.
-  const backwards = Boolean(startDate && endDate && endDate < startDate);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || backwards) return;
+    if (!name.trim()) return;
     setPending(true);
-    await onSubmit({
-      name: name.trim(),
-      description: description.trim(),
-      hasTimeline,
-      hasTracker,
-      hasWiki,
-      hasSprints,
-      hasRoles,
-      startDate: startDate || null,
-      endDate: endDate || null,
-    });
+    await onSubmit({ name: name.trim(), description: description.trim() });
     setPending(false);
   }
 
@@ -79,73 +59,11 @@ export function ProjectModal({
           />
         </Field>
 
-        {/* A project that plans in sprints gets its span from them. One that
-            doesn't still has a beginning and an end, and says so here. */}
-        <div className="flex flex-col gap-3.5 sm:flex-row">
-          <Field label="Start date" className="flex-1">
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="input"
-            />
-          </Field>
-          <Field label="End date" className="flex-1">
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="input"
-            />
-          </Field>
-        </div>
-        <p className="-mt-1.5 text-[0.6875rem] text-[var(--ink-muted)]">
-          {backwards ? (
-            <span className="text-[var(--danger)]">
-              The project can’t end before it starts.
-            </span>
-          ) : (
-            "Leave these empty to let the work say when the project runs — the earliest task to the latest."
-          )}
+        <p className="text-[0.6875rem] text-[var(--ink-muted)]">
+          What it’s made of comes next: the boards, sprints, roles, when it runs
+          and what a task asks for are all on the project’s own card, which opens
+          as soon as this is made.
         </p>
-
-        <fieldset className="flex flex-col gap-2">
-          <legend className="field-label mb-1.5">What do you need?</legend>
-          <ToolCheckbox
-            checked={hasTimeline}
-            onChange={setHasTimeline}
-            label="Gantt chart"
-            hint="Timeline of the work, with its dependencies"
-          />
-          <ToolCheckbox
-            checked={hasTracker}
-            onChange={setHasTracker}
-            label="Task tracker"
-            hint="Kanban board by status"
-          />
-          <ToolCheckbox
-            checked={hasSprints}
-            onChange={setHasSprints}
-            label="Sprints"
-            hint="Plan the work in rounds. Off, the boards show it all at once"
-          />
-          <ToolCheckbox
-            checked={hasWiki}
-            onChange={setHasWiki}
-            label="Wiki"
-            hint="Pages the project writes down for itself"
-          />
-          <ToolCheckbox
-            checked={hasRoles}
-            onChange={setHasRoles}
-            label="Roles"
-            hint="Decide what each group may open. Off, the project is yours alone"
-          />
-          <p className="text-[0.6875rem] text-[var(--ink-muted)]">
-            Every project has a team — the roster is always there. Which of a
-            task’s fields the forms ask about is set on the project card.
-          </p>
-        </fieldset>
 
         <div className="mt-1 flex items-center justify-end gap-2">
           <button type="button" onClick={onClose} className="btn-secondary">
@@ -154,7 +72,7 @@ export function ProjectModal({
           <button
             type="submit"
             className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={pending || !name.trim() || backwards}
+            disabled={pending || !name.trim()}
           >
             {pending ? "Saving…" : "Create project"}
           </button>
