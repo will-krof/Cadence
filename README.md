@@ -14,6 +14,11 @@ npm run dev
 
 Then open [http://localhost:3000](http://localhost:3000).
 
+The Prisma client is generated into `src/generated/prisma`, which isn't checked
+in — `npm install` generates it, so a fresh checkout needs nothing else. After
+pulling a change that touches `prisma/schema.prisma`, run `npm install` (or
+`npx prisma generate`) again to bring it back in step.
+
 ## Accounts
 
 Signing up at [/signup](http://localhost:3000/signup) makes a workspace and makes
