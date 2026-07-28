@@ -11,7 +11,14 @@ import {
   StatusPill,
 } from "@/components/ui";
 import { TaskEditModal } from "@/components/TaskEditModal";
-import { Developer, STATUS_OPTIONS, Task, TaskStatus } from "@/lib/types";
+import {
+  Developer,
+  STATUS_OPTIONS,
+  Task,
+  TaskFields,
+  TaskStatus,
+  taskFields,
+} from "@/lib/types";
 import { useHiddenStatuses } from "@/lib/prefs";
 import { formatDay, formatDayShort } from "@/lib/dates";
 import { isHttpUrl } from "@/lib/sanitize";
@@ -36,6 +43,7 @@ interface DragState {
 
 export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
   const {
+    activeProject,
     tasks,
     assignable: developers,
     sprints,
@@ -46,6 +54,8 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
     updateTask,
   } = useBoard();
   const [assignee, setAssignee] = useState("");
+  // Which of a task's fields this project asks about, read once for the board.
+  const fields = useMemo(() => taskFields(activeProject), [activeProject]);
   // Only the identity of what is being dragged lives in state; where it is
   // lives in a ref and goes straight to the preview element.
   const [dragging, setDragging] = useState<{
@@ -232,13 +242,16 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-end gap-3 border-b border-[var(--hairline)] px-4 py-3 sm:px-6">
-        <SprintPicker
-          sprints={sprints}
-          sprint={sprint}
-          sprintId={sprintId}
-          hasUnplanned={hasUnplanned}
-          onSelect={selectSprint}
-        />
+        {/* Only where the work is planned in rounds. */}
+        {activeProject?.hasSprints !== false && (
+          <SprintPicker
+            sprints={sprints}
+            sprint={sprint}
+            sprintId={sprintId}
+            hasUnplanned={hasUnplanned}
+            onSelect={selectSprint}
+          />
+        )}
         <label className="flex flex-col gap-1">
           <span className="field-label">Filter by developer</span>
           <select
@@ -343,6 +356,7 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
                     onDragStart={beginDrag}
                     onStatusChange={handleStatus}
                     onAssign={handleAssign}
+                    fields={fields}
                     onOpen={handleOpen}
                     onEdit={handleEdit}
                     developers={developers}
@@ -379,6 +393,7 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
         <TaskEditModal
           task={openedTask}
           canEdit={canEdit}
+          fields={fields}
           editing={opened.editing}
           onClose={() => setOpened(null)}
         />
@@ -434,6 +449,7 @@ const TaskCard = memo(function TaskCard({
   hiddenStatuses,
   canEdit,
   developers,
+  fields,
   dragging,
   onDragStart,
   onStatusChange,
@@ -451,6 +467,8 @@ const TaskCard = memo(function TaskCard({
   /** Whether this viewer may change the work, or only read it. */
   canEdit: boolean;
   developers: Developer[];
+  /** What this project asks a task for; a field put away is not drawn. */
+  fields: TaskFields;
   dragging: boolean;
   onDragStart: (state: DragState) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
@@ -536,15 +554,17 @@ const TaskCard = memo(function TaskCard({
       <div className="flex items-start gap-1.5">
         {/* A column already says where the work is; this says which of two
             cards in it gets picked up first. */}
-        <span className="mt-0.5">
-          <PriorityMark priority={task.priority} />
-        </span>
+        {fields.priority && (
+          <span className="mt-0.5">
+            <PriorityMark priority={task.priority} />
+          </span>
+        )}
         <h4 className="flex-1 text-[0.8125rem] font-medium leading-snug">
           {task.title}
         </h4>
         {/* Clicking a card opens the task, whether or not it carries a link, so
             the link keeps its own mark rather than swallowing the title. */}
-        {link && (
+        {fields.link && link && (
           <a
             href={link}
             target="_blank"
@@ -591,9 +611,11 @@ const TaskCard = memo(function TaskCard({
         </p>
       )}
 
-      <p className="mt-2 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
-        {start === end ? start : `${start} → ${end}`}
-      </p>
+      {fields.dates && (
+        <p className="mt-2 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
+          {start === end ? start : `${start} → ${end}`}
+        </p>
+      )}
 
       <div className="mt-2.5 flex items-center gap-1.5">
         <div className="min-w-0 flex-1">

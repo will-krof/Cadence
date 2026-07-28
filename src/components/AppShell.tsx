@@ -60,6 +60,7 @@ const InstallStats = dynamic(() =>
   import("@/components/InstallStats").then((m) => m.InstallStats)
 );
 import { HideableView, useHiddenViews } from "@/lib/prefs";
+import { taskFields } from "@/lib/types";
 
 /** The views a project carries. Team isn't one: it belongs to the workspace. */
 type View = "overview" | "timeline" | "tracker" | "wiki";
@@ -163,6 +164,10 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   // doesn't choose: they are whatever roles they were given.
   const role = useMemo(() => {
     if (!activeProject || member) return null;
+    // A project not run through roles has no view to stand in: its owner sees
+    // all of it, and a role chosen before the tool was switched off doesn't
+    // linger as a restriction nothing on screen explains.
+    if (!activeProject.hasRoles) return null;
     return (
       activeProject.roles.find((r) => r.id === roleId) ??
       activeProject.roles.find((r) => r.isAdmin) ??
@@ -575,7 +580,13 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
             </div>
           )}
 
-          {!member && activeProject && activeProject.roles.length > 0 && wide && (
+          {/* Only where the project is run through roles: a project one person
+              runs has nobody's view to stand in. */}
+          {!member &&
+            activeProject &&
+            activeProject.hasRoles &&
+            activeProject.roles.length > 0 &&
+            wide && (
             <label className="flex flex-col gap-1 border-t border-[var(--hairline)] px-2 pt-3">
               <span className="field-label">Viewing as</span>
               <select
@@ -688,6 +699,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
           // A task can be written already waiting on something, so the form
           // needs the plan it is being written into.
           projectTasks={projectTasks}
+          fields={taskFields(activeProject)}
           onClose={() => setShowAddTask(false)}
           onSubmit={async (values) => {
             await createTask(values);

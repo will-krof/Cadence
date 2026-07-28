@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/api-auth";
 import { PROJECT_FIELDS } from "@/lib/project-select";
+import { parseFlags, parseSpan } from "@/lib/project-input";
 import { boundedText, LIMITS } from "@/lib/sanitize";
-import { ownedProject } from "@/lib/owned";
 import { badRequest, done, notFound } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -22,18 +22,33 @@ export async function PATCH(
     return badRequest("That is too long");
   }
 
-  if (!(await ownedProject(user.id, id))) return notFound("Project");
+  const span = parseSpan(body);
+  if ("error" in span) return badRequest(span.error);
+
+  const current = await prisma.project.findFirst({
+    where: { id, userId: user.id },
+    select: { startDate: true, endDate: true },
+  });
+  if (!current) return notFound("Project");
+
+  // A request that moves one end has to make sense against the end already
+  // stored, not just against itself — otherwise editing the start alone could
+  // leave a project ending before it begins.
+  const startDate =
+    span.data.startDate === undefined ? current.startDate : span.data.startDate;
+  const endDate =
+    span.data.endDate === undefined ? current.endDate : span.data.endDate;
+  if (startDate && endDate && endDate < startDate) {
+    return badRequest("The project can’t end before it starts");
+  }
 
   const project = await prisma.project.update({
     where: { id },
     data: {
       name: named.value ?? undefined,
       description: body.description === undefined ? undefined : described.value,
-      hasTimeline:
-        typeof body.hasTimeline === "boolean" ? body.hasTimeline : undefined,
-      hasTracker:
-        typeof body.hasTracker === "boolean" ? body.hasTracker : undefined,
-      hasWiki: typeof body.hasWiki === "boolean" ? body.hasWiki : undefined,
+      ...parseFlags(body),
+      ...span.data,
       archived: typeof body.archived === "boolean" ? body.archived : undefined,
     },
     select: PROJECT_FIELDS,

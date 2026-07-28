@@ -231,11 +231,91 @@ export interface Project {
   hasTimeline: boolean;
   hasTracker: boolean;
   hasWiki: boolean;
+  /** Whether the work is planned in sprints at all. */
+  hasSprints: boolean;
+  /** Whether the project is run through roles, or by one person. */
+  hasRoles: boolean;
+  /**
+   * When the project runs, said by hand. Null leaves the span to the work: the
+   * earliest task to the latest, which is what a project on sprints wants.
+   */
+  startDate: string | null;
+  endDate: string | null;
+  taskHasPriority: boolean;
+  taskHasLink: boolean;
+  taskHasDates: boolean;
+  taskHasHistory: boolean;
+  taskHasComments: boolean;
   /** Put away: still openable, but out of the run of projects being worked on. */
   archived: boolean;
   roles: ProjectRole[];
   createdAt: string;
 }
+
+/**
+ * Which of a task's optional fields a project asks about. Read once where a
+ * form or a card is built and handed down, so every screen showing a task
+ * agrees about what the project has put away.
+ *
+ * Putting a field away hides the question, not the answer: whatever is already
+ * written in the row stays there, and comes back the moment the field does.
+ */
+export interface TaskFields {
+  priority: boolean;
+  link: boolean;
+  dates: boolean;
+  history: boolean;
+  comments: boolean;
+}
+
+/** Everything on, for the screens that have no project to ask. */
+export const ALL_TASK_FIELDS: TaskFields = {
+  priority: true,
+  link: true,
+  dates: true,
+  history: true,
+  comments: true,
+};
+
+export function taskFields(project: Project | null): TaskFields {
+  if (!project) return ALL_TASK_FIELDS;
+  return {
+    priority: project.taskHasPriority,
+    link: project.taskHasLink,
+    dates: project.taskHasDates,
+    history: project.taskHasHistory,
+    comments: project.taskHasComments,
+  };
+}
+
+/** The task fields a project offers, as the settings form lists them. */
+export const TASK_FIELD_TOGGLES: {
+  key: "taskHasPriority" | "taskHasLink" | "taskHasDates" | "taskHasHistory" | "taskHasComments";
+  label: string;
+  hint: string;
+}[] = [
+  {
+    key: "taskHasDates",
+    label: "Start and end dates",
+    hint: "When each task runs. The timeline needs them",
+  },
+  {
+    key: "taskHasPriority",
+    label: "Priority",
+    hint: "Which of two waiting tasks goes first",
+  },
+  { key: "taskHasLink", label: "Link", hint: "One address per task" },
+  {
+    key: "taskHasHistory",
+    label: "History",
+    hint: "Every status a task was moved to, and by whom",
+  },
+  {
+    key: "taskHasComments",
+    label: "Comments",
+    hint: "What people say about a task",
+  },
+];
 
 /** A task as it travels: the assignee is an id, not a copy of their profile. */
 export interface TaskRow {

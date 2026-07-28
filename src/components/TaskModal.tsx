@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import { formatDay, toISODate } from "@/lib/dates";
 import {
+  ALL_TASK_FIELDS,
   Developer,
   Task,
+  TaskFields,
   TaskPriority,
   TaskStatus,
   priorityMeta,
@@ -59,6 +61,7 @@ export function TaskModal({
   subtasks = [],
   projectTasks = NO_TASKS,
   developers,
+  fields = ALL_TASK_FIELDS,
   onClose,
   onSubmit,
   onDelete,
@@ -75,6 +78,12 @@ export function TaskModal({
    */
   projectTasks?: Task[];
   developers: Developer[];
+  /**
+   * Which of a task's fields this project asks about. A field put away isn't
+   * offered here — but what is already written in it is kept and sent back
+   * untouched, so switching it on again finds everything where it was.
+   */
+  fields?: TaskFields;
   onClose: () => void;
   onSubmit: (values: TaskFormValues) => void | Promise<void>;
   onDelete?: () => void;
@@ -227,34 +236,41 @@ export function TaskModal({
               />
             </Field>
 
-            <Field label="Link">
-              <input
-                type="url"
-                value={link}
-                onChange={(e) => setLink(e.target.value)}
-                className="input"
-                placeholder="https://…"
-              />
-            </Field>
+            {fields.link && (
+              <Field label="Link">
+                <input
+                  type="url"
+                  value={link}
+                  onChange={(e) => setLink(e.target.value)}
+                  className="input"
+                  placeholder="https://…"
+                />
+              </Field>
+            )}
 
-            <div className="flex flex-col gap-3.5 sm:flex-row">
-              <Field label="Start" className="flex-1">
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="input"
-                />
-              </Field>
-              <Field label="End" className="flex-1">
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="input"
-                />
-              </Field>
-            </div>
+            {/* Every task has dates whatever this says — the timeline is drawn
+                from them. Put away, the form stops asking and a new task takes
+                today at both ends. */}
+            {fields.dates && (
+              <div className="flex flex-col gap-3.5 sm:flex-row">
+                <Field label="Start" className="flex-1">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="input"
+                  />
+                </Field>
+                <Field label="End" className="flex-1">
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="input"
+                  />
+                </Field>
+              </div>
+            )}
 
             <div className="flex flex-col gap-3.5 sm:flex-row">
               <Field label="Status" className="flex-1">
@@ -272,9 +288,11 @@ export function TaskModal({
               </Field>
               {/* Not a kind of status: one says where the work is, this says
                   which of two waiting tasks is picked up first. */}
-              <Field label="Priority" className="flex-1">
-                <PrioritySelect priority={priority} onChange={setPriority} />
-              </Field>
+              {fields.priority && (
+                <Field label="Priority" className="flex-1">
+                  <PrioritySelect priority={priority} onChange={setPriority} />
+                </Field>
+              )}
               <Field label="Assignee" className="flex-1">
                 <select
                   value={developerId}
@@ -472,8 +490,8 @@ export function TaskModal({
                 so neither appears until there is one. */}
             {isEdit && task && (
               <>
-                <TaskHistory taskId={task.id} />
-                <TaskComments taskId={task.id} />
+                {fields.history && <TaskHistory taskId={task.id} />}
+                {fields.comments && <TaskComments taskId={task.id} />}
               </>
             )}
           </div>

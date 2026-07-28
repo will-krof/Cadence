@@ -88,6 +88,31 @@ watching are just scrolling. Hidden columns collect above the board with their
 counts, one click each to bring back, and their tasks were never filtered out of
 anything.
 
+## What a project is made of
+
+A project is pared back to what its team actually uses, on the project card
+under **Edit project**. The Gantt chart, the tracker, sprints, the wiki and
+roles are each a checkbox; the team roster is not, because every project has
+people. Switching a tool off hides it — the sprints and roles already made are
+kept, waiting where they were if it comes back.
+
+With **sprints** off, the boards stop being one round's worth of work and show
+the project's whole plan at once; nothing asks which sprint a new task belongs
+to. With **roles** off, the permissions table and the "viewing as" picker go —
+for a project one person runs, they are a screen of questions nobody has.
+
+A project can also say **when it runs**, rather than leaving it to be worked out
+from the earliest and latest task. Set a start date, an end date, or just one of
+them, when the project is created or later on its card. Leave them empty and the
+work says it, which is what a project on sprints wants.
+
+The same card says **what a task asks for**: its dates, its priority, its link,
+its history, its comments. Each one can be put away, and then the form stops
+offering it, the card stops drawing it, and the boards stop marking it. Nothing
+already written is lost — turn a field back on and it is all still there. Tasks
+keep their dates whatever that toggle says, because the timeline is drawn from
+them; the form just stops asking, and a new task starts and ends today.
+
 ## Sprints
 
 A project runs as a series of sprints, and each one is its own board. When a

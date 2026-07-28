@@ -7,8 +7,14 @@ import { PeopleSection } from "@/components/project/PeopleSection";
 import { RolesSection } from "@/components/project/RolesSection";
 import { SprintsSection } from "@/components/project/SprintsSection";
 import { Field, ToolCheckbox } from "@/components/ui";
-import { diffDays, formatDay } from "@/lib/dates";
-import { Developer, STATUS_OPTIONS, TaskStatus } from "@/lib/types";
+import { diffDays, formatDay, toISODate } from "@/lib/dates";
+import {
+  Developer,
+  Project,
+  STATUS_OPTIONS,
+  TASK_FIELD_TOGGLES,
+  TaskStatus,
+} from "@/lib/types";
 
 /**
  * The project card: everything about one project in one place — its details,
@@ -54,8 +60,12 @@ export function ProjectOverview({
 
   const [editing, setEditing] = useState(false);
 
-  // Dates aren't stored on the project — the work defines them, so the span of
-  // its tasks is the project's span.
+  /**
+   * When the project runs. A project can say so itself — which is what a team
+   * that doesn't plan in sprints needs — and otherwise the work says it: the
+   * earliest task to the latest. Either end can be stated on its own, so a
+   * project with a deadline and no start still gets the deadline it typed.
+   */
   const span = useMemo(() => {
     let start: Date | null = null;
     let end: Date | null = null;
@@ -65,8 +75,21 @@ export function ProjectOverview({
       if (!start || s < start) start = s;
       if (!end || e > end) end = e;
     }
-    return start && end ? { start, end, days: diffDays(start, end) + 1 } : null;
-  }, [tasks]);
+    const statedStart = activeProject?.startDate
+      ? new Date(activeProject.startDate)
+      : null;
+    const statedEnd = activeProject?.endDate
+      ? new Date(activeProject.endDate)
+      : null;
+    start = statedStart ?? start;
+    end = statedEnd ?? end;
+    return {
+      start,
+      end,
+      stated: { start: statedStart != null, end: statedEnd != null },
+      days: start && end ? diffDays(start, end) + 1 : null,
+    };
+  }, [tasks, activeProject]);
 
   /**
    * Who is on this project: everyone given a role on it, plus anyone carrying
@@ -191,17 +214,19 @@ export function ProjectOverview({
                 : undefined
             }
           />
-          <Metric
-            label="Sprints"
-            value={projectLoading ? null : String(sprints.length)}
-            hint={
-              sprint
-                ? `Sprint ${sprint.number} on show`
-                : sprints.length > 0
-                  ? "All archived"
-                  : "None planned"
-            }
-          />
+          {activeProject.hasSprints && (
+            <Metric
+              label="Sprints"
+              value={projectLoading ? null : String(sprints.length)}
+              hint={
+                sprint
+                  ? `Sprint ${sprint.number} on show`
+                  : sprints.length > 0
+                    ? "All archived"
+                    : "None planned"
+              }
+            />
+          )}
           <Metric
             label="Tasks"
             value={projectLoading ? null : String(stats.total)}
@@ -211,19 +236,17 @@ export function ProjectOverview({
           />
           <Metric
             label="Start date"
-            value={projectLoading ? null : span ? formatDay(span.start) : "—"}
-            hint="Earliest task"
+            value={projectLoading ? null : span.start ? formatDay(span.start) : "—"}
+            hint={span.stated.start ? "Set for the project" : "Earliest task"}
           />
           <Metric
             label="End date"
-            value={projectLoading ? null : span ? formatDay(span.end) : "—"}
-            hint="Latest task"
+            value={projectLoading ? null : span.end ? formatDay(span.end) : "—"}
+            hint={span.stated.end ? "Set for the project" : "Latest task"}
           />
           <Metric
             label="Duration"
-            value={
-              projectLoading ? null : span ? `${span.days} days` : "—"
-            }
+            value={projectLoading ? null : span.days ? `${span.days} days` : "—"}
             hint="Start to end"
           />
         </section>
@@ -257,14 +280,16 @@ export function ProjectOverview({
           </section>
         )}
 
-        <SprintsSection
-          sprints={sprints}
-          tasks={tasks}
-          canEdit={canEdit}
-          onCreate={createSprint}
-          onUpdate={updateSprint}
-          onDelete={deleteSprint}
-        />
+        {activeProject.hasSprints && (
+          <SprintsSection
+            sprints={sprints}
+            tasks={tasks}
+            canEdit={canEdit}
+            onCreate={createSprint}
+            onUpdate={updateSprint}
+            onDelete={deleteSprint}
+          />
+        )}
 
         <PeopleSection
           project={activeProject}
@@ -284,7 +309,7 @@ export function ProjectOverview({
           }
         />
 
-        {canEdit ? (
+        {canEdit && activeProject.hasRoles ? (
           <RolesSection
             project={activeProject}
             onAdd={(name) => createRole(activeProject.id, name)}
@@ -345,12 +370,27 @@ function Metric({
   );
 }
 
+/** Everything the settings form writes: the project's shape, in one payload. */
 interface DetailsValues {
   name: string;
   description: string;
   hasTimeline: boolean;
   hasTracker: boolean;
   hasWiki: boolean;
+  hasSprints: boolean;
+  hasRoles: boolean;
+  startDate: string | null;
+  endDate: string | null;
+  taskHasPriority: boolean;
+  taskHasLink: boolean;
+  taskHasDates: boolean;
+  taskHasHistory: boolean;
+  taskHasComments: boolean;
+}
+
+/** A stored date as a date input wants it, or empty when there isn't one. */
+function dateValue(iso: string | null) {
+  return iso ? toISODate(new Date(iso)) : "";
 }
 
 function DetailsForm({
@@ -358,7 +398,7 @@ function DetailsForm({
   onCancel,
   onSave,
 }: {
-  project: Omit<DetailsValues, "description"> & { description: string | null };
+  project: Project;
   onCancel: () => void;
   onSave: (values: DetailsValues) => Promise<void>;
 }) {
@@ -367,11 +407,28 @@ function DetailsForm({
   const [hasTimeline, setHasTimeline] = useState(project.hasTimeline);
   const [hasTracker, setHasTracker] = useState(project.hasTracker);
   const [hasWiki, setHasWiki] = useState(project.hasWiki);
+  const [hasSprints, setHasSprints] = useState(project.hasSprints);
+  const [hasRoles, setHasRoles] = useState(project.hasRoles);
+  const [startDate, setStartDate] = useState(dateValue(project.startDate));
+  const [endDate, setEndDate] = useState(dateValue(project.endDate));
+
+  // The five optional halves of a task, held as one object rather than five
+  // pieces of state: the form draws them from a list, and so should its answers.
+  const [fields, setFields] = useState(() => ({
+    taskHasPriority: project.taskHasPriority,
+    taskHasLink: project.taskHasLink,
+    taskHasDates: project.taskHasDates,
+    taskHasHistory: project.taskHasHistory,
+    taskHasComments: project.taskHasComments,
+  }));
+
   const [pending, setPending] = useState(false);
+
+  const backwards = Boolean(startDate && endDate && endDate < startDate);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || backwards) return;
     setPending(true);
     await onSave({
       name: name.trim(),
@@ -379,6 +436,13 @@ function DetailsForm({
       hasTimeline,
       hasTracker,
       hasWiki,
+      hasSprints,
+      hasRoles,
+      // Emptying a field clears the stored date rather than leaving the old one
+      // behind — an empty box has to mean what it looks like it means.
+      startDate: startDate || null,
+      endDate: endDate || null,
+      ...fields,
     });
     setPending(false);
   }
@@ -403,13 +467,41 @@ function DetailsForm({
         />
       </Field>
 
-      <fieldset className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-col gap-3.5 sm:flex-row">
+        <Field label="Start date" className="flex-1">
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="input"
+          />
+        </Field>
+        <Field label="End date" className="flex-1">
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="input"
+          />
+        </Field>
+      </div>
+      <p className="-mt-1.5 text-[0.6875rem] text-[var(--ink-muted)]">
+        {backwards ? (
+          <span className="text-[var(--danger)]">
+            The project can’t end before it starts.
+          </span>
+        ) : (
+          "Leave these empty to let the work say when the project runs — the earliest task to the latest."
+        )}
+      </p>
+
+      <fieldset className="grid gap-2 sm:grid-cols-2">
         <legend className="field-label mb-1.5">What do you need?</legend>
         <ToolCheckbox
           checked={hasTimeline}
           onChange={setHasTimeline}
           label="Gantt chart"
-          hint="Timeline with sprint dates"
+          hint="Timeline of the work, with its dependencies"
         />
         <ToolCheckbox
           checked={hasTracker}
@@ -418,15 +510,49 @@ function DetailsForm({
           hint="Kanban board by status"
         />
         <ToolCheckbox
+          checked={hasSprints}
+          onChange={setHasSprints}
+          label="Sprints"
+          hint="Plan the work in rounds. Off, the boards show it all at once"
+        />
+        <ToolCheckbox
           checked={hasWiki}
           onChange={setHasWiki}
           label="Wiki"
           hint="Pages the project writes down for itself"
         />
+        <ToolCheckbox
+          checked={hasRoles}
+          onChange={setHasRoles}
+          label="Roles"
+          hint="Decide what each group may open. Off, the project is yours alone"
+        />
       </fieldset>
       <p className="text-[0.6875rem] text-[var(--ink-muted)]">
         The team roster isn’t a tool to switch off — every project has people.
-        Which roles may open it is in the table below.
+        Sprints and roles already made are kept when their tool is switched off,
+        and are waiting where they were if it comes back.
+      </p>
+
+      {/* The point of the whole screen: a form should ask what this team
+          actually fills in, and nothing else. */}
+      <fieldset className="grid gap-2 sm:grid-cols-2">
+        <legend className="field-label mb-1.5">What a task asks for</legend>
+        {TASK_FIELD_TOGGLES.map((toggle) => (
+          <ToolCheckbox
+            key={toggle.key}
+            checked={fields[toggle.key]}
+            onChange={(v) => setFields((prev) => ({ ...prev, [toggle.key]: v }))}
+            label={toggle.label}
+            hint={toggle.hint}
+          />
+        ))}
+      </fieldset>
+      <p className="text-[0.6875rem] text-[var(--ink-muted)]">
+        A field put away stops being asked about — on the form, on the card, and
+        on the boards. Nothing already written is lost: turn it back on and it is
+        all still there. Tasks keep their dates whatever this says, because the
+        timeline is drawn from them.
       </p>
 
       <div className="flex items-center justify-end gap-2">
@@ -436,7 +562,7 @@ function DetailsForm({
         <button
           type="submit"
           className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={pending || !name.trim()}
+          disabled={pending || !name.trim() || backwards}
         >
           {pending ? "Saving…" : "Save changes"}
         </button>

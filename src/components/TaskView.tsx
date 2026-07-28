@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { formatRange } from "@/lib/dates";
 import { isHttpUrl } from "@/lib/sanitize";
-import { Task, priorityMeta, statusMeta } from "@/lib/types";
+import { ALL_TASK_FIELDS, Task, TaskFields, priorityMeta, statusMeta } from "@/lib/types";
 import { Modal, PriorityMark } from "@/components/ui";
 import { TaskHistory } from "@/components/TaskHistory";
 import { TaskComments } from "@/components/TaskComments";
@@ -26,6 +26,7 @@ export function TaskView({
   subtasks,
   projectTasks,
   canEdit,
+  fields = ALL_TASK_FIELDS,
   onEdit,
   onClose,
 }: {
@@ -36,6 +37,8 @@ export function TaskView({
   projectTasks: Task[];
   /** Whether this viewer's role lets them change the work at all. */
   canEdit: boolean;
+  /** Which of a task's fields this project asks about — the rest aren't drawn. */
+  fields?: TaskFields;
   onEdit: () => void;
   onClose: () => void;
 }) {
@@ -63,9 +66,11 @@ export function TaskView({
           <div className="flex min-w-0 flex-col gap-4">
             <div className="flex flex-col gap-2">
               <h2 className="flex items-start gap-2 text-[1.0625rem] font-medium leading-snug">
-                <span className="mt-1 shrink-0">
-                  <PriorityMark priority={task.priority} />
-                </span>
+                {fields.priority && (
+                  <span className="mt-1 shrink-0">
+                    <PriorityMark priority={task.priority} />
+                  </span>
+                )}
                 <span className="min-w-0 break-words">{task.title}</span>
               </h2>
 
@@ -85,12 +90,16 @@ export function TaskView({
                   />
                   {status.label}
                 </span>
-                <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[var(--ink-secondary)]">
-                  {priority.label} priority
-                </span>
-                <span className="tabular-nums text-[var(--ink-muted)]">
-                  {formatRange(task.startDate, task.endDate)}
-                </span>
+                {fields.priority && (
+                  <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[var(--ink-secondary)]">
+                    {priority.label} priority
+                  </span>
+                )}
+                {fields.dates && (
+                  <span className="tabular-nums text-[var(--ink-muted)]">
+                    {formatRange(task.startDate, task.endDate)}
+                  </span>
+                )}
                 <span className="text-[var(--ink-muted)]">
                   ·{" "}
                   {task.developer ? (
@@ -116,7 +125,7 @@ export function TaskView({
               )}
             </Block>
 
-            {link && (
+            {fields.link && link && (
               <Block label="Link">
                 <a
                   href={link}
@@ -205,9 +214,9 @@ export function TaskView({
               </Block>
             )}
 
-            <TaskHistory taskId={task.id} />
+            {fields.history && <TaskHistory taskId={task.id} />}
             {/* Open to anybody who got this far: reading a board is enough. */}
-            <TaskComments taskId={task.id} />
+            {fields.comments && <TaskComments taskId={task.id} />}
           </div>
         </div>
 

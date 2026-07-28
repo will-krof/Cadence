@@ -16,8 +16,10 @@ import {
   STATUS_OPTIONS,
   Task,
   TaskRow,
+  TaskFields,
   TaskStatus,
   statusMeta,
+  taskFields,
 } from "@/lib/types";
 import { analyseNetwork, Link } from "@/lib/critical-path";
 import { useBoard } from "@/components/BoardProvider";
@@ -116,6 +118,7 @@ const COL_WIDTHS_COMPACT: ColWidths = { task: 132, status: 104, developer: 96 };
 
 export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
   const {
+    activeProject,
     tasks,
     assignable: developers,
     sprints,
@@ -130,6 +133,10 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
 
   const [hiddenStatuses] = useHiddenStatuses();
   const [folded, setFolded] = useFoldedSteps();
+
+  // Which of a task's fields this project asks about, read once for the whole
+  // board rather than per row.
+  const fields = useMemo(() => taskFields(activeProject), [activeProject]);
 
   // How far along each task's steps are, counted once for the whole board
   // rather than per row: a row only needs its own pair of numbers.
@@ -741,13 +748,17 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
         </div>
 
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-          <SprintPicker
-            sprints={sprints}
-            sprint={sprint}
-            sprintId={sprintId}
-            hasUnplanned={hasUnplanned}
-            onSelect={selectSprint}
-          />
+          {/* Only where the work is planned in rounds. Off, the chart is the
+              project's whole plan and there is nothing to choose between. */}
+          {activeProject?.hasSprints !== false && (
+            <SprintPicker
+              sprints={sprints}
+              sprint={sprint}
+              sprintId={sprintId}
+              hasUnplanned={hasUnplanned}
+              onSelect={selectSprint}
+            />
+          )}
           <label className="flex cursor-pointer select-none items-center gap-2 pb-2 text-xs text-[var(--ink-secondary)]">
             <input
               type="checkbox"
@@ -839,6 +850,7 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
               hiddenStatuses={hiddenStatuses}
               developers={developers}
               gridTemplateColumns={gridTemplateColumns}
+              fields={fields}
               onOpen={openTask}
               onEdit={editTask}
               onChange={updateTask}
@@ -1099,6 +1111,7 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
         <TaskEditModal
           task={openedTask}
           canEdit={canEdit}
+          fields={fields}
           editing={opened.editing}
           onClose={() => setOpened(null)}
         />
@@ -1119,6 +1132,7 @@ const TableRow = memo(function TableRow({
   hiddenStatuses,
   developers,
   gridTemplateColumns,
+  fields,
   onOpen,
   onEdit,
   onChange,
@@ -1140,6 +1154,8 @@ const TableRow = memo(function TableRow({
   hiddenStatuses: TaskStatus[];
   developers: Developer[];
   gridTemplateColumns: string;
+  /** What this project asks a task for; a field put away is not drawn. */
+  fields: TaskFields;
   /** Reading the task: what clicking it anywhere but the pencil asks for. */
   onOpen: (id: string) => void;
   /** Changing it: the pencil, which only a role that may is shown. */
@@ -1237,7 +1253,7 @@ const TableRow = memo(function TableRow({
         )}
         {/* Not a kind of status, so it sits beside the title rather than in
             the status column: this says which of two waiting tasks goes first. */}
-        <PriorityMark priority={task.priority} />
+        {fields.priority && <PriorityMark priority={task.priority} />}
         {/* The title opens the task, whether or not it carries a link —
             clicking a task should mean one thing. Where there is a link, it
             keeps its own mark beside the title rather than swallowing it. */}
@@ -1249,7 +1265,7 @@ const TableRow = memo(function TableRow({
         >
           {task.title}
         </button>
-        {link && (
+        {fields.link && link && (
           <a
             href={link}
             target="_blank"

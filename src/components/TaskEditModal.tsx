@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { TaskModal } from "@/components/TaskModal";
 import { TaskView } from "@/components/TaskView";
 import { useBoard } from "@/components/BoardProvider";
-import { Task } from "@/lib/types";
+import { ALL_TASK_FIELDS, Task, TaskFields } from "@/lib/types";
 
 /**
  * One open task, read or edited. Both boards open the same thing from the same
@@ -19,12 +19,15 @@ import { Task } from "@/lib/types";
 export function TaskEditModal({
   task,
   canEdit,
+  fields = ALL_TASK_FIELDS,
   editing: startEditing = false,
   onClose,
 }: {
   task: Task;
   /** Whether this viewer's role lets them change the work at all. */
   canEdit: boolean;
+  /** Which of a task's fields this project asks about. */
+  fields?: TaskFields;
   /** Open straight into the form, rather than the card. */
   editing?: boolean;
   onClose: () => void;
@@ -56,6 +59,7 @@ export function TaskEditModal({
         subtasks={subtasks}
         projectTasks={projectTasks}
         canEdit={canEdit}
+        fields={fields}
         onEdit={() => setEditing(true)}
         onClose={onClose}
       />
@@ -71,6 +75,7 @@ export function TaskEditModal({
       // one row.
       projectTasks={projectTasks}
       developers={assignable}
+      fields={fields}
       onClose={onClose}
       onSubmit={async (values) => {
         await updateTask(task.id, values);

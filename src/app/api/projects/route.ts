@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { projectScope, requireUser } from "@/lib/api-auth";
 import { requireViewer } from "@/lib/viewer";
 import { PROJECT_FIELDS } from "@/lib/project-select";
+import { parseFlags, parseSpan } from "@/lib/project-input";
 import { boundedText, LIMITS } from "@/lib/sanitize";
 import { badRequest } from "@/lib/responses";
 import { jsonResponse } from "@/lib/json-response";
@@ -34,12 +35,15 @@ export async function POST(request: NextRequest) {
   const name = named.value;
   if (!name) return badRequest("Name is required");
 
-  // Boards and the wiki are the project's to switch off. Its people are not:
-  // every project has a team, so a project with no tool at all is still a
-  // project somebody can open.
-  const hasTimeline = body.hasTimeline !== false;
-  const hasTracker = body.hasTracker !== false;
-  const hasWiki = body.hasWiki !== false;
+  // The tools and the task fields are the project's to switch off. Its people
+  // are not: every project has a team, so a project with no tool at all is
+  // still a project somebody can open.
+  const flags = parseFlags(body, { fillIn: true });
+
+  // A project can say when it runs rather than leaving it to its tasks — which
+  // is what a team that doesn't plan in sprints needs.
+  const span = parseSpan(body);
+  if ("error" in span) return badRequest(span.error);
 
   // Every project starts with the two roles most teams need; developers get
   // the boards but not the roster until an admin says otherwise.
@@ -47,9 +51,8 @@ export async function POST(request: NextRequest) {
     data: {
       name,
       description: described.value,
-      hasTimeline,
-      hasTracker,
-      hasWiki,
+      ...flags,
+      ...span.data,
       userId: user.id,
       roles: {
         create: [

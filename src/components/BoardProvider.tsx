@@ -65,6 +65,16 @@ interface ProjectInput {
   hasTimeline: boolean;
   hasTracker: boolean;
   hasWiki: boolean;
+  hasSprints: boolean;
+  hasRoles: boolean;
+  /** Stated by hand, or empty to leave the span to the work. */
+  startDate?: string | null;
+  endDate?: string | null;
+  taskHasPriority?: boolean;
+  taskHasLink?: boolean;
+  taskHasDates?: boolean;
+  taskHasHistory?: boolean;
+  taskHasComments?: boolean;
   /** Put away, or brought back. */
   archived?: boolean;
 }
@@ -183,6 +193,11 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   // Which sprint's board is on show. Null means "work it out from the dates".
   const [sprintId, setSprintId] = useState<string | null>(null);
 
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === activeId) ?? null,
+    [projects, activeId]
+  );
+
   const rows = loaded.projectId === activeId ? loaded.tasks : EMPTY_ROWS;
   const sprints = loaded.projectId === activeId ? loaded.sprints : EMPTY_SPRINTS;
 
@@ -209,8 +224,22 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     return current ?? live[live.length - 1];
   }, [sprintId, sprints]);
 
-  /** What the boards show: one sprint's worth of work. */
-  const boardSprintId = sprintId === UNPLANNED ? null : sprint?.id ?? null;
+  /**
+   * Whether this project plans in rounds at all. With sprints switched off the
+   * boards stop being one sprint's worth of work and become the whole plan —
+   * nothing is hidden behind a round nobody is keeping.
+   */
+  const planned = activeProject?.hasSprints !== false;
+
+  /** What the boards show: one sprint's worth of work, when there are sprints. */
+  // With sprints switched off there is no round to file a new task into, so it
+  // is filed into none — and finds its way into whatever the team plans if the
+  // tool ever comes back.
+  const boardSprintId = !planned
+    ? null
+    : sprintId === UNPLANNED
+      ? null
+      : sprint?.id ?? null;
   // Read when a task is created, so the callback stays stable.
   const boardSprintIdRef = useRef(boardSprintId);
   useEffect(() => {
@@ -221,8 +250,11 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     // Sorted here rather than trusted from the server: dragging a row rewrites
     // the order in place, and the list has to move with it before the write
     // comes back.
-    const mine = rows
-      .filter((row) => (row.sprintId ?? null) === boardSprintId)
+    const mine = (
+      planned
+        ? rows.filter((row) => (row.sprintId ?? null) === boardSprintId)
+        : rows.slice()
+    )
       .slice()
       .sort((a, b) => a.order - b.order);
     // Steps read under the task they belong to. A subtask whose parent is on
@@ -241,7 +273,7 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       out.push(row, ...(steps.get(row.id) ?? []));
     }
     return out;
-  }, [rows, boardSprintId]);
+  }, [rows, boardSprintId, planned]);
 
   // The server sends an assignee id; boards want the person. Joining here means
   // one pass when either side changes, instead of a copy of every profile
@@ -356,11 +388,6 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, [activeId, notify]);
-
-  const activeProject = useMemo(
-    () => projects.find((p) => p.id === activeId) ?? null,
-    [projects, activeId]
-  );
 
   const selectProject = useCallback((id: string) => setActiveId(id), []);
 
