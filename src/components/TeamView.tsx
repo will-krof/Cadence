@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
-import { Avatar } from "@/components/ui";
+import { Avatar, CloseIcon } from "@/components/ui";
 import { useFeedback } from "@/components/Feedback";
 import { ProfileCard } from "@/components/team/ProfileCard";
 import { ProfileForm } from "@/components/team/ProfileForm";
@@ -53,6 +53,7 @@ export function TeamView({
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [query, setQuery] = useState("");
 
   // The projects this roster is read through: every project for the owner, and
   // for anyone else only the ones they were let in by.
@@ -124,8 +125,26 @@ export function TeamView({
     return counts;
   }, [memberships, scope]);
 
-  const active = useMemo(() => roster.filter((d) => d.active), [roster]);
-  const archived = useMemo(() => roster.filter((d) => !d.active), [roster]);
+  /**
+   * What somebody typed, against the three things they would type it for: a
+   * name, what that person does, and how to reach them. A roster is a list of
+   * people you already know — you search it for the one you have in mind, not
+   * to discover anybody — so it matches anywhere in the words rather than only
+   * at their start.
+   */
+  const found = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return roster;
+    return roster.filter((d) =>
+      [d.name, d.role, d.email].some((field) =>
+        field?.toLowerCase().includes(needle)
+      )
+    );
+  }, [roster, query]);
+
+  const active = useMemo(() => found.filter((d) => d.active), [found]);
+  const archived = useMemo(() => found.filter((d) => !d.active), [found]);
+  const searching = query.trim().length > 0;
 
   // Two ways to write a profile: the owner's, which is all of it, and a role's,
   // which is the half a colleague can be trusted with.
@@ -160,10 +179,10 @@ export function TeamView({
         }`}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-[0.8125rem] font-semibold tracking-tight">
+          <h2 className="t-heading">
             Team
             <span className="ml-2 font-normal text-[var(--ink-muted)]">
-              {active.length}
+              {roster.filter((d) => d.active).length}
             </span>
           </h2>
           {canEdit && (
@@ -180,11 +199,52 @@ export function TeamView({
           )}
         </div>
 
+        {/* Offered as soon as there is more than one person to tell apart. A
+            control that appears at some size and not another is a rule the
+            reader has to learn before they can rely on it. */}
+        {roster.length > 1 && (
+          <div className="relative flex items-center">
+            <span
+              className="pointer-events-none absolute left-2.5 text-[var(--ink-muted)]"
+              aria-hidden="true"
+            >
+              <SearchIcon />
+            </span>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setQuery("");
+              }}
+              type="search"
+              className="input pl-8"
+              placeholder="Search by name, role or email"
+              aria-label="Search the team"
+            />
+            {searching && (
+              <button
+                onClick={() => setQuery("")}
+                className="absolute right-2 rounded p-1 text-[var(--ink-muted)] transition hover:text-[var(--ink)]"
+                aria-label="Clear the search"
+                title="Clear"
+              >
+                <CloseIcon />
+              </button>
+            )}
+          </div>
+        )}
+
         {roster.length === 0 && (
-          <p className="text-[0.8125rem] text-[var(--ink-muted)]">
+          <p className="t-body text-[var(--ink-muted)]">
             {scope === null
               ? "No one on the team yet."
               : "No one on your projects yet."}
+          </p>
+        )}
+
+        {roster.length > 0 && found.length === 0 && (
+          <p className="t-body text-[var(--ink-muted)]">
+            Nobody matches “{query.trim()}”.
           </p>
         )}
 
@@ -204,7 +264,9 @@ export function TeamView({
           <FoldedPeople
             label="Archived"
             people={archived}
-            open={showArchived}
+            // A search that found somebody archived has to show them, or the
+            // list would answer "nothing" while holding a match.
+            open={showArchived || searching}
             onToggle={() => setShowArchived((v) => !v)}
             projectCounts={projectCounts}
             selectedId={selectedId}
@@ -261,7 +323,7 @@ export function TeamView({
             canEditProfile={mayWrite}
           />
         ) : (
-          <p className="text-[0.8125rem] text-[var(--ink-muted)]">
+          <p className="t-body text-[var(--ink-muted)]">
             {canEdit
               ? "Select someone to see their profile, or add a new person."
               : "Select someone to see their profile."}
@@ -315,9 +377,7 @@ function FoldedPeople({
           />
         </svg>
         <span className="field-label">{label}</span>
-        <span className="text-[0.6875rem] text-[var(--ink-muted)]">
-          {people.length}
-        </span>
+        <span className="t-micro">{people.length}</span>
       </button>
       {open &&
         people.map((d) => (
@@ -356,25 +416,36 @@ function PersonRow({
       <Avatar person={person} size={36} />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
-          <span className="truncate text-[0.8125rem] font-medium">
-            {person.name}
-          </span>
-          {!person.active && (
-            <span className="shrink-0 rounded-full bg-[var(--gridline)] px-1.5 py-0.5 text-[0.5625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
-              Archived
-            </span>
-          )}
+          <span className="t-body truncate font-medium">{person.name}</span>
+          {!person.active && <span className="chip shrink-0">Archived</span>}
         </span>
-        <span className="block truncate text-[0.75rem] text-[var(--ink-muted)]">
-          {person.role || person.email || "—"}
+        {/* What they do and how many projects they are on, on one line: two
+            stacked whispers under every name was most of the noise here. */}
+        <span className="t-small block truncate text-[var(--ink-muted)]">
+          {[
+            person.role || person.email,
+            projectCount > 0
+              ? `${projectCount} project${projectCount === 1 ? "" : "s"}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "—"}
         </span>
-        {projectCount > 0 && (
-          <span className="block text-[0.6875rem] text-[var(--ink-muted)]">
-            {projectCount} project{projectCount === 1 ? "" : "s"}
-          </span>
-        )}
       </span>
     </button>
   );
 }
 
+function SearchIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <circle cx="6.2" cy="6.2" r="4.2" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M9.4 9.4L12 12"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

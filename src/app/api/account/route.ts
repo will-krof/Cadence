@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireViewer } from "@/lib/viewer";
-import { badRequest, conflict, notFound } from "@/lib/responses";
+import { badRequest, conflict, done, notFound } from "@/lib/responses";
 import {
+  destroySession,
   hashPassword,
   isValidEmail,
   normalizeEmail,
@@ -169,4 +170,65 @@ export async function PATCH(request: NextRequest) {
     role: null,
     places: [],
   });
+}
+
+/**
+ * Closing your own account, which means two different things.
+ *
+ * For the account that owns a workspace it is the whole workspace: its
+ * projects, its tasks, its roster and every invite in it, because all of that
+ * hangs off the one row and nothing of it outlives its owner. For a team
+ * member it is their way in — their username, their password, their open
+ * sessions — and not their profile, which belongs to the workspace that wrote
+ * it. Somebody leaving a company doesn't get to erase the record of their work
+ * on the way out, and the admin can delete the person properly from the roster.
+ *
+ * Both are asked for the current password. A session left open on a shared
+ * machine is not permission to end somebody's workspace.
+ */
+export async function DELETE(request: NextRequest) {
+  const { viewer, response } = await requireViewer();
+  if (response) return response;
+
+  const body = await request.json().catch(() => ({}));
+  const password = typeof body.password === "string" ? body.password : "";
+
+  const stored =
+    viewer.kind === "owner"
+      ? (
+          await prisma.user.findUnique({
+            where: { id: viewer.user.id },
+            select: { passwordHash: true },
+          })
+        )?.passwordHash
+      : (
+          await prisma.developer.findUnique({
+            where: { id: viewer.developerId },
+            select: { passwordHash: true },
+          })
+        )?.passwordHash;
+
+  if (!stored || !(await verifyPassword(password, stored))) {
+    return badRequest("That isn’t your password");
+  }
+
+  if (viewer.kind === "owner") {
+    // Everything in the workspace hangs off this row by a cascade, so deleting
+    // it is the whole thing going at once rather than a sweep that could stop
+    // halfway and leave a half-erased workspace behind.
+    await prisma.user.delete({ where: { id: viewer.user.id } });
+  } else {
+    await prisma.$transaction([
+      prisma.developerSession.deleteMany({
+        where: { developerId: viewer.developerId },
+      }),
+      prisma.developer.update({
+        where: { id: viewer.developerId },
+        data: { username: null, passwordHash: null },
+      }),
+    ]);
+  }
+
+  await destroySession();
+  return done();
 }

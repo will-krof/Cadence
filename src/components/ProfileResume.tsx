@@ -320,7 +320,7 @@ function Muted({
   return (
     <p
       className={`text-[0.8125rem] ${
-        tone === "error" ? "text-[#d03b3b]" : "text-[var(--ink-muted)]"
+        tone === "error" ? "text-[var(--danger)]" : "text-[var(--ink-muted)]"
       }`}
     >
       {children}

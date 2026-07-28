@@ -313,7 +313,7 @@ export function ProjectOverview({
             >
               {activeProject.archived ? "Restore project" : "Archive project"}
             </button>
-            <button onClick={remove} className="btn-secondary !text-[#d03b3b]">
+            <button onClick={remove} className="btn-secondary !text-[var(--danger)]">
               Delete project
             </button>
           </div>

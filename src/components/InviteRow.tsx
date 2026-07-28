@@ -143,7 +143,7 @@ export function InviteRow({
           <button
             onClick={revoke}
             disabled={pending !== null}
-            className="btn-secondary !px-2 !py-1 !text-[#d03b3b] disabled:opacity-50"
+            className="btn-secondary !px-2 !py-1 !text-[var(--danger)] disabled:opacity-50"
           >
             {pending === "revoke" ? "Working…" : "Switch off"}
           </button>

@@ -166,7 +166,7 @@ export function PeopleSection({
                   {canEdit && (
                     <button
                       onClick={() => remove(person)}
-                      className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
+                      className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[var(--danger)]"
                       aria-label={`Take ${person.name} off this project`}
                       title="Take off project"
                     >

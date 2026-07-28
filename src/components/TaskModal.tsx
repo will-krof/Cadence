@@ -368,7 +368,7 @@ export function TaskModal({
                     <button
                       type="button"
                       onClick={() => onDeleteSubtask?.(step.id)}
-                      className="shrink-0 rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
+                      className="shrink-0 rounded p-1 text-[var(--ink-muted)] transition hover:text-[var(--danger)]"
                       aria-label={`Delete ${step.title}`}
                       title="Delete this subtask"
                     >
@@ -412,7 +412,7 @@ export function TaskModal({
                       onClick={() =>
                         setStaged((prev) => prev.filter((_, n) => n !== i))
                       }
-                      className="shrink-0 rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
+                      className="shrink-0 rounded p-1 text-[var(--ink-muted)] transition hover:text-[var(--danger)]"
                       aria-label={`Remove ${step.title}`}
                     >
                       <CloseIcon />
@@ -476,7 +476,7 @@ export function TaskModal({
             <button
               type="button"
               onClick={onDelete}
-              className="btn-secondary mr-auto !text-[#d03b3b]"
+              className="btn-secondary mr-auto !text-[var(--danger)]"
             >
               Delete
             </button>
@@ -564,7 +564,7 @@ function Dependencies({
               {blocker && (
                 <span
                   className={`text-[0.6875rem] tabular-nums ${
-                    late ? "text-[#d03b3b]" : "text-[var(--ink-muted)]"
+                    late ? "text-[var(--danger)]" : "text-[var(--ink-muted)]"
                   }`}
                 >
                   {late
@@ -576,7 +576,7 @@ function Dependencies({
             <button
               type="button"
               onClick={() => onRemove(id)}
-              className="shrink-0 rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
+              className="shrink-0 rounded p-1 text-[var(--ink-muted)] transition hover:text-[var(--danger)]"
               aria-label={`Stop waiting on ${blocker?.title ?? "this task"}`}
               title="Remove this dependency"
             >

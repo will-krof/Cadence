@@ -137,7 +137,7 @@ export function RolesSection({
                   {!role.isAdmin && (
                     <button
                       onClick={() => remove(role)}
-                      className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
+                      className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[var(--danger)]"
                       aria-label={`Remove the ${role.name} role`}
                       title="Remove role"
                     >

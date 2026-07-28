@@ -157,7 +157,7 @@ export function PageForm({
       )}
 
       {tooLong && (
-        <p className="text-[0.6875rem] text-[#d03b3b]">
+        <p className="text-[0.6875rem] text-[var(--danger)]">
           A page is {LIMITS.wiki.toLocaleString()} characters or fewer.
         </p>
       )}

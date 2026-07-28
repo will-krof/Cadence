@@ -174,7 +174,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       {error && (
         <p
           role="alert"
-          className="rounded-[var(--radius)] border border-[#d03b3b]/30 bg-[#d03b3b]/10 px-3 py-2 text-[0.75rem] text-[#d03b3b]"
+          className="rounded-[var(--radius)] border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-[0.75rem] text-[var(--danger)]"
         >
           {error}
         </p>
@@ -223,7 +223,7 @@ function FieldProblem({
 }) {
   if (!show || !children) return null;
   return (
-    <span role="alert" className="text-[0.6875rem] text-[#d03b3b]">
+    <span role="alert" className="text-[0.6875rem] text-[var(--danger)]">
       {children}
     </span>
   );

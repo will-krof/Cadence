@@ -251,7 +251,7 @@ function SprintRow({
           </button>
           <button
             onClick={onDelete}
-            className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[#d03b3b]"
+            className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[var(--danger)]"
             aria-label={`Delete sprint ${sprint.number}`}
             title="Delete sprint"
           >
@@ -337,7 +337,7 @@ function SprintForm({
         </button>
       </div>
       {endDate < startDate && (
-        <p className="w-full text-[0.6875rem] text-[#d03b3b]">
+        <p className="w-full text-[0.6875rem] text-[var(--danger)]">
           A sprint can’t end before it starts.
         </p>
       )}

@@ -59,7 +59,7 @@ const BAR_DRAG_THRESHOLD = 4;
  * is never the only thing saying so — critical bars carry a mark, and a broken
  * link is drawn dashed as well as red.
  */
-const CRITICAL = "#d03b3b";
+const CRITICAL = "var(--danger)";
 /** How far a dependency line stands off the bar it leaves and the one it enters. */
 const LINK_STUB = 9;
 

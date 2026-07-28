@@ -115,7 +115,7 @@ export function ProfileCard({
             <button onClick={onToggleArchive} className="btn-secondary">
               {person.active ? "Archive" : "Restore to team"}
             </button>
-            <button onClick={onDelete} className="btn-secondary !text-[#d03b3b]">
+            <button onClick={onDelete} className="btn-secondary !text-[var(--danger)]">
               Delete permanently
             </button>
           </div>

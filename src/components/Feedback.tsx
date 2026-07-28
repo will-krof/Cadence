@@ -153,7 +153,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
                 className="btn-primary"
                 style={
                   pending.destructive
-                    ? { background: "#d03b3b", borderColor: "#d03b3b" }
+                    ? { background: "var(--danger)", borderColor: "var(--danger)" }
                     : undefined
                 }
               >
@@ -169,7 +169,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
 
 function toneBorder(kind: ToastKind) {
   if (kind === "success") return "color-mix(in srgb, #0ca30c 45%, transparent)";
-  if (kind === "error") return "color-mix(in srgb, #d03b3b 45%, transparent)";
+  if (kind === "error") return "color-mix(in srgb, var(--danger) 45%, transparent)";
   return "var(--hairline)";
 }
 
@@ -192,7 +192,7 @@ function ToastIcon({ kind }: { kind: ToastKind }) {
   if (kind === "error") {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" className="mt-px shrink-0">
-        <circle cx="8" cy="8" r="7" fill="#d03b3b" />
+        <circle cx="8" cy="8" r="7" fill="var(--danger)" />
         <path
           d="M8 4.4v4.2M8 11.1v.5"
           stroke="#fff"

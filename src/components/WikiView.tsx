@@ -326,7 +326,7 @@ export function WikiView({
                 <div className="flex gap-2">
                   <button
                     onClick={() => removePage(selected)}
-                    className="btn-secondary !text-[#d03b3b]"
+                    className="btn-secondary !text-[var(--danger)]"
                   >
                     Delete
                   </button>

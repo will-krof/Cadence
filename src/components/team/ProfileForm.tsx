@@ -366,7 +366,7 @@ export function ProfileForm({
       {error && (
         <p
           role="alert"
-          className="rounded-[var(--radius)] border border-[#d03b3b]/30 bg-[#d03b3b]/10 px-3 py-2 text-[0.75rem] text-[#d03b3b]"
+          className="rounded-[var(--radius)] border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-[0.75rem] text-[var(--danger)]"
         >
           {error}
         </p>
@@ -377,7 +377,7 @@ export function ProfileForm({
           <button
             type="button"
             onClick={onDelete}
-            className="btn-secondary mr-auto !text-[#d03b3b]"
+            className="btn-secondary mr-auto !text-[var(--danger)]"
           >
             Remove
           </button>
