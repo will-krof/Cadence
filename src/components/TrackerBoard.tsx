@@ -55,7 +55,11 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
     x: number;
     y: number;
   } | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  // The task on screen, and whether it was opened to be read or to be changed.
+  // A click on a card asks for the first; the pencil asks for the second.
+  const [opened, setOpened] = useState<{ id: string; editing: boolean } | null>(
+    null
+  );
   const [dropTarget, setDropTarget] = useState<TaskStatus | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -210,13 +214,20 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
     (id: string, developerId: string | null) => updateTask(id, { developerId }),
     [updateTask]
   );
-  const handleOpen = useCallback((id: string) => setEditingId(id), []);
+  const handleOpen = useCallback(
+    (id: string) => setOpened({ id, editing: false }),
+    []
+  );
+  const handleEdit = useCallback(
+    (id: string) => setOpened({ id, editing: true }),
+    []
+  );
 
   const draggedTask = dragging
     ? tasks.find((t) => t.id === dragging.taskId) ?? null
     : null;
 
-  const editingTask = tasks.find((t) => t.id === editingId) ?? null;
+  const openedTask = tasks.find((t) => t.id === opened?.id) ?? null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -333,6 +344,7 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
                     onStatusChange={handleStatus}
                     onAssign={handleAssign}
                     onOpen={handleOpen}
+                    onEdit={handleEdit}
                     developers={developers}
                   />
                 ))}
@@ -363,10 +375,12 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
         </div>
       )}
 
-      {editingTask && (
+      {openedTask && opened && (
         <TaskEditModal
-          task={editingTask}
-          onClose={() => setEditingId(null)}
+          task={openedTask}
+          canEdit={canEdit}
+          editing={opened.editing}
+          onClose={() => setOpened(null)}
         />
       )}
     </div>
@@ -425,6 +439,7 @@ const TaskCard = memo(function TaskCard({
   onStatusChange,
   onAssign,
   onOpen,
+  onEdit,
 }: {
   task: Task;
   /** How many of this task's steps are done, when it has any. */
@@ -440,16 +455,25 @@ const TaskCard = memo(function TaskCard({
   onDragStart: (state: DragState) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAssign: (id: string, developerId: string | null) => void;
+  /** Reading the task: what a click on the card asks for. */
   onOpen: (id: string) => void;
+  /** Changing it: the pencil, which only a role that may is shown. */
+  onEdit: (id: string) => void;
 }) {
   const start = formatDayShort(task.startDate);
   const end = formatDay(task.endDate);
+
+  // Where the press landed, so the click that follows can tell a click from the
+  // end of a drag. The board's own threshold decides whether the task moved;
+  // this one decides whether the card should open, and they have to agree.
+  const pressedAt = useRef<{ x: number; y: number } | null>(null);
 
   function handlePointerDown(e: React.PointerEvent<HTMLElement>) {
     // Let the selects, links and delete button behave normally.
     if ((e.target as HTMLElement).closest("select, button, a, input")) return;
     if (e.button !== 0 && e.pointerType === "mouse") return;
 
+    pressedAt.current = { x: e.clientX, y: e.clientY };
     const rect = e.currentTarget.getBoundingClientRect();
     onDragStart({
       taskId: task.id,
@@ -469,9 +493,25 @@ const TaskCard = memo(function TaskCard({
   // the row holds, and only http and https belong in one.
   const link = isHttpUrl(task.link) ? task.link : null;
 
+  /** A press that stayed put is a click: open the card, don't move the task. */
+  function handleClick(e: React.MouseEvent<HTMLElement>) {
+    const from = pressedAt.current;
+    pressedAt.current = null;
+    if ((e.target as HTMLElement).closest("select, button, a, input")) return;
+    if (
+      from &&
+      (Math.abs(e.clientX - from.x) > DRAG_THRESHOLD ||
+        Math.abs(e.clientY - from.y) > DRAG_THRESHOLD)
+    ) {
+      return;
+    }
+    onOpen(task.id);
+  }
+
   return (
     <article
       onPointerDown={handlePointerDown}
+      onClick={handleClick}
       // A column can hold hundreds of cards; this lets the browser skip
       // rendering the ones scrolled out of view, at their reserved height.
       style={{ contentVisibility: "auto", containIntrinsicSize: "auto 132px" }}
@@ -499,19 +539,22 @@ const TaskCard = memo(function TaskCard({
         <span className="mt-0.5">
           <PriorityMark priority={task.priority} />
         </span>
-        {link ? (
+        <h4 className="flex-1 text-[0.8125rem] font-medium leading-snug">
+          {task.title}
+        </h4>
+        {/* Clicking a card opens the task, whether or not it carries a link, so
+            the link keeps its own mark rather than swallowing the title. */}
+        {link && (
           <a
             href={link}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-1 text-[0.8125rem] font-medium leading-snug text-[var(--accent)] hover:underline"
+            className="mt-0.5 shrink-0 text-[0.8125rem] leading-none text-[var(--accent)] hover:underline"
+            title={link}
+            aria-label={`Open the link on ${task.title}`}
           >
-            {task.title}
+            ↗
           </a>
-        ) : (
-          <h4 className="flex-1 text-[0.8125rem] font-medium leading-snug">
-            {task.title}
-          </h4>
         )}
         {steps && (
           <span
@@ -521,21 +564,25 @@ const TaskCard = memo(function TaskCard({
             {steps.done}/{steps.total}
           </span>
         )}
-        <button
-          onClick={() => onOpen(task.id)}
-          className="mt-0.5 shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100"
-          aria-label={`Edit ${task.title}`}
-          title="Edit task"
-        >
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-            <path
-              d="M9.2 1.8l3 3L4.8 12.2 1.4 12.6l.4-3.4 7.4-7.4z"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        {/* Reading a task is a click on the card; the pencil is for changing
+            it, so only a role that may is offered one. */}
+        {canEdit && (
+          <button
+            onClick={() => onEdit(task.id)}
+            className="mt-0.5 shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100"
+            aria-label={`Edit ${task.title}`}
+            title="Edit task"
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M9.2 1.8l3 3L4.8 12.2 1.4 12.6l.4-3.4 7.4-7.4z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        )}
       </div>
 
       {task.description && (

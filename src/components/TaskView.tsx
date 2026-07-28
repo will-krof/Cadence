@@ -1,0 +1,249 @@
+"use client";
+
+import { useMemo } from "react";
+import { formatRange } from "@/lib/dates";
+import { isHttpUrl } from "@/lib/sanitize";
+import { Task, priorityMeta, statusMeta } from "@/lib/types";
+import { Modal, PriorityMark } from "@/components/ui";
+import { TaskHistory } from "@/components/TaskHistory";
+import { TaskComments } from "@/components/TaskComments";
+
+/**
+ * A task as a card: everything it says, and nothing to type in.
+ *
+ * Opening a task and changing one are two different intentions, and the form
+ * was answering both — which meant a role that may only watch a board was shown
+ * a screen of inputs whose every save would be refused, and a role that may
+ * change one had to read its own work through form fields. So a click opens
+ * this, and the pencil opens the form.
+ *
+ * Comments are the exception, and they sit here in full. Saying something about
+ * a task is not changing it: the card is where reading happens, so it is where
+ * the conversation belongs, whatever the reader's role lets them do next.
+ */
+export function TaskView({
+  task,
+  subtasks,
+  projectTasks,
+  canEdit,
+  onEdit,
+  onClose,
+}: {
+  task: Task;
+  /** The steps this task is made of. */
+  subtasks: Task[];
+  /** The plan around it, for naming what it waits on and what waits on it. */
+  projectTasks: Task[];
+  /** Whether this viewer's role lets them change the work at all. */
+  canEdit: boolean;
+  onEdit: () => void;
+  onClose: () => void;
+}) {
+  const byId = useMemo(
+    () => new Map(projectTasks.map((t) => [t.id, t])),
+    [projectTasks]
+  );
+  const blocking = useMemo(
+    () => projectTasks.filter((t) => t.blockedBy.includes(task.id)),
+    [projectTasks, task.id]
+  );
+
+  const status = statusMeta(task.status);
+  const priority = priorityMeta(task.priority);
+  const link = isHttpUrl(task.link) ? task.link : null;
+  const done = subtasks.filter((s) => s.status === "DONE").length;
+
+  return (
+    // The dialog is headed "Task", the way the form is headed "Edit task" — the
+    // title itself leads the card rather than being said twice.
+    <Modal wide onClose={onClose} title="Task">
+      <div className="flex flex-col gap-5">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:gap-7">
+          {/* The task itself. */}
+          <div className="flex min-w-0 flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <h2 className="flex items-start gap-2 text-[1.0625rem] font-medium leading-snug">
+                <span className="mt-1 shrink-0">
+                  <PriorityMark priority={task.priority} />
+                </span>
+                <span className="min-w-0 break-words">{task.title}</span>
+              </h2>
+
+              {/* What it is, in one line: where the work is, how much it wants
+                  doing first, when it runs, and whose it is. */}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[0.75rem]">
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] px-2 py-0.5"
+                  style={{
+                    background: `color-mix(in srgb, ${status.color} 12%, var(--surface-raised))`,
+                  }}
+                >
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ background: status.color }}
+                    aria-hidden="true"
+                  />
+                  {status.label}
+                </span>
+                <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[var(--ink-secondary)]">
+                  {priority.label} priority
+                </span>
+                <span className="tabular-nums text-[var(--ink-muted)]">
+                  {formatRange(task.startDate, task.endDate)}
+                </span>
+                <span className="text-[var(--ink-muted)]">
+                  ·{" "}
+                  {task.developer ? (
+                    <span className="text-[var(--ink-secondary)]">
+                      {task.developer.name}
+                    </span>
+                  ) : (
+                    "Unassigned"
+                  )}
+                </span>
+              </div>
+            </div>
+
+            <Block label="Description">
+              {task.description ? (
+                /* Read as written: the line breaks somebody typed are part of
+                   what they wrote down. */
+                <p className="whitespace-pre-wrap break-words text-[0.8125rem] leading-relaxed">
+                  {task.description}
+                </p>
+              ) : (
+                <Empty>Nothing written down.</Empty>
+              )}
+            </Block>
+
+            {link && (
+              <Block label="Link">
+                <a
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="break-all text-[0.8125rem] text-[var(--accent)] hover:underline"
+                >
+                  {link}
+                </a>
+              </Block>
+            )}
+          </div>
+
+          {/* Everything around it, in the order the form puts it in. */}
+          <div className="flex min-w-0 flex-col gap-4">
+            <Block label="Dependencies">
+              {task.blockedBy.length === 0 && blocking.length === 0 ? (
+                <Empty>Nothing is holding this up.</Empty>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {task.blockedBy.map((id) => (
+                    <span
+                      key={id}
+                      className="flex items-center gap-2 text-[0.8125rem]"
+                    >
+                      <span
+                        className="shrink-0 text-[var(--ink-muted)]"
+                        aria-hidden="true"
+                      >
+                        ⇢
+                      </span>
+                      <span className="truncate">
+                        Waits on {byId.get(id)?.title ?? "a task on another board"}
+                      </span>
+                    </span>
+                  ))}
+                  {blocking.map((t) => (
+                    <span
+                      key={t.id}
+                      className="flex items-center gap-2 text-[0.8125rem] text-[var(--ink-secondary)]"
+                    >
+                      <span
+                        className="shrink-0 text-[var(--ink-muted)]"
+                        aria-hidden="true"
+                      >
+                        ⇠
+                      </span>
+                      <span className="truncate">Blocks {t.title}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Block>
+
+            {subtasks.length > 0 && (
+              <Block label={`Subtasks ${done}/${subtasks.length}`}>
+                <ul className="flex flex-col gap-1">
+                  {subtasks.map((step) => (
+                    <li
+                      key={step.id}
+                      className="flex items-center gap-2 text-[0.8125rem]"
+                    >
+                      <span
+                        className="shrink-0 text-[var(--ink-muted)]"
+                        aria-hidden="true"
+                      >
+                        {step.status === "DONE" ? "☑" : "☐"}
+                      </span>
+                      <span
+                        className={`min-w-0 flex-1 truncate ${
+                          step.status === "DONE"
+                            ? "text-[var(--ink-muted)] line-through"
+                            : ""
+                        }`}
+                      >
+                        {step.title}
+                      </span>
+                      {step.developer && (
+                        <span className="shrink-0 text-[0.6875rem] text-[var(--ink-muted)]">
+                          {step.developer.name}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </Block>
+            )}
+
+            <TaskHistory taskId={task.id} />
+            {/* Open to anybody who got this far: reading a board is enough. */}
+            <TaskComments taskId={task.id} />
+          </div>
+        </div>
+
+        <div className="mt-1 flex items-center justify-end gap-2 border-t border-[var(--hairline)] pt-4">
+          <button type="button" onClick={onClose} className="btn-secondary">
+            Close
+          </button>
+          {canEdit && (
+            <button type="button" onClick={onEdit} className="btn-primary">
+              Edit task
+            </button>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** One labelled thing the card has to say, headed the way the form heads its fields. */
+function Block({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="flex min-w-0 flex-col gap-1.5 border-t border-[var(--hairline)] pt-3">
+      <h3 className="field-label">{label}</h3>
+      {children}
+    </section>
+  );
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[0.75rem] text-[var(--ink-muted)]">{children}</p>
+  );
+}

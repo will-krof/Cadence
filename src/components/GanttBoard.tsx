@@ -183,7 +183,12 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
     }
     return counts;
   }, [network]);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  // The task on screen, and whether it was opened to be read or to be changed.
+  // Clicking a task asks for the first; the pencil asks for the second, and is
+  // only there for a role that may have it.
+  const [opened, setOpened] = useState<{ id: string; editing: boolean } | null>(
+    null
+  );
   // Which row is being dragged, and where it would land.
   const [dragRow, setDragRow] = useState<string | null>(null);
   const [dropRow, setDropRow] = useState<{ id: string; after: boolean } | null>(
@@ -359,7 +364,14 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
     return d >= sprintRange.start && d <= sprintRange.end;
   }
 
-  const openEditor = useCallback((id: string) => setEditingId(id), []);
+  const openTask = useCallback(
+    (id: string) => setOpened({ id, editing: false }),
+    []
+  );
+  const editTask = useCallback(
+    (id: string) => setOpened({ id, editing: true }),
+    []
+  );
 
   // Only the rows on screen are built. A board with hundreds of tasks would
   // otherwise pay for every one of them on the first paint, and again on every
@@ -574,9 +586,6 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
     mode: BarMode,
     span: { left: number; width: number }
   ) {
-    // A role that may watch the timeline can open a task and read it; moving
-    // one takes the right to change it.
-    if (!canEdit) return;
     if (e.button !== 0 && e.pointerType === "mouse") return;
     e.stopPropagation();
     if (barDragRef.current) return;
@@ -610,6 +619,10 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
     function onMove(ev: PointerEvent) {
       const d = barDragRef.current;
       if (!d || ev.pointerId !== d.pointerId) return;
+      // A role that may watch the timeline still opens what it points at —
+      // the press is followed to its end either way. Moving a bar is what
+      // takes the right to change the work, so that is what stops here.
+      if (!canEdit) return;
       const dx = ev.clientX - d.startX;
       d.shift = Math.round(dx / dayWidth);
       if (!d.active && Math.abs(dx) > BAR_DRAG_THRESHOLD) {
@@ -645,9 +658,9 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
       finish();
       if (!d || ev.pointerId !== d.pointerId) return;
 
-      // A press that never moved is a click: open the editor instead.
+      // A press that never moved is a click: read the task rather than move it.
       if (!d.active) {
-        setEditingId(d.taskId);
+        openTask(d.taskId);
         return;
       }
 
@@ -675,7 +688,7 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
     window.addEventListener("pointercancel", onCancel);
   }
 
-  const editingTask = tasks.find((t) => t.id === editingId) ?? null;
+  const openedTask = tasks.find((t) => t.id === opened?.id) ?? null;
 
   const gridTemplateColumns = `${colWidths.task}px ${colWidths.status}px ${colWidths.developer}px`;
   const leftPanelWidth = colWidths.task + colWidths.status + colWidths.developer;
@@ -826,7 +839,8 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
               hiddenStatuses={hiddenStatuses}
               developers={developers}
               gridTemplateColumns={gridTemplateColumns}
-              onEdit={openEditor}
+              onOpen={openTask}
+              onEdit={editTask}
               onChange={updateTask}
               canEdit={canEdit}
               dragging={dragRow === task.id}
@@ -1008,7 +1022,7 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          setEditingId(task.id);
+                          openTask(task.id);
                         }
                       }}
                       /* A step is drawn thinner than the task it belongs to, so
@@ -1081,10 +1095,12 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
         </div>
       </div>
 
-      {editingTask && (
+      {openedTask && opened && (
         <TaskEditModal
-          task={editingTask}
-          onClose={() => setEditingId(null)}
+          task={openedTask}
+          canEdit={canEdit}
+          editing={opened.editing}
+          onClose={() => setOpened(null)}
         />
       )}
     </div>
@@ -1103,6 +1119,7 @@ const TableRow = memo(function TableRow({
   hiddenStatuses,
   developers,
   gridTemplateColumns,
+  onOpen,
   onEdit,
   onChange,
   canEdit,
@@ -1123,6 +1140,9 @@ const TableRow = memo(function TableRow({
   hiddenStatuses: TaskStatus[];
   developers: Developer[];
   gridTemplateColumns: string;
+  /** Reading the task: what clicking it anywhere but the pencil asks for. */
+  onOpen: (id: string) => void;
+  /** Changing it: the pencil, which only a role that may is shown. */
   onEdit: (id: string) => void;
   onChange: (id: string, data: Partial<TaskRow>) => void;
   /** Whether this viewer may change the work, or only read it. */
@@ -1218,20 +1238,28 @@ const TableRow = memo(function TableRow({
         {/* Not a kind of status, so it sits beside the title rather than in
             the status column: this says which of two waiting tasks goes first. */}
         <PriorityMark priority={task.priority} />
-        {link ? (
+        {/* The title opens the task, whether or not it carries a link —
+            clicking a task should mean one thing. Where there is a link, it
+            keeps its own mark beside the title rather than swallowing it. */}
+        <button
+          type="button"
+          onClick={() => onOpen(task.id)}
+          className="truncate text-left hover:underline"
+          title={task.description || "Open this task"}
+        >
+          {task.title}
+        </button>
+        {link && (
           <a
             href={link}
             target="_blank"
             rel="noopener noreferrer"
-            className="truncate text-[var(--accent)] hover:underline"
-            title={task.description || link}
+            className="shrink-0 text-[var(--accent)] hover:underline"
+            title={link}
+            aria-label={`Open the link on ${task.title}`}
           >
-            {task.title}
+            ↗
           </a>
-        ) : (
-          <span className="truncate" title={task.description || undefined}>
-            {task.title}
-          </span>
         )}
         {/* One chip for both halves of the same fact: what this waits on, and
             what waits on it. A task on the critical path is always one with
@@ -1278,21 +1306,26 @@ const TableRow = memo(function TableRow({
             {steps.done}/{steps.total}
           </span>
         )}
-                <button
-          onClick={() => onEdit(task.id)}
-          className="ml-auto shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100"
-          title="Edit task"
-          aria-label={`Edit ${task.title}`}
-        >
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-            <path
-              d="M9.2 1.8l3 3L4.8 12.2 1.4 12.6l.4-3.4 7.4-7.4z"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        {/* Only for a role that may change the work: reading one is a click on
+            the title, and a pencil that opens a form nothing can save is a
+            promise the board can't keep. */}
+        {canEdit && (
+          <button
+            onClick={() => onEdit(task.id)}
+            className="ml-auto shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100"
+            title="Edit task"
+            aria-label={`Edit ${task.title}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M9.2 1.8l3 3L4.8 12.2 1.4 12.6l.4-3.4 7.4-7.4z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        )}
       </div>
 
       <div className="px-2">

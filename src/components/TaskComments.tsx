@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { TaskComment } from "@/lib/types";
 import { CloseIcon } from "@/components/ui";
 
@@ -22,6 +22,16 @@ export function TaskComments({ taskId }: { taskId: string }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+
+  // The list reads oldest first, and only so much of it is on screen at once,
+  // so the end is the part worth landing on: the newest thing said, and the box
+  // to answer it. Held to whenever the list grows — arriving, and posting.
+  const listRef = useRef<HTMLOListElement>(null);
+  const count = comments?.length ?? 0;
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [count]);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,14 +108,20 @@ export function TaskComments({ taskId }: { taskId: string }) {
           Nothing said about this yet.
         </p>
       ) : (
-        <ol className="flex flex-col gap-2">
+        /* A long conversation scrolls in its own right rather than pushing the
+           rest of the task off the screen — the box to reply in stays put under
+           it, which is the thing somebody scrolled down here to reach. */
+        <ol
+          ref={listRef}
+          className="thin-scroll flex max-h-64 flex-col gap-1.5 overflow-y-auto pr-0.5"
+        >
           {comments.map((comment) => (
             <li
               key={comment.id}
-              className="flex flex-col gap-0.5 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--plane)] px-2.5 py-1.5"
+              className="group/comment flex flex-col gap-0.5 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface)] px-2.5 py-1.5"
             >
               <div className="flex items-baseline gap-2">
-                <span className="min-w-0 flex-1 truncate text-[0.75rem] font-medium">
+                <span className="min-w-0 flex-1 truncate text-[0.75rem] font-medium text-[var(--ink-secondary)]">
                   {comment.by}
                 </span>
                 <span className="shrink-0 tabular-nums text-[0.6875rem] text-[var(--ink-muted)]">
@@ -115,7 +131,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
                   <button
                     type="button"
                     onClick={() => remove(comment.id)}
-                    className="shrink-0 rounded p-0.5 text-[var(--ink-muted)] transition hover:text-[var(--danger)]"
+                    className="shrink-0 rounded p-0.5 text-[var(--ink-muted)] opacity-0 transition hover:text-[var(--danger)] focus-visible:opacity-100 group-hover/comment:opacity-100"
                     aria-label={`Delete comment by ${comment.by}`}
                     title="Delete this comment"
                   >
