@@ -34,6 +34,7 @@ export async function PATCH(
       hasTracker:
         typeof body.hasTracker === "boolean" ? body.hasTracker : undefined,
       hasWiki: typeof body.hasWiki === "boolean" ? body.hasWiki : undefined,
+      archived: typeof body.archived === "boolean" ? body.archived : undefined,
     },
     select: PROJECT_FIELDS,
   });

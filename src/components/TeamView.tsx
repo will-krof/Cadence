@@ -24,9 +24,16 @@ import { Developer } from "@/lib/types";
  */
 export function TeamView({
   canEdit = true,
+  canEditPeople = false,
   scope = null,
 }: {
   canEdit?: boolean;
+  /**
+   * A role with the roster in an editing hand keeps the working half of a card
+   * — a name, a title, a birthday, where somebody is this week — without the
+   * rest of what the owner sees.
+   */
+  canEditPeople?: boolean;
   /** Project ids to read the team through, or null for the whole workspace. */
   scope?: string[] | null;
 }) {
@@ -120,6 +127,9 @@ export function TeamView({
   const active = useMemo(() => roster.filter((d) => d.active), [roster]);
   const archived = useMemo(() => roster.filter((d) => !d.active), [roster]);
 
+  // Two ways to write a profile: the owner's, which is all of it, and a role's,
+  // which is the half a colleague can be trusted with.
+  const mayWrite = canEdit || canEditPeople;
   const showingDetail = creating || selected != null;
   const editing = creating || (selected != null && editingId === selected.id);
 
@@ -204,7 +214,7 @@ export function TeamView({
       </div>
 
       <div className="thin-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-        {editing && canEdit ? (
+        {editing && mayWrite ? (
           <ProfileForm
             key={selected?.id ?? "new"}
             person={selected ?? undefined}
@@ -230,7 +240,10 @@ export function TeamView({
                 }
               }
             }}
-            onDelete={selected ? () => removePerson(selected) : undefined}
+            limited={!canEdit}
+            onDelete={
+              selected && canEdit ? () => removePerson(selected) : undefined
+            }
           />
         ) : selected ? (
           <ProfileCard
@@ -245,6 +258,7 @@ export function TeamView({
               setDeveloperActive(selected.id, !selected.active)
             }
             canEdit={canEdit}
+            canEditProfile={mayWrite}
           />
         ) : (
           <p className="text-[0.8125rem] text-[var(--ink-muted)]">

@@ -62,6 +62,10 @@ model Developer {
   role           String?
   email          String?
   phone          String?
+  birthday       DateTime?
+  /// Where they are this week: at work, off sick, on holiday, or simply away.
+  /// Null reads as at work — most of a roster is, most of the time.
+  workStatus     String? // WORKING | SICK | VACATION | AWAY
   startDate      DateTime?
   salary         Int?
   currency       String    @default("USD")
@@ -109,6 +113,9 @@ model Project {
   /// The team roster is not a tool a project switches off — every project has
   /// people — so there is no `hasTeam` here. Who may open it is the role's.
   hasWiki     Boolean  @default(true)
+  /// Put away: still openable and still holding its work, but out of the run of
+  /// projects being worked on.
+  archived    Boolean  @default(false)
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
@@ -127,10 +134,18 @@ model ProjectRole {
   id              String  @id @default(cuid())
   name            String
   isAdmin         Boolean @default(false)
+  /// What a role may do with each tool: nothing, watch it, or work in it.
+  /// Editing implies watching — a role that can change a board can see it —
+  /// and the pair is stored rather than one field, so "can see it" survives
+  /// having the right to change it taken away.
   canViewTimeline Boolean @default(true)
+  canEditTimeline Boolean @default(false)
   canViewTracker  Boolean @default(true)
+  canEditTracker  Boolean @default(false)
   canViewTeam     Boolean @default(true)
+  canEditTeam     Boolean @default(false)
   canViewWiki     Boolean @default(true)
+  canEditWiki     Boolean @default(false)
 
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)

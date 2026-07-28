@@ -22,9 +22,13 @@ export interface MemberPlace {
   roleIds: string[];
   isAdmin: boolean;
   canViewTimeline: boolean;
+  canEditTimeline: boolean;
   canViewTracker: boolean;
+  canEditTracker: boolean;
   canViewTeam: boolean;
+  canEditTeam: boolean;
   canViewWiki: boolean;
+  canEditWiki: boolean;
 }
 
 export interface MemberViewer {
@@ -62,9 +66,13 @@ export async function getSessionMember(): Promise<MemberViewer | null> {
                   id: true,
                   isAdmin: true,
                   canViewTimeline: true,
+                  canEditTimeline: true,
                   canViewTracker: true,
+                  canEditTracker: true,
                   canViewTeam: true,
+                  canEditTeam: true,
                   canViewWiki: true,
+                  canEditWiki: true,
                 },
               },
             },
@@ -90,10 +98,18 @@ export async function getSessionMember(): Promise<MemberViewer | null> {
         projectId: m.projectId,
         roleIds: roles.map((r) => r.id),
         isAdmin,
-        canViewTimeline: isAdmin || roles.some((r) => r.canViewTimeline),
-        canViewTracker: isAdmin || roles.some((r) => r.canViewTracker),
-        canViewTeam: isAdmin || roles.some((r) => r.canViewTeam),
-        canViewWiki: isAdmin || roles.some((r) => r.canViewWiki),
+        // Editing implies watching, so a role that may change a tool can open
+        // it whatever its view flag happens to say.
+        canViewTimeline:
+          isAdmin || roles.some((r) => r.canViewTimeline || r.canEditTimeline),
+        canEditTimeline: isAdmin || roles.some((r) => r.canEditTimeline),
+        canViewTracker:
+          isAdmin || roles.some((r) => r.canViewTracker || r.canEditTracker),
+        canEditTracker: isAdmin || roles.some((r) => r.canEditTracker),
+        canViewTeam: isAdmin || roles.some((r) => r.canViewTeam || r.canEditTeam),
+        canEditTeam: isAdmin || roles.some((r) => r.canEditTeam),
+        canViewWiki: isAdmin || roles.some((r) => r.canViewWiki || r.canEditWiki),
+        canEditWiki: isAdmin || roles.some((r) => r.canEditWiki),
       };
     }),
   };
@@ -148,15 +164,38 @@ export function memberSeesBoards(member: MemberViewer, projectId: string) {
   return place != null && (place.canViewTimeline || place.canViewTracker);
 }
 
+/** And true when one of their roles there lets them move the work. */
+export function memberMovesWork(member: MemberViewer, projectId: string) {
+  const place = placeOn(member, projectId);
+  return place != null && (place.canEditTimeline || place.canEditTracker);
+}
+
+/** The same question for the wiki: may they write on this project's pages? */
+export function memberWritesWiki(member: MemberViewer, projectId: string) {
+  return placeOn(member, projectId)?.canEditWiki === true;
+}
+
+/** The projects where a member may change the working half of a profile. */
+export function teamEditProjectIds(member: MemberViewer) {
+  return member.places.filter((p) => p.canEditTeam).map((p) => p.projectId);
+}
+
 /**
- * Tasks are the one thing a member may change: someone invited as a developer
- * moves their own work across the board. It takes a board in one of their
- * roles, and it never reaches past the projects they are on.
+ * Whether a member may *change* the work rather than watch it. A role can be
+ * given a board to watch without being given the run of it, so this asks the
+ * edit flags and not the view ones.
  *
  * A null project means "whichever project the row turns out to be in" — the
  * query scopes that, and this only asks whether any project qualifies.
  */
 export function memberDenied(viewer: Viewer, projectId: string | null) {
+  if (viewer.kind !== "member") return false;
+  if (projectId != null) return !memberMovesWork(viewer, projectId);
+  return !viewer.places.some((p) => p.canEditTimeline || p.canEditTracker);
+}
+
+/** The same question for reading: watching a board is enough to be shown it. */
+export function memberCannotRead(viewer: Viewer, projectId: string | null) {
   if (viewer.kind !== "member") return false;
   if (projectId != null) return !memberSeesBoards(viewer, projectId);
   return !viewer.places.some((p) => p.canViewTimeline || p.canViewTracker);

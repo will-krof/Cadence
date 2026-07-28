@@ -5,7 +5,7 @@ import { Wordmark } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AcceptInvite } from "@/components/AcceptInvite";
 import { INVITE_DAYS, inviteHasExpired } from "@/lib/invite";
-import { ROLE_VIEWS } from "@/lib/types";
+import { ROLE_TOOLS, accessOf } from "@/lib/types";
 
 export const metadata: Metadata = { title: "You're invited — Cadence" };
 
@@ -41,9 +41,13 @@ export default async function InvitePage({
               name: true,
               isAdmin: true,
               canViewTimeline: true,
+              canEditTimeline: true,
               canViewTracker: true,
+              canEditTracker: true,
               canViewTeam: true,
+              canEditTeam: true,
               canViewWiki: true,
+              canEditWiki: true,
             },
           },
         },
@@ -59,13 +63,25 @@ export default async function InvitePage({
 
   // What they will actually be able to open: the project's tools, narrowed to
   // what any one of their roles can see.
-  // The roster has no project toggle — every project has people — so a view
-  // without one only has to clear the role.
-  const opens = ROLE_VIEWS.filter(
-    (view) =>
-      (view.tool == null || member?.project[view.tool]) &&
-      (admin || roles.some((role) => role[view.key]))
-  ).map((view) => view.label);
+  // The roster has no project toggle — every project has people — so a tool
+  // without one only has to clear the role. What they may *do* with it comes
+  // along: being able to change something is worth knowing before you accept.
+  const opens = ROLE_TOOLS.filter(
+    (tool) => tool.tool == null || member?.project[tool.tool]
+  )
+    .map((tool) => {
+      const access = admin
+        ? "edit"
+        : roles.reduce<"none" | "view" | "edit">((best, role) => {
+            const here = accessOf(role, tool);
+            if (here === "edit" || best === "edit") return "edit";
+            return here === "view" || best === "view" ? "view" : "none";
+          }, "none");
+      return access === "none"
+        ? null
+        : `${tool.label}${access === "edit" ? "" : " (view only)"}`;
+    })
+    .filter((label): label is string => label != null);
 
   return (
     <div className="schematic thin-scroll flex flex-1 flex-col overflow-y-auto bg-[var(--plane)]">

@@ -2,13 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ShellMember, ShellUser } from "@/components/AppShell";
-import { AccountPanel } from "@/components/shell/AccountPanel";
 
 export function AccountMenu({ user }: { user: ShellUser }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [profile, setProfile] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -64,16 +63,14 @@ export function AccountMenu({ user }: { user: ShellUser }) {
               {user.email}
             </p>
           </div>
-          <button
-            onClick={() => {
-              setOpen(false);
-              setProfile(true);
-            }}
+          <Link
+            href="/account"
+            onClick={() => setOpen(false)}
             role="menuitem"
-            className="mt-1 w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+            className="mt-1 block w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
           >
             Your profile
-          </button>
+          </Link>
           <button
             onClick={signOut}
             disabled={signingOut}
@@ -84,14 +81,6 @@ export function AccountMenu({ user }: { user: ShellUser }) {
           </button>
         </div>
       )}
-
-      {profile && (
-        <AccountPanel
-          onClose={() => setProfile(false)}
-          onSignOut={signOut}
-          signingOut={signingOut}
-        />
-      )}
     </div>
   );
 }
@@ -100,7 +89,6 @@ export function AccountMenu({ user }: { user: ShellUser }) {
 export function MemberMenu({ member }: { member: ShellMember }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [profile, setProfile] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -153,16 +141,14 @@ export function MemberMenu({ member }: { member: ShellMember }) {
               {member.username ?? "Team member"}
             </p>
           </div>
-          <button
-            onClick={() => {
-              setOpen(false);
-              setProfile(true);
-            }}
+          <Link
+            href="/account"
+            onClick={() => setOpen(false)}
             role="menuitem"
-            className="mt-1 w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+            className="mt-1 block w-full rounded-[var(--radius)] px-2.5 py-2 text-left text-[0.8125rem] text-[var(--ink-secondary)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
           >
             Your profile
-          </button>
+          </Link>
           <button
             onClick={signOut}
             disabled={signingOut}
@@ -172,14 +158,6 @@ export function MemberMenu({ member }: { member: ShellMember }) {
             {signingOut ? "Signing out…" : "Sign out"}
           </button>
         </div>
-      )}
-
-      {profile && (
-        <AccountPanel
-          onClose={() => setProfile(false)}
-          onSignOut={signOut}
-          signingOut={signingOut}
-        />
       )}
     </div>
   );

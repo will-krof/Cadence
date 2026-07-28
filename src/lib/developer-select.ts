@@ -11,6 +11,8 @@ export const DEVELOPER_FIELDS = {
   role: true,
   email: true,
   phone: true,
+  birthday: true,
+  workStatus: true,
   startDate: true,
   salary: true,
   currency: true,
@@ -32,6 +34,9 @@ export const TEAMMATE_FIELDS = {
   name: true,
   color: true,
   role: true,
+  // Where somebody is this week is what a colleague needs to know to plan
+  // around them; what they are paid is not.
+  workStatus: true,
   active: true,
   currency: true,
   createdAt: true,
@@ -42,6 +47,7 @@ interface Teammate {
   name: string;
   color: string;
   role: string | null;
+  workStatus: string | null;
   active: boolean;
   currency: string;
   createdAt: Date;
@@ -57,6 +63,8 @@ export function teammatePayload(developer: Teammate) {
     ...developer,
     email: null,
     phone: null,
+    // When somebody was born is theirs, not the workspace's to hand around.
+    birthday: null,
     startDate: null,
     salary: null,
     employmentType: null,

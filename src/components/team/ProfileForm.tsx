@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Avatar, Field, RoleChips } from "@/components/ui";
 import {
   CURRENCIES,
+  WORK_STATUSES,
+  WorkStatus,
   DEVELOPER_PALETTE,
   Developer,
   DeveloperInput,
@@ -22,6 +24,7 @@ export function ProfileForm({
   onSave,
   onCancel,
   onDelete,
+  limited = false,
 }: {
   person?: Developer;
   existingCount: number;
@@ -34,11 +37,23 @@ export function ProfileForm({
   ) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => void;
+  /**
+   * A role that keeps the roster tidy writes the working half of a card and no
+   * more: what somebody is paid, what an admin wrote about them, and where they
+   * are on which project stay with the workspace's owner.
+   */
+  limited?: boolean;
 }) {
   const [name, setName] = useState(person?.name ?? "");
   const [role, setRole] = useState(person?.role ?? "");
   const [email, setEmail] = useState(person?.email ?? "");
   const [phone, setPhone] = useState(person?.phone ?? "");
+  const [birthday, setBirthday] = useState(
+    person?.birthday ? toISODate(new Date(person.birthday)) : ""
+  );
+  const [workStatus, setWorkStatus] = useState<WorkStatus | "">(
+    person?.workStatus ?? "WORKING"
+  );
   const [startDate, setStartDate] = useState(
     person?.startDate ? toISODate(new Date(person.startDate)) : ""
   );
@@ -97,20 +112,35 @@ export function ProfileForm({
     setPending(true);
     setError(null);
     try {
+      // What travels is what this form is allowed to write: a limited form
+      // sends the working half and nothing else, so a field it never showed
+      // can't be cleared by saving.
       await onSave(
-        {
-        name: name.trim(),
-        role,
-        email,
-        phone,
-        startDate: startDate || null,
-        salary: salary === "" ? null : Number(salary),
-        currency,
-        employmentType: employmentType || null,
-        active,
-        notes,
-        color,
-        },
+        limited
+          ? {
+              name: name.trim(),
+              role,
+              email,
+              phone,
+              birthday: birthday || null,
+              workStatus: workStatus || null,
+              color,
+            }
+          : {
+              name: name.trim(),
+              role,
+              email,
+              phone,
+              birthday: birthday || null,
+              workStatus: workStatus || null,
+              startDate: startDate || null,
+              salary: salary === "" ? null : Number(salary),
+              currency,
+              employmentType: employmentType || null,
+              active,
+              notes,
+              color,
+            },
         places
       );
     } catch {
@@ -164,8 +194,30 @@ export function ProfileForm({
             placeholder="+380 …"
           />
         </Field>
+        <Field label="Birthday">
+          <input
+            type="date"
+            value={birthday}
+            onChange={(e) => setBirthday(e.target.value)}
+            className="input"
+          />
+        </Field>
+        <Field label="Where they are">
+          <select
+            value={workStatus}
+            onChange={(e) => setWorkStatus(e.target.value as WorkStatus | "")}
+            className="select"
+          >
+            {WORK_STATUSES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </Field>
       </section>
 
+      {!limited && (
       <section className="grid gap-3.5 sm:grid-cols-2">
         <Field label="Start date">
           <input
@@ -216,6 +268,7 @@ export function ProfileForm({
           </select>
         </Field>
       </section>
+      )}
 
       <Field label="Timeline colour">
         <div className="flex flex-wrap gap-1.5">
@@ -237,6 +290,7 @@ export function ProfileForm({
         </div>
       </Field>
 
+      {!limited && (
       <fieldset className="flex flex-col gap-1.5">
         <legend className="field-label mb-1.5">Projects and roles</legend>
         {projects.length === 0 ? (
@@ -284,7 +338,10 @@ export function ProfileForm({
           })
         )}
       </fieldset>
+      )}
 
+      {!limited && (
+      <>
       <Field label="Notes">
         <textarea
           value={notes}
@@ -301,8 +358,10 @@ export function ProfileForm({
           onChange={(e) => setActive(e.target.checked)}
           className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
         />
-        Currently working
+        On the team
       </label>
+      </>
+      )}
 
       {error && (
         <p

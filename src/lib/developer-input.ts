@@ -1,4 +1,4 @@
-import { EmploymentType } from "@/lib/types";
+import { EmploymentType, WorkStatus } from "@/lib/types";
 import { boundedText, LIMITS, safeColor } from "@/lib/sanitize";
 
 const EMPLOYMENT_VALUES: EmploymentType[] = [
@@ -8,6 +8,8 @@ const EMPLOYMENT_VALUES: EmploymentType[] = [
   "INTERN",
 ];
 
+const WORK_STATUS_VALUES: WorkStatus[] = ["WORKING", "SICK", "VACATION", "AWAY"];
+
 
 
 export interface ParsedDeveloper {
@@ -16,6 +18,8 @@ export interface ParsedDeveloper {
   role?: string | null;
   email?: string | null;
   phone?: string | null;
+  birthday?: Date | null;
+  workStatus?: WorkStatus | null;
   startDate?: Date | null;
   salary?: number | null;
   currency?: string;
@@ -66,6 +70,28 @@ export function parseDeveloper(
       return { error: `That ${field} is too long` };
     }
     data[field] = parsed.value;
+  }
+
+  if (body.birthday !== undefined) {
+    if (!body.birthday) {
+      data.birthday = null;
+    } else {
+      const parsed = new Date(body.birthday as string);
+      if (Number.isNaN(parsed.getTime())) return { error: "Invalid birthday" };
+      data.birthday = parsed;
+    }
+  }
+
+  if (body.workStatus !== undefined) {
+    if (!body.workStatus) {
+      data.workStatus = null;
+    } else if (
+      !WORK_STATUS_VALUES.includes(body.workStatus as WorkStatus)
+    ) {
+      return { error: "Unknown work status" };
+    } else {
+      data.workStatus = body.workStatus as WorkStatus;
+    }
   }
 
   if (body.startDate !== undefined) {

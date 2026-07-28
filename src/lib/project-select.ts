@@ -20,6 +20,7 @@ export const PROJECT_FIELDS = {
   hasTimeline: true,
   hasTracker: true,
   hasWiki: true,
+  archived: true,
   createdAt: true,
   roles: { orderBy: ROLE_ORDER },
 } as const;

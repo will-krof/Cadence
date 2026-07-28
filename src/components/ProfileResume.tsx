@@ -7,6 +7,7 @@ import {
   DeveloperTask,
   EMPLOYMENT_TYPES,
   statusMeta,
+  workStatusMeta,
 } from "@/lib/types";
 
 /** One project this person appears on, and what they hold there. */
@@ -45,6 +46,8 @@ export function ProfileResume({
     | "active"
     | "email"
     | "phone"
+    | "birthday"
+    | "workStatus"
     | "startDate"
     | "salary"
     | "currency"
@@ -76,6 +79,10 @@ export function ProfileResume({
     showPrivate && person.phone
       ? { label: "Phone", value: person.phone, href: `tel:${person.phone}` }
       : null,
+    // A birthday is the workspace's to keep, not a colleague's to browse.
+    showPrivate && person.birthday
+      ? { label: "Birthday", value: formatDay(person.birthday) }
+      : null,
     showPrivate && person.startDate
       ? { label: "Started", value: formatDay(person.startDate) }
       : null,
@@ -106,6 +113,21 @@ export function ProfileResume({
             <h2 className="truncate text-lg font-semibold tracking-tight">
               {person.name}
             </h2>
+            {/* Where they are this week, which is what a colleague plans
+                around — so it reads beside the name rather than in the details
+                below it. */}
+            {person.active && person.workStatus && person.workStatus !== "WORKING" && (
+              <span
+                className="flex items-center gap-1.5 rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide"
+                style={{ color: workStatusMeta(person.workStatus).color }}
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ background: workStatusMeta(person.workStatus).color }}
+                />
+                {workStatusMeta(person.workStatus).label}
+              </span>
+            )}
             {!person.active && (
               <span className="rounded-full bg-[var(--gridline)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
                 Archived

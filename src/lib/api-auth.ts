@@ -31,6 +31,19 @@ function boardProjectIds(member: MemberViewer) {
     .map((p) => p.projectId);
 }
 
+/** Narrower still: the projects whose work they may move. */
+export function boardWriteFilter(viewer: Viewer) {
+  return viewer.kind === "owner"
+    ? { project: { userId: viewer.user.id } }
+    : {
+        projectId: {
+          in: viewer.places
+            .filter((p) => p.canEditTimeline || p.canEditTracker)
+            .map((p) => p.projectId),
+        },
+      };
+}
+
 /** The projects where a member's roles open the wiki. */
 function wikiProjectIds(member: MemberViewer) {
   return member.places.filter((p) => p.canViewWiki).map((p) => p.projectId);

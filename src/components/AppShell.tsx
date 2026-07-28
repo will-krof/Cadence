@@ -182,6 +182,34 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   // roles they hold.
   const isAdmin = member ? false : role?.isAdmin ?? true;
 
+  /**
+   * What the viewer may *do* with the project on show, tool by tool. A role can
+   * be given a board to watch without the run of it, so the boards and the wiki
+   * ask this rather than assuming that opening something means changing it.
+   *
+   * The owner previewing a role is shown what that role could do, which is the
+   * point of previewing one.
+   */
+  const may = useMemo(() => {
+    const answer = (
+      edit: "canEditTimeline" | "canEditTracker" | "canEditWiki" | "canEditTeam"
+    ) => {
+      if (member) {
+        return (
+          heldRoles.some((r) => r.isAdmin) || heldRoles.some((r) => r[edit])
+        );
+      }
+      return role == null || role.isAdmin || role[edit] === true;
+    };
+    return {
+      boards: answer("canEditTimeline") || answer("canEditTracker"),
+      timeline: answer("canEditTimeline"),
+      tracker: answer("canEditTracker"),
+      wiki: answer("canEditWiki"),
+      team: answer("canEditTeam"),
+    };
+  }, [member, heldRoles, role]);
+
   // A tool has to be enabled on the project *and* visible to the viewer.
   // Overview is always there — it is the project's own card, not one of its
   // tools — so a project with no board enabled still has somewhere to land.
@@ -250,6 +278,11 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   // one of them: hiding every tool still leaves a project to open.
   const [hiddenViews, { hide: hideView, show: showView }] = useHiddenViews();
 
+  const archivedProjects = useMemo(
+    () => projects.filter((p) => p.archived),
+    [projects]
+  );
+
   const shown = useMemo(
     () =>
       available.filter(
@@ -300,7 +333,9 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--hairline)] bg-[var(--surface)] px-3 py-2.5 sm:px-4">
         <Wordmark />
         <div className="flex items-center gap-2">
-          {activeProject && (activeView === "timeline" || activeView === "tracker") && (
+          {activeProject &&
+            may.boards &&
+            (activeView === "timeline" || activeView === "tracker") && (
             <button onClick={() => setShowAddTask(true)} className="btn-primary">
               New task
             </button>
@@ -355,10 +390,16 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
             {/* A project row *is* its overview — clicking it opens the card, and
                 the views it carries hang underneath the one on show. Having both
                 a project and an "Overview" button meant two controls doing the
-                same thing. */}
-            {projects.map((p) => {
-              const active = p.id === activeProject?.id;
-              return (
+                same thing.
+
+                Archived projects are still openable — their work didn't go
+                anywhere — they just sit apart from the run of projects being
+                worked on, the way an archived sprint does. */}
+            {projects
+              .filter((p) => !p.archived || p.id === activeProject?.id)
+              .map((p) => {
+                const active = p.id === activeProject?.id;
+                return (
                 <div key={p.id} className="flex flex-col gap-0.5">
                   <button
                     onClick={() => openProject(p.id)}
@@ -384,6 +425,11 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                       {p.name.slice(0, 1)}
                     </span>
                     {wide && <span className="truncate">{p.name}</span>}
+                    {wide && p.archived && (
+                      <span className="shrink-0 text-[0.5625rem] uppercase tracking-wide text-[var(--ink-muted)]">
+                        Archived
+                      </span>
+                    )}
                   </button>
 
                   {active && (shown.length > 1 || putAway.length > 0) && (
@@ -447,7 +493,34 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                   )}
                 </div>
               );
-            })}
+              })}
+            {/* Put away, and the way back to one. Opening an archived project
+                is reading it; it stays out of the run above until the card
+                itself brings it back. */}
+            {archivedProjects.length > 0 && !member && (
+              <div className="flex flex-col gap-0.5 border-t border-[var(--hairline)] pt-2">
+                {wide && (
+                  <span className="field-label px-2 pb-1">Archived</span>
+                )}
+                {archivedProjects
+                  .filter((p) => p.id !== activeProject?.id)
+                  .map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => openProject(p.id)}
+                      title={`${p.name} — archived`}
+                      className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-1.5 text-left text-[0.75rem] text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)] ${
+                        wide ? "" : "justify-center"
+                      }`}
+                    >
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[0.3rem] bg-[var(--gridline)] text-[0.625rem] font-semibold uppercase text-[var(--ink-secondary)]">
+                        {p.name.slice(0, 1)}
+                      </span>
+                      {wide && <span className="truncate">{p.name}</span>}
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
 
           {/* The roster stands on its own, level with the projects rather than
@@ -542,7 +615,12 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                     : "The people on the projects you can see."}
                 </p>
               </div>
-              <TeamView canEdit={!member && teamScope === null} scope={teamScope} />
+              <TeamView
+                canEdit={!member && teamScope === null}
+                /** A role with the roster in hand keeps a profile's working half. */
+                canEditPeople={may.team}
+                scope={teamScope}
+              />
             </>
           ) : !activeProject ? (
             <Centered>
@@ -592,11 +670,11 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
               ) : projectLoading ? (
                 <Centered>Loading project…</Centered>
               ) : activeView === "timeline" ? (
-                <GanttBoard />
+                <GanttBoard canEdit={may.timeline} />
               ) : activeView === "wiki" ? (
-                <WikiView project={activeProject} canEdit={isAdmin && !member} />
+                <WikiView project={activeProject} canEdit={may.wiki} />
               ) : (
-                <TrackerBoard />
+                <TrackerBoard canEdit={may.tracker} />
               )}
             </>
           )}

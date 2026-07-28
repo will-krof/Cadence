@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Field, Modal } from "@/components/ui";
+import { useRouter } from "next/navigation";
+import { Field } from "@/components/ui";
 import { useFeedback } from "@/components/Feedback";
 
 /** Who the signed-in account is, whichever of the two kinds it is. */
@@ -20,19 +21,12 @@ export interface Account {
 
 /**
  * Your own profile: what you are called, how you sign in, what you are, and
- * when you joined — with the two things you can change about it, and the way
- * out.
+ * when you joined — with the things you can change about it, and the way out.
  */
-export function AccountPanel({
-  onClose,
-  onSignOut,
-  signingOut,
-}: {
-  onClose: () => void;
-  onSignOut: () => void;
-  signingOut: boolean;
-}) {
+export function AccountPanel() {
+  const router = useRouter();
   const { notify } = useFeedback();
+  const [signingOut, setSigningOut] = useState(false);
   const [account, setAccount] = useState<Account | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -77,7 +71,7 @@ export function AccountPanel({
       patch.currentPassword = currentPassword;
     }
     if (Object.keys(patch).length === 0) {
-      onClose();
+      notify("success", "Nothing to change.");
       return;
     }
 
@@ -101,8 +95,15 @@ export function AccountPanel({
     notify("success", "Your profile is saved.");
   }
 
+  async function signOut() {
+    setSigningOut(true);
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/");
+    router.refresh();
+  }
+
   return (
-    <Modal onClose={onClose} title="Your profile">
+    <div className="rounded-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--surface)] p-5 sm:p-6">
       {failed && (
         <p className="text-[0.8125rem] text-[var(--ink-muted)]">
           Couldn’t load your profile.
@@ -217,14 +218,11 @@ export function AccountPanel({
           <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
-              onClick={onSignOut}
+              onClick={signOut}
               disabled={signingOut}
               className="btn-secondary mr-auto"
             >
               {signingOut ? "Signing out…" : "Sign out"}
-            </button>
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Close
             </button>
             <button
               type="submit"
@@ -236,7 +234,7 @@ export function AccountPanel({
           </div>
         </form>
       )}
-    </Modal>
+    </div>
   );
 }
 

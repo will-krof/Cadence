@@ -60,6 +60,8 @@ interface ProjectInput {
   hasTimeline: boolean;
   hasTracker: boolean;
   hasWiki: boolean;
+  /** Put away, or brought back. */
+  archived?: boolean;
 }
 
 interface BoardContextValue {

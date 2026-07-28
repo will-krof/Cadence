@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { requireUser, wikiFilter } from "@/lib/api-auth";
-import { requireViewer } from "@/lib/viewer";
+import { wikiFilter, workspaceOwnerId } from "@/lib/api-auth";
+import { memberWritesWiki, requireViewer, Viewer } from "@/lib/viewer";
 import { ownedWikiPage } from "@/lib/owned";
-import { badRequest, done, notFound } from "@/lib/responses";
+import { badRequest, done, forbidden, notFound } from "@/lib/responses";
 import { boundedText, LIMITS } from "@/lib/sanitize";
 import { jsonResponse } from "@/lib/json-response";
 import { WIKI_FIELDS } from "@/lib/wiki-select";
@@ -48,16 +48,26 @@ export async function GET(
   return jsonResponse(request, page);
 }
 
+/** The page, and whether this viewer may write on the project it sits in. */
+async function writable(viewer: Viewer, id: string) {
+  const page = await ownedWikiPage(workspaceOwnerId(viewer), id);
+  if (!page) return { page: null, allowed: false as const };
+  const allowed =
+    viewer.kind === "owner" || memberWritesWiki(viewer, page.projectId);
+  return { page, allowed };
+}
+
 export async function PATCH(
   request: NextRequest,
   ctx: RouteContext<"/api/wiki/[id]">
 ) {
-  const { user, response } = await requireUser();
+  const { viewer, response } = await requireViewer();
   if (response) return response;
 
   const { id } = await ctx.params;
-  const page = await ownedWikiPage(user.id, id);
+  const { page, allowed } = await writable(viewer, id);
   if (!page) return notFound("Page");
+  if (!allowed) return forbidden();
 
   const body = await request.json().catch(() => ({}));
 
@@ -147,11 +157,13 @@ export async function DELETE(
   _request: NextRequest,
   ctx: RouteContext<"/api/wiki/[id]">
 ) {
-  const { user, response } = await requireUser();
+  const { viewer, response } = await requireViewer();
   if (response) return response;
 
   const { id } = await ctx.params;
-  if (!(await ownedWikiPage(user.id, id))) return notFound("Page");
+  const { page, allowed } = await writable(viewer, id);
+  if (!page) return notFound("Page");
+  if (!allowed) return forbidden();
 
   await prisma.wikiPage.delete({ where: { id } });
   return done();

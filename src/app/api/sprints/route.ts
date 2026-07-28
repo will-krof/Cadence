@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { boardFilter, requireUser } from "@/lib/api-auth";
-import { memberDenied, requireViewer } from "@/lib/viewer";
+import { memberCannotRead, requireViewer } from "@/lib/viewer";
 import { ownedProject } from "@/lib/owned";
 import { badRequest, forbidden, notFound } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
   // Sprints are the boards' own dividing line, so seeing them takes a board:
   // being on a project with neither is being on it without a calendar.
-  if (memberDenied(viewer, projectId)) return forbidden();
+  if (memberCannotRead(viewer, projectId)) return forbidden();
 
   const sprints = await prisma.sprint.findMany({
     where: { projectId, ...boardFilter(viewer) },

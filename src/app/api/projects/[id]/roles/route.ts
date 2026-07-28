@@ -36,8 +36,12 @@ export async function POST(
       name,
       canViewTimeline: body.canViewTimeline === true,
       canViewTracker: body.canViewTracker === true,
+      canEditTimeline: body.canEditTimeline === true,
+      canEditTracker: body.canEditTracker === true,
       canViewTeam: body.canViewTeam === true,
+      canEditTeam: body.canEditTeam === true,
       canViewWiki: body.canViewWiki === true,
+      canEditWiki: body.canEditWiki === true,
     },
   });
   return NextResponse.json(role, { status: 201 });

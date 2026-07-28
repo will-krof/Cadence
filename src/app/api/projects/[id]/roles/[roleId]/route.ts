@@ -8,9 +8,13 @@ import { NextRequest, NextResponse } from "next/server";
 /** The fields that say what a role opens, as against what it is called. */
 const VISIBILITY = [
   "canViewTimeline",
+  "canEditTimeline",
   "canViewTracker",
+  "canEditTracker",
   "canViewTeam",
+  "canEditTeam",
   "canViewWiki",
+  "canEditWiki",
 ] as const;
 
 export async function PATCH(
@@ -54,18 +58,14 @@ export async function PATCH(
     where: { id: roleId },
     data: {
       name,
-      canViewTimeline:
-        typeof body.canViewTimeline === "boolean"
-          ? body.canViewTimeline
-          : undefined,
-      canViewTracker:
-        typeof body.canViewTracker === "boolean"
-          ? body.canViewTracker
-          : undefined,
-      canViewTeam:
-        typeof body.canViewTeam === "boolean" ? body.canViewTeam : undefined,
-      canViewWiki:
-        typeof body.canViewWiki === "boolean" ? body.canViewWiki : undefined,
+      // Each flag is written only when it was asked about, so a change to one
+      // tool can't quietly clear another.
+      ...Object.fromEntries(
+        VISIBILITY.filter((key) => typeof body[key] === "boolean").map((key) => [
+          key,
+          body[key] as boolean,
+        ])
+      ),
     },
   });
   return NextResponse.json(updated);

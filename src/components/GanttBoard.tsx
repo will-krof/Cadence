@@ -20,7 +20,11 @@ import {
   statusMeta,
 } from "@/lib/types";
 import { useBoard } from "@/components/BoardProvider";
-import { useFoldedSteps, useHiddenStatuses } from "@/lib/prefs";
+import {
+  useColumnWidths,
+  useFoldedSteps,
+  useHiddenStatuses,
+} from "@/lib/prefs";
 import {
   AssigneeSelect,
   Avatar,
@@ -73,7 +77,7 @@ type ColWidths = Record<ColKey, number>;
 const COL_WIDTHS_WIDE: ColWidths = { task: 240, status: 132, developer: 132 };
 const COL_WIDTHS_COMPACT: ColWidths = { task: 132, status: 104, developer: 96 };
 
-export function GanttBoard() {
+export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
   const {
     tasks,
     assignable: developers,
@@ -134,16 +138,26 @@ export function GanttBoard() {
   // columns they add are two-fifths of the width for none of the work.
   const [hideWeekends, setHideWeekends] = useState(true);
   const [compact, setCompact] = useState(false);
-  const [colWidths, setColWidths] = useState<ColWidths>(COL_WIDTHS_WIDE);
+  // Columns somebody has sized by hand are remembered, so the drag is done once
+  // rather than on every visit. Until they do, the width follows the viewport.
+  const [storedWidths, storeWidths] = useColumnWidths();
+  const [colWidths, setColWidths] = useState<ColWidths>(
+    () => ({ ...COL_WIDTHS_WIDE, ...storedWidths })
+  );
 
-  // Track whether the user has hand-sized the columns, so a viewport change
-  // doesn't overwrite their choice.
-  const userSizedRef = useRef(false);
+  const userSizedRef = useRef(storedWidths != null);
   const resizingRef = useRef<{
     key: ColKey;
     startX: number;
     startWidth: number;
   } | null>(null);
+
+  // The live widths, for the release handler — reading them from state there
+  // would close over whatever they were when the drag began.
+  const widthsRef = useRef(colWidths);
+  useEffect(() => {
+    widthsRef.current = colWidths;
+  }, [colWidths]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -167,6 +181,9 @@ export function GanttBoard() {
       setColWidths((prev) => ({ ...prev, [r.key]: next }));
     }
     function onUp() {
+      // Written on release rather than on every pixel of the drag: the widths
+      // are a choice, and one storage write is what making it costs.
+      if (resizingRef.current) storeWidths(widthsRef.current);
       resizingRef.current = null;
     }
     window.addEventListener("mousemove", onMove);
@@ -175,7 +192,7 @@ export function GanttBoard() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, []);
+  }, [storeWidths]);
 
   // Called from the pointer handler rather than built during render, so the
   // refs are only ever touched in response to an event.
@@ -467,6 +484,9 @@ export function GanttBoard() {
     mode: BarMode,
     span: { left: number; width: number }
   ) {
+    // A role that may watch the timeline can open a task and read it; moving
+    // one takes the right to change it.
+    if (!canEdit) return;
     if (e.button !== 0 && e.pointerType === "mouse") return;
     e.stopPropagation();
     if (barDragRef.current) return;
@@ -669,6 +689,7 @@ export function GanttBoard() {
               gridTemplateColumns={gridTemplateColumns}
               onEdit={openEditor}
               onChange={updateTask}
+              canEdit={canEdit}
               dragging={dragRow === task.id}
               dropping={dropRow?.id === task.id ? dropRow.after : null}
               onDragRow={setDragRow}
@@ -810,7 +831,9 @@ export function GanttBoard() {
                       /* The same inset in a shorter row: a step's bar comes out
                          half the height of the task it belongs to, so a plan
                          reads as its shape before it reads as its labels. */
-                      className="group/bar absolute top-2 bottom-2 flex cursor-grab touch-none select-none items-center rounded-md px-2 text-left text-[0.6875rem] font-medium leading-none shadow-sm ring-2 ring-[var(--surface)] hover:brightness-95"
+                      className={`group/bar absolute top-2 bottom-2 flex touch-none select-none items-center rounded-md px-2 text-left text-[0.6875rem] font-medium leading-none shadow-sm ring-2 ring-[var(--surface)] hover:brightness-95 ${
+                        canEdit ? "cursor-grab" : "cursor-default"
+                      }`}
                       style={{
                         left: bar.left + 2,
                         width: bar.width - 4,
@@ -824,6 +847,8 @@ export function GanttBoard() {
                       }
                     >
                       {/* Grab either end to reschedule just that date. */}
+                      {canEdit && (
+                        <>
                       <span
                         onPointerDown={(e) => beginBarDrag(e, task, "start", bar)}
                         className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize rounded-l-md opacity-0 transition group-hover/bar:opacity-100"
@@ -836,6 +861,8 @@ export function GanttBoard() {
                         style={{ background: "rgba(255,255,255,0.45)" }}
                         aria-hidden="true"
                       />
+                        </>
+                      )}
 
                       {task.developer && !task.parentId && (
                         <span className="mr-1.5 -ml-0.5 shrink-0">
@@ -883,6 +910,7 @@ const TableRow = memo(function TableRow({
   gridTemplateColumns,
   onEdit,
   onChange,
+  canEdit,
   dragging,
   dropping,
   onDragRow,
@@ -898,6 +926,8 @@ const TableRow = memo(function TableRow({
   gridTemplateColumns: string;
   onEdit: (id: string) => void;
   onChange: (id: string, data: Partial<TaskRow>) => void;
+  /** Whether this viewer may change the work, or only read it. */
+  canEdit: boolean;
   /** This row is the one being dragged. */
   dragging: boolean;
   /** A row would land here: below it when true, above it when false. */
@@ -922,7 +952,7 @@ const TableRow = memo(function TableRow({
 
   return (
     <div
-      draggable
+      draggable={canEdit}
       onDragStart={(e) => {
         // Firefox refuses to start a drag without something on the transfer.
         e.dataTransfer.setData("text/plain", task.id);
@@ -934,6 +964,7 @@ const TableRow = memo(function TableRow({
         onDragOverRow(null);
       }}
       onDragOver={(e) => {
+        if (!canEdit) return;
         e.preventDefault();
         onDragOverRow({ id: task.id, after: landsAfter(e) });
       }}
@@ -966,13 +997,15 @@ const TableRow = memo(function TableRow({
         }`}
         style={step ? { paddingLeft: "1.75rem" } : undefined}
       >
-        <span
-          className="shrink-0 cursor-grab text-[var(--ink-muted)] opacity-0 transition group-hover:opacity-100 active:cursor-grabbing"
-          title="Drag to reorder"
-          aria-hidden="true"
-        >
-          <GripIcon />
-        </span>
+        {canEdit && (
+          <span
+            className="shrink-0 cursor-grab text-[var(--ink-muted)] opacity-0 transition group-hover:opacity-100 active:cursor-grabbing"
+            title="Drag to reorder"
+            aria-hidden="true"
+          >
+            <GripIcon />
+          </span>
+        )}
         {/* A step reads under the task it belongs to, and says so. */}
         {step && (
           <span
@@ -1027,6 +1060,7 @@ const TableRow = memo(function TableRow({
         <StatusPill
           status={task.status}
           hidden={hiddenStatuses}
+          disabled={!canEdit}
           onChange={(status) => onChange(task.id, { status })}
         />
       </div>
@@ -1036,6 +1070,7 @@ const TableRow = memo(function TableRow({
           developerId={task.developerId}
           developer={task.developer}
           developers={developers}
+          disabled={!canEdit}
           onChange={(developerId) => onChange(task.id, { developerId })}
           emptyLabel="—"
           taskTitle={task.title}

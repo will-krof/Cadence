@@ -3,7 +3,14 @@
 import { useState } from "react";
 import { useFeedback } from "@/components/Feedback";
 import { CloseIcon } from "@/components/ui";
-import { Project, ProjectRole, ROLE_VIEWS } from "@/lib/types";
+import {
+  ACCESS_OPTIONS,
+  Project,
+  ProjectRole,
+  ROLE_TOOLS,
+  accessOf,
+  accessPatch,
+} from "@/lib/types";
 
 /**
  * Who sees what. The checkboxes are the whole point of a role, so they sit in
@@ -51,7 +58,8 @@ export function RolesSection({
       <div>
         <h3 className="text-[0.8125rem] font-semibold tracking-tight">Roles</h3>
         <p className="text-[0.75rem] text-[var(--ink-muted)]">
-          Admins choose which of this project’s tools each role can open.
+          Admins choose what each role may do with this project’s tools: nothing,
+          watch, or work in it.
         </p>
       </div>
 
@@ -62,9 +70,9 @@ export function RolesSection({
               <th className="w-full pb-1.5 text-left">
                 <span className="field-label">Role</span>
               </th>
-              {ROLE_VIEWS.map((view) => (
-                <th key={view.key} className="px-3 pb-1.5">
-                  <span className="field-label">{view.label}</span>
+              {ROLE_TOOLS.map((tool) => (
+                <th key={tool.view} className="px-2 pb-1.5">
+                  <span className="field-label">{tool.label}</span>
                 </th>
               ))}
               <th className="pb-1.5" />
@@ -89,28 +97,39 @@ export function RolesSection({
                     )}
                   </span>
                 </td>
-                {ROLE_VIEWS.map((view) => {
+                {ROLE_TOOLS.map((tool) => {
                   // The roster has no project toggle to depend on.
-                  const enabled = view.tool == null || project[view.tool];
+                  const enabled = tool.tool == null || project[tool.tool];
                   return (
-                    <td key={view.key} className="px-3 py-2 text-center">
-                      <input
-                        type="checkbox"
-                        checked={role.isAdmin ? true : role[view.key]}
+                    <td key={tool.view} className="px-2 py-2 text-center">
+                      <select
+                        value={accessOf(role, tool)}
                         disabled={role.isAdmin || !enabled}
                         onChange={(e) =>
-                          onToggle(role.id, { [view.key]: e.target.checked })
+                          onToggle(
+                            role.id,
+                            accessPatch(
+                              tool,
+                              e.target.value as (typeof ACCESS_OPTIONS)[number]["value"]
+                            )
+                          )
                         }
-                        className="h-3.5 w-3.5 cursor-pointer accent-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={`${role.name} can see ${view.label}`}
+                        className="select w-[5.5rem] px-1.5 py-1 text-center text-[0.75rem] disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`What ${role.name} may do with ${tool.label}`}
                         title={
                           role.isAdmin
-                            ? "Admins always see everything"
+                            ? "Admins always do everything"
                             : enabled
-                              ? undefined
-                              : `${view.label} is turned off for this project`
+                              ? `Edit lets them ${tool.hint}`
+                              : `${tool.label} is turned off for this project`
                         }
-                      />
+                      >
+                        {ACCESS_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                   );
                 })}
@@ -149,9 +168,9 @@ export function RolesSection({
         </button>
       </form>
       <p className="text-[0.6875rem] text-[var(--ink-muted)]">
-        A new role starts with nothing visible — tick what it should see. A name
-        can be changed at any time: it says what the role is called, not what it
-        opens.
+        A new role starts with nothing — say what it should watch, and what it
+        should be able to change. A name can be changed at any time: it says
+        what the role is called, not what it opens.
       </p>
     </section>
   );

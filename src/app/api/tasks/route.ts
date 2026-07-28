@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { boardFilter, workspaceOwnerId } from "@/lib/api-auth";
-import { memberDenied, requireViewer, viewerName } from "@/lib/viewer";
+import {
+  memberCannotRead,
+  memberDenied,
+  requireViewer,
+  viewerName,
+} from "@/lib/viewer";
 import { TASK_FIELDS } from "@/lib/task-select";
 import { parseTask } from "@/lib/task-input";
 import { LIMITS } from "@/lib/sanitize";
@@ -18,7 +23,7 @@ export async function GET(request: NextRequest) {
 
   const params = request.nextUrl.searchParams;
   const projectId = params.get("projectId");
-  if (memberDenied(viewer, projectId)) return forbidden();
+  if (memberCannotRead(viewer, projectId)) return forbidden();
 
   // scope=all powers the Team view, which only needs to know who works where —
   // not the tasks themselves.

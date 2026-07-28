@@ -14,6 +14,7 @@ export function ProfileCard({
   onDelete,
   onToggleArchive,
   canEdit,
+  canEditProfile,
 }: {
   person: Developer;
   projects: Project[];
@@ -22,8 +23,10 @@ export function ProfileCard({
   onBack: () => void;
   onDelete: () => void;
   onToggleArchive: () => void;
-  /** Team members read a profile; the owner changes it. */
+  /** The owner's reach: the private half, archiving, deleting. */
   canEdit: boolean;
+  /** Whether the Edit button is there at all — a role can keep the card tidy. */
+  canEditProfile: boolean;
 }) {
   const [tasks, setTasks] = useState<DeveloperTask[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -99,7 +102,7 @@ export function ProfileCard({
           <button onClick={onBack} className="btn-secondary lg:hidden">
             Back
           </button>
-          {canEdit && (
+          {canEditProfile && (
             <button onClick={onEdit} className="btn-primary">
               Edit profile
             </button>

@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { requireUser, wikiFilter } from "@/lib/api-auth";
-import { requireViewer } from "@/lib/viewer";
+import { wikiFilter, workspaceOwnerId } from "@/lib/api-auth";
+import { memberWritesWiki, requireViewer } from "@/lib/viewer";
 import { ownedProject } from "@/lib/owned";
-import { badRequest, notFound } from "@/lib/responses";
+import { badRequest, forbidden, notFound } from "@/lib/responses";
 import { boundedText, LIMITS } from "@/lib/sanitize";
 import { jsonResponse } from "@/lib/json-response";
 import { WIKI_FIELDS, WIKI_INDEX_FIELDS } from "@/lib/wiki-select";
@@ -27,9 +27,13 @@ export async function GET(request: NextRequest) {
   return jsonResponse(request, pages);
 }
 
-/** Writing is the owner's: everyone else reads what the project wrote down. */
+/**
+ * Writing takes the wiki in a role that opens it for editing — the owner
+ * always, and whoever they said may write on it. Everyone else reads what the
+ * project wrote down.
+ */
 export async function POST(request: NextRequest) {
-  const { user, response } = await requireUser();
+  const { viewer, response } = await requireViewer();
   if (response) return response;
 
   const body = await request.json().catch(() => ({}));
@@ -38,7 +42,12 @@ export async function POST(request: NextRequest) {
   if (!titled.value) return badRequest("Title is required");
 
   const projectId = typeof body.projectId === "string" ? body.projectId : "";
-  if (!(await ownedProject(user.id, projectId))) return notFound("Project");
+  if (!(await ownedProject(workspaceOwnerId(viewer), projectId))) {
+    return notFound("Project");
+  }
+  if (viewer.kind === "member" && !memberWritesWiki(viewer, projectId)) {
+    return forbidden();
+  }
 
   // A section of a section, as deep as the project needs — the parent only has
   // to be a page of the same project.

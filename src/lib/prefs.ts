@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { STATUS_OPTIONS, TaskStatus } from "@/lib/types";
 
 /**
@@ -156,6 +156,48 @@ export function useHiddenViews(): [
 export function useFoldedSteps() {
   return useStoredFlag("folded-steps");
 }
+
+/**
+ * How wide somebody has dragged the timeline's columns. Sizing a table is a
+ * choice about a screen, not about the work, so it lives here with the rest of
+ * them — and it survives a reload, which is the whole point of dragging it once.
+ */
+export function useColumnWidths(): [
+  Record<string, number> | null,
+  (widths: Record<string, number>) => void,
+] {
+  const raw = useSyncExternalStore(
+    subscribe,
+    () => snapshot(COLUMN_KEY),
+    () => EMPTY
+  );
+
+  // Stored as "task:240,status:132" — a shape the same list store can hold, and
+  // one that survives a key nobody uses any more.
+  const widths = useMemo(() => {
+    if (raw.length === 0) return null;
+    const out: Record<string, number> = {};
+    for (const pair of raw) {
+      const [key, value] = pair.split(":");
+      const width = Number(value);
+      if (key && Number.isFinite(width)) out[key] = width;
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  }, [raw]);
+
+  const set = useCallback(
+    (next: Record<string, number>) =>
+      store(
+        COLUMN_KEY,
+        Object.entries(next).map(([key, width]) => `${key}:${Math.round(width)}`)
+      ),
+    []
+  );
+
+  return [widths, set];
+}
+
+const COLUMN_KEY = "column-widths";
 
 /**
  * The statuses on offer, given what is hidden. The one already on a task is

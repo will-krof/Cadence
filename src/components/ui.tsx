@@ -31,6 +31,7 @@ export function LazySelect({
   className,
   style,
   ariaLabel,
+  disabled,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -38,6 +39,8 @@ export function LazySelect({
   className?: string;
   style?: React.CSSProperties;
   ariaLabel: string;
+  /** A role that may watch a board but not work in it reads it like this. */
+  disabled?: boolean;
 }) {
   const [ready, setReady] = useState(false);
   const fill = () => setReady(true);
@@ -51,6 +54,7 @@ export function LazySelect({
       onPointerDown={fill}
       onFocus={fill}
       onKeyDown={fill}
+      disabled={disabled}
       className={className}
       style={style}
       aria-label={ariaLabel}
@@ -207,6 +211,7 @@ export const AssigneeSelect = memo(function AssigneeSelect({
   onChange,
   emptyLabel,
   taskTitle,
+  disabled,
 }: {
   developerId: string | null;
   developer: Developer | null;
@@ -214,6 +219,7 @@ export const AssigneeSelect = memo(function AssigneeSelect({
   onChange: (developerId: string | null) => void;
   emptyLabel: string;
   taskTitle: string;
+  disabled?: boolean;
 }) {
   return (
     <div className="relative flex min-w-0 flex-1 items-center">
@@ -237,6 +243,7 @@ export const AssigneeSelect = memo(function AssigneeSelect({
         ]}
         className={`select truncate ${developer ? "pl-7" : ""}`}
         ariaLabel={`Assignee for ${taskTitle}`}
+        disabled={disabled}
       />
     </div>
   );
@@ -269,6 +276,7 @@ export function StatusPill({
   status,
   hidden = NONE_HIDDEN,
   onChange,
+  disabled,
 }: {
   status: TaskStatus;
   /**
@@ -278,6 +286,7 @@ export function StatusPill({
    */
   hidden?: TaskStatus[];
   onChange: (status: TaskStatus) => void;
+  disabled?: boolean;
 }) {
   const meta = statusMeta(status);
   // A column put away is a state nobody is working in, so it is not offered
@@ -296,6 +305,7 @@ export function StatusPill({
           value: s.value,
           label: s.label,
         }))}
+        disabled={disabled}
         className="select truncate pl-[1.375rem] font-medium"
         style={{
           background: `color-mix(in srgb, ${meta.color} 12%, var(--surface-raised))`,

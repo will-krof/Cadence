@@ -158,8 +158,13 @@ export function ProjectOverview({
               {activeProject.name.slice(0, 1)}
             </span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-semibold tracking-tight">
+              <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold tracking-tight">
                 {activeProject.name}
+                {activeProject.archived && (
+                  <span className="rounded-full bg-[var(--gridline)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
+                    Archived
+                  </span>
+                )}
               </h2>
               <p className="mt-0.5 text-[0.875rem] text-[var(--ink-secondary)]">
                 {activeProject.description || "No description yet."}
@@ -294,7 +299,20 @@ export function ProjectOverview({
         ) : null}
 
         {canEdit && (
-          <div className="border-t border-[var(--hairline)] pt-4">
+          <div className="flex flex-wrap items-center gap-2 border-t border-[var(--hairline)] pt-4">
+            {/* Archiving is the reversible one, so it leads. A project that is
+                put away keeps everything it holds and stays openable — it just
+                stops being one of the projects being worked on. */}
+            <button
+              onClick={() =>
+                updateProject(activeProject.id, {
+                  archived: !activeProject.archived,
+                })
+              }
+              className="btn-secondary"
+            >
+              {activeProject.archived ? "Restore project" : "Archive project"}
+            </button>
             <button onClick={remove} className="btn-secondary !text-[#d03b3b]">
               Delete project
             </button>

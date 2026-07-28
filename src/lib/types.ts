@@ -47,6 +47,24 @@ export const EMPLOYMENT_TYPES: { value: EmploymentType; label: string }[] = [
 
 export const CURRENCIES = ["USD", "EUR", "GBP", "UAH", "PLN"];
 
+/** Where somebody is this week. Null reads as at work. */
+export type WorkStatus = "WORKING" | "SICK" | "VACATION" | "AWAY";
+
+export const WORK_STATUSES: {
+  value: WorkStatus;
+  label: string;
+  color: string;
+}[] = [
+  { value: "WORKING", label: "Working", color: "#0ca30c" },
+  { value: "SICK", label: "Off sick", color: "#e34948" },
+  { value: "VACATION", label: "On holiday", color: "#2a78d6" },
+  { value: "AWAY", label: "Away", color: "#898781" },
+];
+
+export function workStatusMeta(status: WorkStatus | null) {
+  return WORK_STATUSES.find((s) => s.value === status) ?? WORK_STATUSES[0];
+}
+
 export interface Developer {
   id: string;
   name: string;
@@ -54,6 +72,8 @@ export interface Developer {
   role: string | null;
   email: string | null;
   phone: string | null;
+  birthday: string | null;
+  workStatus: WorkStatus | null;
   startDate: string | null;
   salary: number | null;
   currency: string;
@@ -77,27 +97,97 @@ export interface ProjectRole {
   name: string;
   isAdmin: boolean;
   canViewTimeline: boolean;
+  canEditTimeline: boolean;
   canViewTracker: boolean;
+  canEditTracker: boolean;
   canViewTeam: boolean;
+  canEditTeam: boolean;
   canViewWiki: boolean;
+  canEditWiki: boolean;
   createdAt: string;
 }
 
-/** What a role's visibility is described in terms of. */
-export const ROLE_VIEWS: {
-  key: "canViewTimeline" | "canViewTracker" | "canViewWiki" | "canViewTeam";
+/** What a role may do with one tool. */
+export type Access = "none" | "view" | "edit";
+
+export const ACCESS_OPTIONS: { value: Access; label: string }[] = [
+  { value: "none", label: "—" },
+  { value: "view", label: "View" },
+  { value: "edit", label: "Edit" },
+];
+
+/**
+ * The tools a role is described in terms of, and the pair of fields each one is
+ * stored as. Editing implies watching, so the two are always written together.
+ */
+export const ROLE_TOOLS: {
   label: string;
+  view: "canViewTimeline" | "canViewTracker" | "canViewWiki" | "canViewTeam";
+  edit: "canEditTimeline" | "canEditTracker" | "canEditWiki" | "canEditTeam";
   /**
-   * The project toggle this view depends on, where there is one. The roster has
+   * The project toggle this tool depends on, where there is one. The roster has
    * none: every project has people, so only the role decides.
    */
   tool?: "hasTimeline" | "hasTracker" | "hasWiki";
+  /** What "edit" lets somebody do, in the words of the thing itself. */
+  hint: string;
 }[] = [
-  { key: "canViewTimeline", label: "Timeline", tool: "hasTimeline" },
-  { key: "canViewTracker", label: "Tracker", tool: "hasTracker" },
-  { key: "canViewWiki", label: "Wiki", tool: "hasWiki" },
-  { key: "canViewTeam", label: "Team" },
+  {
+    label: "Timeline",
+    view: "canViewTimeline",
+    edit: "canEditTimeline",
+    tool: "hasTimeline",
+    hint: "move and reschedule the work",
+  },
+  {
+    label: "Tracker",
+    view: "canViewTracker",
+    edit: "canEditTracker",
+    tool: "hasTracker",
+    hint: "move tasks between statuses",
+  },
+  {
+    label: "Wiki",
+    view: "canViewWiki",
+    edit: "canEditWiki",
+    tool: "hasWiki",
+    hint: "write and rearrange pages",
+  },
+  {
+    label: "Team",
+    view: "canViewTeam",
+    edit: "canEditTeam",
+    hint: "change the working half of a profile",
+  },
 ];
+
+/** What a role's standing is read from: the flags, whatever else it carries. */
+export type RoleRights = { isAdmin: boolean } & {
+  [K in
+    | (typeof ROLE_TOOLS)[number]["view"]
+    | (typeof ROLE_TOOLS)[number]["edit"]]: boolean;
+};
+
+/** How a role stands on one tool, from the pair of fields it is stored as. */
+export function accessOf(
+  role: RoleRights,
+  tool: (typeof ROLE_TOOLS)[number]
+): Access {
+  if (role.isAdmin) return "edit";
+  if (role[tool.edit]) return "edit";
+  return role[tool.view] ? "view" : "none";
+}
+
+/** The pair of fields an answer is written as. */
+export function accessPatch(
+  tool: (typeof ROLE_TOOLS)[number],
+  access: Access
+): Record<string, boolean> {
+  return {
+    [tool.view]: access !== "none",
+    [tool.edit]: access === "edit",
+  };
+}
 
 export interface Project {
   id: string;
@@ -106,6 +196,8 @@ export interface Project {
   hasTimeline: boolean;
   hasTracker: boolean;
   hasWiki: boolean;
+  /** Put away: still openable, but out of the run of projects being worked on. */
+  archived: boolean;
   roles: ProjectRole[];
   createdAt: string;
 }

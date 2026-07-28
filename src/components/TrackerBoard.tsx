@@ -33,7 +33,7 @@ interface DragState {
   active: boolean;
 }
 
-export function TrackerBoard() {
+export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
   const {
     tasks,
     assignable: developers,
@@ -128,6 +128,9 @@ export function TrackerBoard() {
    */
   const beginDrag = useCallback(
     (state: DragState) => {
+      // Watching a board is not working in it: a role without the right to
+      // change a task can read the columns but not shuffle them.
+      if (!canEdit) return;
       dragRef.current = state;
 
       function place(x: number, y: number) {
@@ -193,7 +196,7 @@ export function TrackerBoard() {
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onCancel);
     },
-    [updateTask]
+    [updateTask, canEdit]
   );
 
   // Stable per-board handlers, so a card only re-renders when its own task
@@ -320,6 +323,7 @@ export function TrackerBoard() {
                     task={task}
                     steps={stepCounts.get(task.id)}
                     hiddenStatuses={hidden}
+                    canEdit={canEdit}
                     parentTitle={
                       task.parentId ? titles.get(task.parentId) : undefined
                     }
@@ -413,6 +417,7 @@ const TaskCard = memo(function TaskCard({
   steps,
   parentTitle,
   hiddenStatuses,
+  canEdit,
   developers,
   dragging,
   onDragStart,
@@ -427,6 +432,8 @@ const TaskCard = memo(function TaskCard({
   parentTitle?: string;
   /** Read once for the board and handed down, not read per card. */
   hiddenStatuses: TaskStatus[];
+  /** Whether this viewer may change the work, or only read it. */
+  canEdit: boolean;
   developers: Developer[];
   dragging: boolean;
   onDragStart: (state: DragState) => void;
@@ -471,7 +478,9 @@ const TaskCard = memo(function TaskCard({
       className={`group touch-none rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-2.5 shadow-sm transition select-none ${
         dragging
           ? "opacity-40"
-          : "cursor-grab hover:border-[var(--baseline)] active:cursor-grabbing"
+          : canEdit
+            ? "cursor-grab hover:border-[var(--baseline)] active:cursor-grabbing"
+            : "hover:border-[var(--baseline)]"
       }`}
     >
       {parentTitle && (
@@ -538,6 +547,7 @@ const TaskCard = memo(function TaskCard({
           <StatusPill
             status={task.status}
             hidden={hiddenStatuses}
+            disabled={!canEdit}
             onChange={(status) => onStatusChange(task.id, status)}
           />
         </div>
@@ -545,6 +555,7 @@ const TaskCard = memo(function TaskCard({
           developerId={task.developerId}
           developer={task.developer}
           developers={developers}
+          disabled={!canEdit}
           onChange={(developerId) => onAssign(task.id, developerId)}
           emptyLabel="Unassigned"
           taskTitle={task.title}
