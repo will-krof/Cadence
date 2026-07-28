@@ -117,3 +117,9 @@ A signed-in member reaches the projects they are on, through the roles they hold
 on each. They can move the work on the boards those roles open; everything else —
 the project's settings, its roles, the roster, the links themselves — stays with
 the workspace's owner.
+
+Commenting is the one thing a view-only role can still do. Opening a task shows
+its history and, under it, what people have said about it: anybody who can open
+the board can add to that, whether or not their role lets them change the work.
+Saying something about a task doesn't move it. A comment can be taken back by
+whoever wrote it, and by the workspace's owner.

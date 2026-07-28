@@ -275,6 +275,19 @@ export interface TaskEvent {
   at: string;
 }
 
+/**
+ * Something somebody said about a task. `by` is whoever wrote it, as they were
+ * called then; `mine` is the server's answer to "may this reader take it back",
+ * worked out from who is asking rather than left to the browser to guess.
+ */
+export interface TaskComment {
+  id: string;
+  body: string;
+  by: string;
+  mine: boolean;
+  createdAt: string;
+}
+
 /** A task as boards use it, with the assignee joined in from the roster. */
 export interface Task extends TaskRow {
   developer: Developer | null;

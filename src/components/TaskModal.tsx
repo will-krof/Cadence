@@ -18,6 +18,7 @@ import {
   PrioritySelect,
 } from "@/components/ui";
 import { TaskHistory } from "@/components/TaskHistory";
+import { TaskComments } from "@/components/TaskComments";
 
 export interface TaskFormValues {
   title: string;
@@ -466,8 +467,15 @@ export function TaskModal({
               </fieldset>
             )}
 
-            {/* What happened to this task, under the work it is made of. */}
-            {isEdit && task && <TaskHistory taskId={task.id} />}
+            {/* What happened to this task, under the work it is made of, and
+                what people made of it under that. Both need a task to hang off,
+                so neither appears until there is one. */}
+            {isEdit && task && (
+              <>
+                <TaskHistory taskId={task.id} />
+                <TaskComments taskId={task.id} />
+              </>
+            )}
           </div>
         </div>
 
