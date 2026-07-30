@@ -540,21 +540,32 @@ export function Field({
 }
 
 
-/** The per-project tool toggle, shared by the new-project form and the card. */
-export function ToolCheckbox({
+/**
+ * One thing a project can switch on or off, as a row you can hit anywhere.
+ *
+ * It is a switch rather than a tick box because that is what it means: these
+ * are not answers being collected on the way to a save, they are things that
+ * are either on or off right now — and a switch says which without having to
+ * read the label twice. The state is also said in words, so "on" doesn't rest
+ * on seeing a colour.
+ */
+export function SettingToggle({
   checked,
   onChange,
   label,
   hint,
+  /** Said under the row when this setting, as it stands, needs explaining. */
+  note,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
   hint: string;
+  note?: React.ReactNode;
 }) {
   return (
     <label
-      className={`flex cursor-pointer items-start gap-2.5 rounded-[var(--radius)] border p-2.5 transition ${
+      className={`flex cursor-pointer items-start gap-3 rounded-[var(--radius)] border p-3 transition ${
         checked
           ? "border-[var(--accent)] bg-[var(--accent-wash)]"
           : "border-[var(--hairline)] hover:bg-[var(--plane)]"
@@ -564,11 +575,37 @@ export function ToolCheckbox({
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-3.5 w-3.5 cursor-pointer accent-[var(--accent)]"
+        className="peer sr-only"
       />
-      <span className="flex flex-col gap-0.5">
-        <span className="text-[0.8125rem] font-medium leading-none">{label}</span>
+      <span
+        className={`relative mt-0.5 h-4 w-7 shrink-0 rounded-full transition-colors peer-focus-visible:ring-3 peer-focus-visible:ring-[var(--accent-wash)] ${
+          checked ? "bg-[var(--accent)]" : "bg-[var(--baseline)]"
+        }`}
+        aria-hidden="true"
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
+            checked ? "translate-x-3" : ""
+          }`}
+        />
+      </span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex items-center gap-1.5 text-[0.8125rem] leading-none font-medium">
+          {label}
+          <span
+            className={`text-[0.5625rem] tracking-wide uppercase ${
+              checked ? "text-[var(--accent)]" : "text-[var(--ink-muted)]"
+            }`}
+          >
+            {checked ? "On" : "Off"}
+          </span>
+        </span>
         <span className="text-[0.6875rem] text-[var(--ink-muted)]">{hint}</span>
+        {note && (
+          <span className="mt-1 text-[0.6875rem] text-[var(--ink-secondary)]">
+            {note}
+          </span>
+        )}
       </span>
     </label>
   );

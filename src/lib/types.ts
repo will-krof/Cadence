@@ -288,6 +288,43 @@ export function taskFields(project: Project | null): TaskFields {
   };
 }
 
+/**
+ * The tools a project can switch on, as the settings form lists them. Held
+ * here beside the task fields so the two lists the form is built from read the
+ * same way, and so a tool added to a project has one place to be described.
+ */
+export const PROJECT_TOOL_TOGGLES: {
+  key: "hasTimeline" | "hasTracker" | "hasSprints" | "hasWiki" | "hasRoles";
+  label: string;
+  hint: string;
+}[] = [
+  {
+    key: "hasTimeline",
+    label: "Gantt chart",
+    hint: "A timeline of the work, with what waits on what",
+  },
+  {
+    key: "hasTracker",
+    label: "Task tracker",
+    hint: "A board of columns, one per status",
+  },
+  {
+    key: "hasSprints",
+    label: "Sprints",
+    hint: "Plan the work in rounds. Off, the boards show it all at once",
+  },
+  {
+    key: "hasWiki",
+    label: "Wiki",
+    hint: "Pages the project writes down for itself",
+  },
+  {
+    key: "hasRoles",
+    label: "Roles",
+    hint: "Decide what each group may open. Off, the project is yours alone",
+  },
+];
+
 /** The task fields a project offers, as the settings form lists them. */
 export const TASK_FIELD_TOGGLES: {
   key: "taskHasPriority" | "taskHasLink" | "taskHasDates" | "taskHasHistory" | "taskHasComments";

@@ -4,17 +4,11 @@ import { useMemo, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
 import { useFeedback } from "@/components/Feedback";
 import { PeopleSection } from "@/components/project/PeopleSection";
+import { ProjectSettingsForm } from "@/components/project/ProjectSettingsForm";
 import { RolesSection } from "@/components/project/RolesSection";
 import { SprintsSection } from "@/components/project/SprintsSection";
-import { Field, ToolCheckbox } from "@/components/ui";
-import { diffDays, formatDay, toISODate } from "@/lib/dates";
-import {
-  Developer,
-  Project,
-  STATUS_OPTIONS,
-  TASK_FIELD_TOGGLES,
-  TaskStatus,
-} from "@/lib/types";
+import { diffDays, formatDay } from "@/lib/dates";
+import { Developer, STATUS_OPTIONS, TaskStatus } from "@/lib/types";
 
 /**
  * The project card: everything about one project in one place — its details,
@@ -175,11 +169,32 @@ export function ProjectOverview({
     await deleteProject(activeProject.id);
   }
 
-  return (
-    <div className="thin-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-      <div className="mx-auto flex max-w-3xl flex-col gap-6">
-        {editing && canEdit ? (
-          <DetailsForm
+  /**
+   * Editing is a screen of its own, not a form wedged into the card.
+   *
+   * The two used to be shown together, which meant switching Sprints off at
+   * the top while the sprints themselves sat a little further down, still
+   * listed — a screen arguing with itself. Settings are now the only thing on
+   * show while they are being changed, under a strip saying whose they are and
+   * how to get back.
+   */
+  if (editing && canEdit) {
+    return (
+      <div className="thin-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+        <div className="mx-auto flex max-w-3xl flex-col gap-4">
+          <header className="flex items-center gap-3">
+            <ProjectInitial name={activeProject.name} size="sm" />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg font-semibold tracking-tight">
+                Project settings
+              </h2>
+              <p className="truncate text-[0.75rem] text-[var(--ink-muted)]">
+                {activeProject.name}
+              </p>
+            </div>
+          </header>
+
+          <ProjectSettingsForm
             key={activeProject.id}
             project={activeProject}
             onCancel={() => setEditing(false)}
@@ -188,35 +203,35 @@ export function ProjectOverview({
               setEditing(false);
             }}
           />
-        ) : (
-          <header className="flex flex-wrap items-start gap-4">
-            <span
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius)] text-lg font-semibold uppercase text-white"
-              style={{ background: "var(--accent)" }}
-              aria-hidden="true"
-            >
-              {activeProject.name.slice(0, 1)}
-            </span>
-            <div className="min-w-0 flex-1">
-              <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold tracking-tight">
-                {activeProject.name}
-                {activeProject.archived && (
-                  <span className="rounded-full bg-[var(--gridline)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
-                    Archived
-                  </span>
-                )}
-              </h2>
-              <p className="mt-0.5 text-[0.875rem] text-[var(--ink-secondary)]">
-                {activeProject.description || "No description yet."}
-              </p>
-            </div>
-            {canEdit && (
-              <button onClick={() => setEditing(true)} className="btn-primary">
-                Edit project
-              </button>
-            )}
-          </header>
-        )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="thin-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+      <div className="mx-auto flex max-w-3xl flex-col gap-6">
+        <header className="flex flex-wrap items-start gap-4">
+          <ProjectInitial name={activeProject.name} />
+          <div className="min-w-0 flex-1">
+            <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold tracking-tight">
+              {activeProject.name}
+              {activeProject.archived && (
+                <span className="rounded-full bg-[var(--gridline)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--ink-secondary)]">
+                  Archived
+                </span>
+              )}
+            </h2>
+            <p className="mt-0.5 text-[0.875rem] text-[var(--ink-secondary)]">
+              {activeProject.description || "No description yet."}
+            </p>
+          </div>
+          {canEdit && (
+            <button onClick={() => setEditing(true)} className="btn-primary">
+              Project settings
+            </button>
+          )}
+        </header>
 
         <section
           className="grid gap-x-6 gap-y-4 rounded-[var(--radius-lg)] border border-[var(--hairline)] p-4 sm:grid-cols-3"
@@ -341,24 +356,47 @@ export function ProjectOverview({
         ) : null}
 
         {canEdit && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-[var(--hairline)] pt-4">
-            {/* Archiving is the reversible one, so it leads. A project that is
-                put away keeps everything it holds and stays openable — it just
-                stops being one of the projects being worked on. */}
-            <button
-              onClick={() =>
-                updateProject(activeProject.id, {
-                  archived: !activeProject.archived,
-                })
-              }
-              className="btn-secondary"
-            >
-              {activeProject.archived ? "Restore project" : "Archive project"}
-            </button>
-            <button onClick={remove} className="btn-secondary !text-[var(--danger)]">
-              Delete project
-            </button>
-          </div>
+          <section className="flex flex-col gap-2.5 border-t border-[var(--hairline)] pt-4">
+            <h3 className="text-[0.8125rem] font-semibold tracking-tight">
+              Finishing with this project
+            </h3>
+            {/* Archiving is the reversible one, so it leads — and each button
+                now says what it does before it is pressed, rather than leaving
+                two bare verbs side by side and one of them final. */}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-4">
+              <div className="flex-1">
+                <button
+                  onClick={() =>
+                    updateProject(activeProject.id, {
+                      archived: !activeProject.archived,
+                    })
+                  }
+                  className="btn-secondary"
+                >
+                  {activeProject.archived
+                    ? "Restore project"
+                    : "Archive project"}
+                </button>
+                <p className="mt-1.5 text-[0.6875rem] text-[var(--ink-muted)]">
+                  {activeProject.archived
+                    ? "Put it back among the projects being worked on."
+                    : "Keeps everything and stays openable — it just leaves the run of projects being worked on."}
+                </p>
+              </div>
+              <div className="flex-1">
+                <button
+                  onClick={remove}
+                  className="btn-secondary !text-[var(--danger)]"
+                >
+                  Delete project
+                </button>
+                <p className="mt-1.5 text-[0.6875rem] text-[var(--ink-muted)]">
+                  Its tasks, sprints and pages go with it. This cannot be
+                  undone.
+                </p>
+              </div>
+            </div>
+          </section>
         )}
       </div>
     </div>
@@ -387,203 +425,23 @@ function Metric({
   );
 }
 
-/** Everything the settings form writes: the project's shape, in one payload. */
-interface DetailsValues {
-  name: string;
-  description: string;
-  hasTimeline: boolean;
-  hasTracker: boolean;
-  hasWiki: boolean;
-  hasSprints: boolean;
-  hasRoles: boolean;
-  startDate: string | null;
-  endDate: string | null;
-  taskHasPriority: boolean;
-  taskHasLink: boolean;
-  taskHasDates: boolean;
-  taskHasHistory: boolean;
-  taskHasComments: boolean;
-}
-
-/** A stored date as a date input wants it, or empty when there isn't one. */
-function dateValue(iso: string | null) {
-  return iso ? toISODate(new Date(iso)) : "";
-}
-
-function DetailsForm({
-  project,
-  onCancel,
-  onSave,
+/** The project's letter, as its mark on the card and on its settings. */
+function ProjectInitial({
+  name,
+  size = "md",
 }: {
-  project: Project;
-  onCancel: () => void;
-  onSave: (values: DetailsValues) => Promise<void>;
+  name: string;
+  size?: "sm" | "md";
 }) {
-  const [name, setName] = useState(project.name);
-  const [description, setDescription] = useState(project.description ?? "");
-  const [hasTimeline, setHasTimeline] = useState(project.hasTimeline);
-  const [hasTracker, setHasTracker] = useState(project.hasTracker);
-  const [hasWiki, setHasWiki] = useState(project.hasWiki);
-  const [hasSprints, setHasSprints] = useState(project.hasSprints);
-  const [hasRoles, setHasRoles] = useState(project.hasRoles);
-  const [startDate, setStartDate] = useState(dateValue(project.startDate));
-  const [endDate, setEndDate] = useState(dateValue(project.endDate));
-
-  // The five optional halves of a task, held as one object rather than five
-  // pieces of state: the form draws them from a list, and so should its answers.
-  const [fields, setFields] = useState(() => ({
-    taskHasPriority: project.taskHasPriority,
-    taskHasLink: project.taskHasLink,
-    taskHasDates: project.taskHasDates,
-    taskHasHistory: project.taskHasHistory,
-    taskHasComments: project.taskHasComments,
-  }));
-
-  const [pending, setPending] = useState(false);
-
-  const backwards = Boolean(startDate && endDate && endDate < startDate);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim() || backwards) return;
-    setPending(true);
-    await onSave({
-      name: name.trim(),
-      description: description.trim(),
-      hasTimeline,
-      hasTracker,
-      hasWiki,
-      hasSprints,
-      hasRoles,
-      // Emptying a field clears the stored date rather than leaving the old one
-      // behind — an empty box has to mean what it looks like it means.
-      startDate: startDate || null,
-      endDate: endDate || null,
-      ...fields,
-    });
-    setPending(false);
-  }
-
   return (
-    <form className="flex flex-col gap-3.5" onSubmit={submit}>
-      <Field label="Project name">
-        <input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="input"
-        />
-      </Field>
-
-      <Field label="Short description">
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          className="input min-h-16 resize-y"
-          placeholder="What is this project about…"
-        />
-      </Field>
-
-      <div className="flex flex-col gap-3.5 sm:flex-row">
-        <Field label="Start date" className="flex-1">
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="input"
-          />
-        </Field>
-        <Field label="End date" className="flex-1">
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="input"
-          />
-        </Field>
-      </div>
-      <p className="-mt-1.5 text-[0.6875rem] text-[var(--ink-muted)]">
-        {backwards ? (
-          <span className="text-[var(--danger)]">
-            The project can’t end before it starts.
-          </span>
-        ) : (
-          "Leave these empty to let the work say when the project runs — the earliest task to the latest."
-        )}
-      </p>
-
-      <fieldset className="grid gap-2 sm:grid-cols-2">
-        <legend className="field-label mb-1.5">What do you need?</legend>
-        <ToolCheckbox
-          checked={hasTimeline}
-          onChange={setHasTimeline}
-          label="Gantt chart"
-          hint="Timeline of the work, with its dependencies"
-        />
-        <ToolCheckbox
-          checked={hasTracker}
-          onChange={setHasTracker}
-          label="Task tracker"
-          hint="Kanban board by status"
-        />
-        <ToolCheckbox
-          checked={hasSprints}
-          onChange={setHasSprints}
-          label="Sprints"
-          hint="Plan the work in rounds. Off, the boards show it all at once"
-        />
-        <ToolCheckbox
-          checked={hasWiki}
-          onChange={setHasWiki}
-          label="Wiki"
-          hint="Pages the project writes down for itself"
-        />
-        <ToolCheckbox
-          checked={hasRoles}
-          onChange={setHasRoles}
-          label="Roles"
-          hint="Decide what each group may open. Off, the project is yours alone"
-        />
-      </fieldset>
-      <p className="text-[0.6875rem] text-[var(--ink-muted)]">
-        The team roster isn’t a tool to switch off — every project has people.
-        Sprints and roles already made are kept when their tool is switched off,
-        and are waiting where they were if it comes back.
-      </p>
-
-      {/* The point of the whole screen: a form should ask what this team
-          actually fills in, and nothing else. */}
-      <fieldset className="grid gap-2 sm:grid-cols-2">
-        <legend className="field-label mb-1.5">What a task asks for</legend>
-        {TASK_FIELD_TOGGLES.map((toggle) => (
-          <ToolCheckbox
-            key={toggle.key}
-            checked={fields[toggle.key]}
-            onChange={(v) => setFields((prev) => ({ ...prev, [toggle.key]: v }))}
-            label={toggle.label}
-            hint={toggle.hint}
-          />
-        ))}
-      </fieldset>
-      <p className="text-[0.6875rem] text-[var(--ink-muted)]">
-        A field put away stops being asked about — on the form, on the card, and
-        on the boards. Nothing already written is lost: turn it back on and it is
-        all still there. Tasks keep their dates whatever this says, because the
-        timeline is drawn from them.
-      </p>
-
-      <div className="flex items-center justify-end gap-2">
-        <button type="button" onClick={onCancel} className="btn-secondary">
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={pending || !name.trim() || backwards}
-        >
-          {pending ? "Saving…" : "Save changes"}
-        </button>
-      </div>
-    </form>
+    <span
+      className={`flex shrink-0 items-center justify-center rounded-[var(--radius)] font-semibold text-white uppercase ${
+        size === "sm" ? "h-9 w-9 text-base" : "h-12 w-12 text-lg"
+      }`}
+      style={{ background: "var(--accent)" }}
+      aria-hidden="true"
+    >
+      {name.slice(0, 1)}
+    </span>
   );
 }
