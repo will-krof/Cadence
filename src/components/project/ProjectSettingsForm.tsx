@@ -26,6 +26,8 @@ export interface ProjectSettingsValues {
   taskHasDates: boolean;
   taskHasHistory: boolean;
   taskHasComments: boolean;
+  taskHasSubtasks: boolean;
+  taskHasDependencies: boolean;
 }
 
 /** What the form holds while it is being filled in: dates as the inputs want. */
@@ -55,6 +57,8 @@ function draftOf(project: Project): Draft {
     taskHasDates: project.taskHasDates,
     taskHasHistory: project.taskHasHistory,
     taskHasComments: project.taskHasComments,
+    taskHasSubtasks: project.taskHasSubtasks,
+    taskHasDependencies: project.taskHasDependencies,
   };
 }
 
@@ -115,6 +119,9 @@ export function ProjectSettingsForm({
   const dirty = changed.length > 0;
   const changedIn = (keys: readonly (keyof Draft)[]) =>
     keys.some((key) => changed.includes(key));
+
+  /** Whether this project has anywhere to keep a task. */
+  const hasTasks = draft.hasTimeline || draft.hasTracker;
 
   const nameError = !draft.name.trim() ? "A project needs a name." : null;
   const dateError =
@@ -338,6 +345,15 @@ export function ProjectSettingsForm({
         title="What a task asks for"
         hint="A form should ask what this team actually fills in, and nothing else."
         changed={changedIn(SECTION_KEYS.task)}
+        // Tasks live on the two boards. With neither of them on, this project
+        // has no tasks, and a page of questions about a task's fields is a
+        // page of questions about nothing — so it waits until there is
+        // somewhere for a task to be.
+        locked={
+          hasTasks
+            ? null
+            : "Switch on the Gantt chart or the task tracker above — tasks are kept on those, and until one of them is on there are none to ask about."
+        }
       >
         <div className="grid gap-2 sm:grid-cols-2">
           {TASK_FIELD_TOGGLES.map((toggle) => (
@@ -345,6 +361,7 @@ export function ProjectSettingsForm({
               key={toggle.key}
               checked={draft[toggle.key]}
               onChange={(v) => set(toggle.key, v)}
+              disabled={!hasTasks}
               label={toggle.label}
               hint={toggle.hint}
             />
@@ -353,21 +370,23 @@ export function ProjectSettingsForm({
 
         {/* The answer to "so what will the form look like?", without having to
             save and go and open one. */}
-        <div className="rounded-[var(--radius)] border border-dashed border-[var(--hairline)] p-3">
-          <p className="field-label mb-1.5">A task will ask for</p>
-          <div className="flex flex-wrap gap-1.5">
-            {ALWAYS_ASKED.map((label) => (
-              <span key={label} className="chip">
-                {label}
-              </span>
-            ))}
-            {TASK_FIELD_TOGGLES.filter((t) => draft[t.key]).map((t) => (
-              <span key={t.key} className="chip chip-accent">
-                {t.label}
-              </span>
-            ))}
+        {hasTasks && (
+          <div className="rounded-[var(--radius)] border border-dashed border-[var(--hairline)] p-3">
+            <p className="field-label mb-1.5">A task will ask for</p>
+            <div className="flex flex-wrap gap-1.5">
+              {ALWAYS_ASKED.map((label) => (
+                <span key={label} className="chip">
+                  {label}
+                </span>
+              ))}
+              {TASK_FIELD_TOGGLES.filter((t) => draft[t.key]).map((t) => (
+                <span key={t.key} className="chip chip-accent">
+                  {t.label}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <p className="text-[0.6875rem] text-[var(--ink-muted)]">
           A field put away stops being asked about — on the form, on the card
@@ -426,7 +445,7 @@ export function ProjectSettingsForm({
 }
 
 /** What every task carries, whatever the project has switched off. */
-const ALWAYS_ASKED = ["Title", "Description", "Assignee", "Status", "Steps"];
+const ALWAYS_ASKED = ["Title", "Description", "Assignee", "Status"];
 
 /** Spans a project is usually given, counted from the day it starts. */
 const SPANS = [
@@ -444,12 +463,19 @@ function Section({
   title,
   hint,
   changed,
+  locked = null,
   children,
 }: {
   title: string;
   hint: string;
   /** Marks the sections touched, so a long form can be checked over quickly. */
   changed: boolean;
+  /**
+   * Why this section can't be answered yet, if it can't. A section that
+   * depends on an answer further up says so in place, instead of quietly
+   * taking settings that would do nothing.
+   */
+  locked?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -457,14 +483,24 @@ function Section({
       <div>
         <h3 className="flex flex-wrap items-center gap-2 text-[0.8125rem] font-semibold tracking-tight">
           {title}
-          {changed && (
+          {changed && !locked && (
             <span className="chip chip-accent text-[0.5625rem] tracking-wide uppercase">
               Changed
+            </span>
+          )}
+          {locked && (
+            <span className="chip text-[0.5625rem] tracking-wide uppercase">
+              Locked
             </span>
           )}
         </h3>
         <p className="mt-0.5 text-[0.75rem] text-[var(--ink-muted)]">{hint}</p>
       </div>
+      {locked && (
+        <p className="rounded-[var(--radius)] bg-[var(--plane)] px-3 py-2 text-[0.75rem] text-[var(--ink-secondary)]">
+          {locked}
+        </p>
+      )}
       {children}
     </section>
   );

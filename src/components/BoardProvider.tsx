@@ -79,6 +79,8 @@ interface ProjectInput {
   taskHasDates?: boolean;
   taskHasHistory?: boolean;
   taskHasComments?: boolean;
+  taskHasSubtasks?: boolean;
+  taskHasDependencies?: boolean;
   /** Put away, or brought back. */
   archived?: boolean;
 }

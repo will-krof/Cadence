@@ -246,6 +246,8 @@ export interface Project {
   taskHasDates: boolean;
   taskHasHistory: boolean;
   taskHasComments: boolean;
+  taskHasSubtasks: boolean;
+  taskHasDependencies: boolean;
   /** Put away: still openable, but out of the run of projects being worked on. */
   archived: boolean;
   roles: ProjectRole[];
@@ -266,6 +268,10 @@ export interface TaskFields {
   dates: boolean;
   history: boolean;
   comments: boolean;
+  /** Whether a task is broken into steps. */
+  subtasks: boolean;
+  /** Whether a task says what it waits on. */
+  dependencies: boolean;
 }
 
 /** Everything on, for the screens that have no project to ask. */
@@ -275,6 +281,8 @@ export const ALL_TASK_FIELDS: TaskFields = {
   dates: true,
   history: true,
   comments: true,
+  subtasks: true,
+  dependencies: true,
 };
 
 export function taskFields(project: Project | null): TaskFields {
@@ -285,6 +293,8 @@ export function taskFields(project: Project | null): TaskFields {
     dates: project.taskHasDates,
     history: project.taskHasHistory,
     comments: project.taskHasComments,
+    subtasks: project.taskHasSubtasks,
+    dependencies: project.taskHasDependencies,
   };
 }
 
@@ -327,7 +337,14 @@ export const PROJECT_TOOL_TOGGLES: {
 
 /** The task fields a project offers, as the settings form lists them. */
 export const TASK_FIELD_TOGGLES: {
-  key: "taskHasPriority" | "taskHasLink" | "taskHasDates" | "taskHasHistory" | "taskHasComments";
+  key:
+    | "taskHasPriority"
+    | "taskHasLink"
+    | "taskHasDates"
+    | "taskHasHistory"
+    | "taskHasComments"
+    | "taskHasSubtasks"
+    | "taskHasDependencies";
   label: string;
   hint: string;
 }[] = [
@@ -351,6 +368,16 @@ export const TASK_FIELD_TOGGLES: {
     key: "taskHasComments",
     label: "Comments",
     hint: "What people say about a task",
+  },
+  {
+    key: "taskHasSubtasks",
+    label: "Subtasks",
+    hint: "Break a task into steps, each with someone on it",
+  },
+  {
+    key: "taskHasDependencies",
+    label: "Dependencies",
+    hint: "What a task waits on. The timeline draws them as lines",
   },
 ];
 

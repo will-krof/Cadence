@@ -556,12 +556,15 @@ export function SettingToggle({
   hint,
   /** Said under the row when this setting, as it stands, needs explaining. */
   note,
+  /** A setting that can't be answered yet, because something above it isn't on. */
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
   hint: string;
   note?: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <label
@@ -570,21 +573,24 @@ export function SettingToggle({
       // instead — it slips out of the scrolling panel it is drawn in and lands
       // below the window, which stretches the page and shows as a band of
       // empty colour under the app.
-      className={`relative flex cursor-pointer items-start gap-3 rounded-[var(--radius)] border p-3 transition ${
-        checked
-          ? "border-[var(--accent)] bg-[var(--accent-wash)]"
-          : "border-[var(--hairline)] hover:bg-[var(--plane)]"
+      className={`relative flex items-start gap-3 rounded-[var(--radius)] border p-3 transition ${
+        disabled
+          ? "cursor-not-allowed border-[var(--hairline)] opacity-50"
+          : checked
+            ? "cursor-pointer border-[var(--accent)] bg-[var(--accent-wash)]"
+            : "cursor-pointer border-[var(--hairline)] hover:bg-[var(--plane)]"
       }`}
     >
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
         className="peer sr-only"
       />
       <span
         className={`relative mt-0.5 h-4 w-7 shrink-0 rounded-full transition-colors peer-focus-visible:ring-3 peer-focus-visible:ring-[var(--accent-wash)] ${
-          checked ? "bg-[var(--accent)]" : "bg-[var(--baseline)]"
+          checked && !disabled ? "bg-[var(--accent)]" : "bg-[var(--baseline)]"
         }`}
         aria-hidden="true"
       >
@@ -599,7 +605,9 @@ export function SettingToggle({
           {label}
           <span
             className={`text-[0.5625rem] tracking-wide uppercase ${
-              checked ? "text-[var(--accent)]" : "text-[var(--ink-muted)]"
+              checked && !disabled
+                ? "text-[var(--accent)]"
+                : "text-[var(--ink-muted)]"
             }`}
           >
             {checked ? "On" : "Off"}

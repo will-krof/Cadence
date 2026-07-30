@@ -129,8 +129,14 @@ export function TaskModal({
   const [stepWho, setStepWho] = useState("");
 
   // A step of a step is a task in its own right, so a subtask's form doesn't
-  // offer any.
-  const takesSteps = !task?.parentId;
+  // offer any — and a project that doesn't break work down isn't asked at all.
+  const takesSteps = fields.subtasks && !task?.parentId;
+
+  /** Whether anything at all belongs beside the task. */
+  const aside =
+    fields.dependencies ||
+    takesSteps ||
+    (isEdit && (fields.history || fields.comments));
 
   const byId = useMemo(
     () => new Map(projectTasks.map((t) => [t.id, t])),
@@ -212,7 +218,15 @@ export function TaskModal({
   return (
     <Modal wide onClose={onClose} title={isEdit ? "Edit task" : "New task"}>
       <form className="flex flex-col gap-5" onSubmit={submit}>
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:gap-7">
+        {/* Two columns while there is something to put in the second. A
+            project that asks for neither steps nor dependencies, and keeps
+            neither history nor comments, has nothing to say around the task —
+            and an empty half of a dialog reads as something failing to load. */}
+        <div
+          className={`grid gap-5 lg:gap-7 ${
+            aside ? "lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]" : ""
+          }`}
+        >
           {/* The task itself. `min-w-0` on both columns because a grid child
               sizes to its widest content by default, and one row of the step
               editor is wider than a phone. */}
@@ -311,18 +325,21 @@ export function TaskModal({
           </div>
 
           {/* Everything around it. */}
+          {aside && (
           <div className="flex min-w-0 flex-col gap-4">
-            <Dependencies
-              startDate={startDate}
-              blockedBy={blockedBy}
-              blocking={blocking}
-              byId={byId}
-              candidates={candidates}
-              onAdd={(id) => setBlockedBy((prev) => [...prev, id])}
-              onRemove={(id) =>
-                setBlockedBy((prev) => prev.filter((b) => b !== id))
-              }
-            />
+            {fields.dependencies && (
+              <Dependencies
+                startDate={startDate}
+                blockedBy={blockedBy}
+                blocking={blocking}
+                byId={byId}
+                candidates={candidates}
+                onAdd={(id) => setBlockedBy((prev) => [...prev, id])}
+                onRemove={(id) =>
+                  setBlockedBy((prev) => prev.filter((b) => b !== id))
+                }
+              />
+            )}
 
             {takesSteps && (
               <fieldset className="flex min-w-0 flex-col gap-2 border-t border-[var(--hairline)] pt-3.5">
@@ -495,6 +512,7 @@ export function TaskModal({
               </>
             )}
           </div>
+          )}
         </div>
 
         <div className="mt-1 flex items-center justify-end gap-2 border-t border-[var(--hairline)] pt-4">

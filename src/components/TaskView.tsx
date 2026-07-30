@@ -55,13 +55,23 @@ export function TaskView({
   const priority = priorityMeta(task.priority);
   const link = isHttpUrl(task.link) ? task.link : null;
   const done = subtasks.filter((s) => s.status === "DONE").length;
+  /** Whether anything at all belongs beside the task, as on the form. */
+  const aside =
+    fields.dependencies ||
+    (fields.subtasks && subtasks.length > 0) ||
+    fields.history ||
+    fields.comments;
 
   return (
     // The dialog is headed "Task", the way the form is headed "Edit task" — the
     // title itself leads the card rather than being said twice.
     <Modal wide onClose={onClose} title="Task">
       <div className="flex flex-col gap-5">
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:gap-7">
+        <div
+          className={`grid gap-5 lg:gap-7 ${
+            aside ? "lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]" : ""
+          }`}
+        >
           {/* The task itself. */}
           <div className="flex min-w-0 flex-col gap-4">
             <div className="flex flex-col gap-2">
@@ -140,7 +150,9 @@ export function TaskView({
           </div>
 
           {/* Everything around it, in the order the form puts it in. */}
+          {aside && (
           <div className="flex min-w-0 flex-col gap-4">
+            {fields.dependencies && (
             <Block label="Dependencies">
               {task.blockedBy.length === 0 && blocking.length === 0 ? (
                 <Empty>Nothing is holding this up.</Empty>
@@ -179,8 +191,9 @@ export function TaskView({
                 </div>
               )}
             </Block>
+            )}
 
-            {subtasks.length > 0 && (
+            {fields.subtasks && subtasks.length > 0 && (
               <Block label={`Subtasks ${done}/${subtasks.length}`}>
                 <ul className="flex flex-col gap-1">
                   {subtasks.map((step) => (
@@ -218,6 +231,7 @@ export function TaskView({
             {/* Open to anybody who got this far: reading a board is enough. */}
             {fields.comments && <TaskComments taskId={task.id} />}
           </div>
+          )}
         </div>
 
         <div className="mt-1 flex items-center justify-end gap-2 border-t border-[var(--hairline)] pt-4">

@@ -29,6 +29,8 @@ export const PROJECT_FIELDS = {
   taskHasDates: true,
   taskHasHistory: true,
   taskHasComments: true,
+  taskHasSubtasks: true,
+  taskHasDependencies: true,
   archived: true,
   createdAt: true,
   roles: { orderBy: ROLE_ORDER },

@@ -346,7 +346,7 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
                   <TaskCard
                     key={task.id}
                     task={task}
-                    steps={stepCounts.get(task.id)}
+                    steps={fields.subtasks ? stepCounts.get(task.id) : undefined}
                     hiddenStatuses={hidden}
                     canEdit={canEdit}
                     parentTitle={

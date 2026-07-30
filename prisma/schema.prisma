@@ -152,6 +152,11 @@ model Project {
   taskHasDates    Boolean @default(false)
   taskHasHistory  Boolean @default(false)
   taskHasComments Boolean @default(false)
+  /// Whether a task is broken into steps, and whether it waits on other tasks.
+  /// Both are halves of a task like the rest: a team that plans in one-line
+  /// jobs, or one whose order is obvious, shouldn't be asked about either.
+  taskHasSubtasks     Boolean @default(false)
+  taskHasDependencies Boolean @default(false)
   /// Put away: still openable and still holding its work, but out of the run of
   /// projects being worked on.
   archived    Boolean  @default(false)

@@ -21,7 +21,7 @@ import {
   statusMeta,
   taskFields,
 } from "@/lib/types";
-import { analyseNetwork, Link } from "@/lib/critical-path";
+import { analyseNetwork, EMPTY_NETWORK, Link } from "@/lib/critical-path";
 import { useBoard } from "@/components/BoardProvider";
 import {
   useColumnWidths,
@@ -176,7 +176,13 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
    * Read from `rows` rather than every task: a link to a bar that isn't there —
    * a step folded away, work planned into another sprint — has nowhere to land.
    */
-  const network = useMemo(() => analyseNetwork(rows), [rows]);
+  // A project that doesn't ask what a task waits on has no network to draw:
+  // no lines, no chips, no critical path, and nothing in the toolbar offering
+  // to show them.
+  const network = useMemo(
+    () => (fields.dependencies ? analyseNetwork(rows) : EMPTY_NETWORK),
+    [rows, fields.dependencies]
+  );
   /** Where each row sits, for drawing a line from one bar to another. */
   const rowIndex = useMemo(
     () => new Map(rows.map((t, i) => [t.id, i])),
@@ -844,7 +850,7 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
             <TableRow
               key={task.id}
               task={task}
-              steps={stepCounts.get(task.id)}
+              steps={fields.subtasks ? stepCounts.get(task.id) : undefined}
               blocks={blockCounts.get(task.id) ?? 0}
               critical={showCritical && network.critical.has(task.id)}
               hiddenStatuses={hiddenStatuses}

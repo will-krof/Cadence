@@ -44,7 +44,9 @@ export interface Network {
   span: number;
 }
 
-const EMPTY: Network = {
+/** A plan with nothing joined to anything — and what a board that doesn't ask
+ * about dependencies draws. */
+export const EMPTY_NETWORK: Network = {
   links: [],
   critical: new Set(),
   slack: new Map(),
@@ -69,7 +71,7 @@ export function analyseNetwork(tasks: Planned[]): Network {
       if (byId.has(blockerId)) edges.push({ from: blockerId, to: task.id });
     }
   }
-  if (edges.length === 0) return EMPTY;
+  if (edges.length === 0) return EMPTY_NETWORK;
 
   const linked = new Set<string>();
   const after = new Map<string, string[]>();
