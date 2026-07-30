@@ -159,6 +159,10 @@ model Project {
   /// jobs, or one whose order is obvious, shouldn't be asked about either.
   taskHasSubtasks     Boolean @default(false)
   taskHasDependencies Boolean @default(false)
+  /// Whether tasks carry tags at all. The tags themselves are the project's
+  /// own — every team labels its work in its own words — so they are rows
+  /// rather than a list this app decided on.
+  taskHasTags         Boolean @default(false)
   /// Put away: still openable and still holding its work, but out of the run of
   /// projects being worked on.
   archived    Boolean  @default(false)
@@ -170,8 +174,38 @@ model Project {
   roles       ProjectRole[]
   members     ProjectMember[]
   wikiPages   WikiPage[]
+  tags        ProjectTag[]
 
   @@index([userId])
+}
+
+/// A label a project puts on its work, in its own words and its own colour.
+/// Switching tags off keeps them: what a project calls its work outlives a
+/// decision to stop showing it.
+model ProjectTag {
+  id        String   @id @default(cuid())
+  name      String
+  /// A hex colour, checked before it is stored — it ends up in a style.
+  color     String   @default("#2a78d6")
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  tasks     TaskTag[]
+
+  /// Two tags with one name is two of the same tag.
+  @@unique([projectId, name])
+  @@index([projectId])
+}
+
+/// One tag on one task.
+model TaskTag {
+  taskId String
+  task   Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tagId  String
+  tag    ProjectTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+  @@index([tagId])
 }
 
 /// What a group of people is allowed to see on one project. Every project has
@@ -292,6 +326,9 @@ model Task {
   /// list rather than one name: work of any size is done by more than one
   /// person, and a board that can only say one of them says the wrong thing.
   assignees   TaskAssignee[]
+  /// What this project calls it. A tag belongs to the project, so a task can
+  /// only wear the labels its own project has.
+  tags        TaskTag[]
   /// The task this one is a step of, if it is one. Subtasks go one level deep:
   /// a step of a step is a task in its own right, and the board says so.
   /// Deleting a task takes its subtasks — they are parts of it, not work that

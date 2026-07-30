@@ -15,6 +15,8 @@ export const LIMITS = {
   email: 200,
   phone: 40,
   roleName: 60,
+  /** A tag is a word or two — anything longer is a description. */
+  tagName: 24,
   /** A wiki page is the one long thing here — a chapter, not a book. */
   wiki: 100_000,
   /** scrypt is deliberately slow, so a password is not an open-ended input. */

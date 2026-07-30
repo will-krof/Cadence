@@ -248,9 +248,38 @@ export interface Project {
   taskHasComments: boolean;
   taskHasSubtasks: boolean;
   taskHasDependencies: boolean;
+  taskHasTags: boolean;
   /** Put away: still openable, but out of the run of projects being worked on. */
   archived: boolean;
   roles: ProjectRole[];
+  /** What this project calls its work: its own labels, in its own colours. */
+  tags: ProjectTag[];
+  createdAt: string;
+}
+
+/**
+ * The colours a tag is offered. A short list rather than a colour wheel: eight
+ * that tell each other apart on both themes is a set of labels you can read at
+ * a glance, and a free picker is how a board ends up with four blues.
+ */
+export const TAG_COLORS = [
+  "#2a78d6",
+  "#4f9d69",
+  "#c9a227",
+  "#e2725b",
+  "#d03b3b",
+  "#7b6cd9",
+  "#3aa8a0",
+  "#8a8f98",
+] as const;
+
+/** One label a project puts on its work. */
+export interface ProjectTag {
+  id: string;
+  name: string;
+  /** A hex colour, checked on the way in. */
+  color: string;
+  projectId: string;
   createdAt: string;
 }
 
@@ -272,6 +301,8 @@ export interface TaskFields {
   subtasks: boolean;
   /** Whether a task says what it waits on. */
   dependencies: boolean;
+  /** Whether a task carries the project's labels. */
+  tags: boolean;
 }
 
 /** Everything on, for the screens that have no project to ask. */
@@ -283,6 +314,7 @@ export const ALL_TASK_FIELDS: TaskFields = {
   comments: true,
   subtasks: true,
   dependencies: true,
+  tags: true,
 };
 
 export function taskFields(project: Project | null): TaskFields {
@@ -295,6 +327,7 @@ export function taskFields(project: Project | null): TaskFields {
     comments: project.taskHasComments,
     subtasks: project.taskHasSubtasks,
     dependencies: project.taskHasDependencies,
+    tags: project.taskHasTags,
   };
 }
 
@@ -344,7 +377,8 @@ export const TASK_FIELD_TOGGLES: {
     | "taskHasHistory"
     | "taskHasComments"
     | "taskHasSubtasks"
-    | "taskHasDependencies";
+    | "taskHasDependencies"
+    | "taskHasTags";
   label: string;
   hint: string;
 }[] = [
@@ -379,6 +413,11 @@ export const TASK_FIELD_TOGGLES: {
     label: "Dependencies",
     hint: "What a task waits on. The timeline draws them as lines",
   },
+  {
+    key: "taskHasTags",
+    label: "Tags",
+    hint: "Labels of your own, in your own colours",
+  },
 ];
 
 /** A task as it travels: the assignee is an id, not a copy of their profile. */
@@ -400,6 +439,8 @@ export interface TaskRow {
    * as not.
    */
   assigneeIds: string[];
+  /** The project's labels this task wears, by id. */
+  tagIds: string[];
   /** The sprint this task is planned into, if any. */
   sprintId: string | null;
   /** The task this one is a step of, if it is one. */
@@ -445,6 +486,8 @@ export interface Task extends TaskRow {
    * is why the ids stay on the row beside them.
    */
   assignees: Developer[];
+  /** The labels it wears, joined against the project's own. */
+  tags: ProjectTag[];
 }
 
 export interface Sprint {

@@ -12,6 +12,7 @@ import { blockerProblem, parseBlockers } from "@/lib/task-deps";
 import { LIMITS } from "@/lib/sanitize";
 import { ownedProject } from "@/lib/owned";
 import { assigneeRows, parseAssignees } from "@/lib/assignees";
+import { parseTagIds } from "@/lib/task-tags";
 import { badRequest, forbidden, notFound } from "@/lib/responses";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
@@ -91,6 +92,15 @@ export async function POST(request: NextRequest) {
   const named = parseAssignees(body.assigneeIds);
   if ("error" in named) return badRequest(named.error);
   const assignees = "unsaid" in named ? [] : named.ids;
+
+  // A task only wears labels its own project keeps.
+  const tagIds = parseTagIds(body.tagIds);
+  if (tagIds.length > 0) {
+    const known = await prisma.projectTag.count({
+      where: { id: { in: tagIds }, projectId },
+    });
+    if (known !== tagIds.length) return notFound("Tag");
+  }
 
   // A task belongs to a sprint of its own project. Without this, an id from
   // somewhere else would file the work under a stranger's sprint.
@@ -179,6 +189,7 @@ export async function POST(request: NextRequest) {
       title,
       status: parsed.data.status ?? "TODO",
       assignees: { create: assigneeRows(assignees) },
+      tags: { create: tagIds.map((tagId) => ({ tagId })) },
       parentId,
       order: from,
       // What it waits on, written with it: a task that arrives already blocked

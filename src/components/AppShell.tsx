@@ -713,6 +713,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
           // A task can be written already waiting on something, so the form
           // needs the plan it is being written into.
           projectTasks={projectTasks}
+          tags={activeProject.tags}
           fields={taskFields(activeProject)}
           onClose={() => setShowAddTask(false)}
           onSubmit={async (values) => {

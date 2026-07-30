@@ -15,6 +15,7 @@ import {
   Membership,
   Project,
   ProjectRole,
+  ProjectTag,
   Sprint,
   Task,
   TaskPriority,
@@ -51,6 +52,12 @@ interface RolePatch {
   canViewTracker?: boolean;
   canViewTeam?: boolean;
   canViewWiki?: boolean;
+}
+
+/** What can be changed about a tag: what it is called, and what colour it is. */
+interface TagPatch {
+  name?: string;
+  color?: string;
 }
 
 interface SprintPatch {
@@ -114,6 +121,17 @@ interface BoardContextValue {
     input: RolePatch
   ) => Promise<void>;
   deleteRole: (projectId: string, roleId: string) => Promise<void>;
+  createTag: (
+    projectId: string,
+    name: string,
+    color: string
+  ) => Promise<ProjectTag | null>;
+  updateTag: (
+    projectId: string,
+    tagId: string,
+    patch: TagPatch
+  ) => Promise<void>;
+  deleteTag: (projectId: string, tagId: string) => Promise<void>;
 
   tasks: Task[];
   /** Every task in the project, not just the sprint on show. */
@@ -282,6 +300,12 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     return out;
   }, [rows, boardSprintId, planned]);
 
+  /** The project's labels by id, for putting them back on their tasks. */
+  const tagById = useMemo(
+    () => new Map((activeProject?.tags ?? []).map((t) => [t.id, t])),
+    [activeProject]
+  );
+
   // The server sends an assignee id; boards want the person. Joining here means
   // one pass when either side changes, instead of a copy of every profile
   // travelling inside every task.
@@ -293,8 +317,11 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       assignees: row.assigneeIds
         .map((id) => byId.get(id))
         .filter((d): d is Developer => d != null),
+      tags: row.tagIds
+        .map((id) => tagById.get(id))
+        .filter((t): t is ProjectTag => t != null),
     }));
-  }, [boardRows, developers]);
+  }, [boardRows, developers, tagById]);
 
   /**
    * Who is left to hand work to. An archived person is off the team — their
@@ -315,8 +342,11 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       assignees: row.assigneeIds
         .map((id) => byId.get(id))
         .filter((d): d is Developer => d != null),
+      tags: row.tagIds
+        .map((id) => tagById.get(id))
+        .filter((t): t is ProjectTag => t != null),
     }));
-  }, [rows, developers]);
+  }, [rows, developers, tagById]);
 
   // Rollback needs the rows as they are now, but reading them from state would
   // give every task edit a new callback identity — and re-render every board.
@@ -535,6 +565,93 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       notify("success", "Role removed.");
     },
     [patchRoles, notify]
+  );
+
+  /** Tags live on the project too, and change the same way roles do. */
+  const patchTags = useCallback(
+    (projectId: string, update: (tags: ProjectTag[]) => ProjectTag[]) => {
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === projectId ? { ...p, tags: update(p.tags) } : p
+        )
+      );
+    },
+    []
+  );
+
+  const createTag = useCallback(
+    async (projectId: string, name: string, color: string) => {
+      const res = await fetch(`/api/projects/${projectId}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, color }),
+      });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not add this tag."));
+        return null;
+      }
+      const created: ProjectTag = await res.json();
+      patchTags(projectId, (tags) => [...tags, created]);
+      return created;
+    },
+    [patchTags, notify]
+  );
+
+  const updateTag = useCallback(
+    async (projectId: string, tagId: string, input: TagPatch) => {
+      // The chip changes under the cursor and is put back if the save fails —
+      // picking a colour that waits for the network feels broken.
+      const previous = projects
+        .find((p) => p.id === projectId)
+        ?.tags.find((t) => t.id === tagId);
+      patchTags(projectId, (tags) =>
+        tags.map((t) => (t.id === tagId ? { ...t, ...input } : t))
+      );
+
+      const res = await fetch(`/api/projects/${projectId}/tags/${tagId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        if (previous) {
+          patchTags(projectId, (tags) =>
+            tags.map((t) => (t.id === tagId ? previous : t))
+          );
+        }
+        notify("error", await errorMessage(res, "Could not save this tag."));
+        return;
+      }
+      const updated: ProjectTag = await res.json();
+      patchTags(projectId, (tags) =>
+        tags.map((t) => (t.id === tagId ? updated : t))
+      );
+    },
+    [projects, patchTags, notify]
+  );
+
+  const deleteTag = useCallback(
+    async (projectId: string, tagId: string) => {
+      const res = await fetch(`/api/projects/${projectId}/tags/${tagId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not remove this tag."));
+        return;
+      }
+      patchTags(projectId, (tags) => tags.filter((t) => t.id !== tagId));
+      // A tag that is gone is off the work that wore it, here as in the
+      // database.
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.tagIds.includes(tagId)
+            ? { ...t, tagIds: t.tagIds.filter((id) => id !== tagId) }
+            : t
+        )
+      );
+      notify("success", "Tag removed.");
+    },
+    [patchTags, setTasks, notify]
   );
 
   const createTask = useCallback(
@@ -969,6 +1086,9 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     createRole,
     updateRole,
     deleteRole,
+    createTag,
+    updateTag,
+    deleteTag,
     tasks,
     projectTasks,
     developers,
@@ -1007,6 +1127,9 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       rotateInvite,
       revokeInvite,
       createRole,
+      createTag,
+      updateTag,
+      deleteTag,
       updateRole,
       deleteRole,
       tasks,

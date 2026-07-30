@@ -34,6 +34,7 @@ import {
   AssigneePicker,
   AvatarStack,
   PriorityMark,
+  TagDots,
   SprintPicker,
   Stat,
   StatusPill,
@@ -1283,6 +1284,9 @@ const TableRow = memo(function TableRow({
         >
           {task.title}
         </button>
+        {/* Labels as dots on a row this narrow: the names are in the title
+            attribute and on the card, and the row keeps its width. */}
+        {fields.tags && <TagDots tags={task.tags} max={3} />}
         {fields.link && link && (
           <a
             href={link}

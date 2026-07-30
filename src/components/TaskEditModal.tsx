@@ -33,6 +33,7 @@ export function TaskEditModal({
   onClose: () => void;
 }) {
   const {
+    activeProject,
     projectTasks,
     assignable,
     createTask,
@@ -75,6 +76,7 @@ export function TaskEditModal({
       // one row.
       projectTasks={projectTasks}
       developers={assignable}
+      tags={activeProject?.tags}
       fields={fields}
       onClose={onClose}
       onSubmit={async (values) => {

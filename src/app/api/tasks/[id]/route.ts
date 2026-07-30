@@ -5,6 +5,7 @@ import { TASK_FIELDS, taskPayload } from "@/lib/task-select";
 import { parseTask } from "@/lib/task-input";
 import { blockerProblem, parseBlockers, setBlockers } from "@/lib/task-deps";
 import { assigneeRows, parseAssignees } from "@/lib/assignees";
+import { parseTagIds } from "@/lib/task-tags";
 import { badRequest, done, forbidden, notFound } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -71,6 +72,16 @@ export async function PATCH(
     if (known !== assignees.length) return notFound("Developer");
   }
 
+  // The labels the request puts on it, when it mentions them at all, and only
+  // ones this project keeps.
+  const tagIds = body.tagIds === undefined ? null : parseTagIds(body.tagIds);
+  if (tagIds && tagIds.length > 0) {
+    const known = await prisma.projectTag.count({
+      where: { id: { in: tagIds }, projectId: reachable.projectId },
+    });
+    if (known !== tagIds.length) return notFound("Tag");
+  }
+
   // Moving a task between sprints stays inside its own project.
   if (body.sprintId) {
     const sprint = await prisma.sprint.findFirst({
@@ -101,6 +112,9 @@ export async function PATCH(
       // written in the order they were named.
       ...(assignees
         ? { assignees: { deleteMany: {}, create: assigneeRows(assignees) } }
+        : {}),
+      ...(tagIds
+        ? { tags: { deleteMany: {}, create: tagIds.map((tagId) => ({ tagId })) } }
         : {}),
       sprintId: body.sprintId === undefined ? undefined : body.sprintId || null,
       parentId,

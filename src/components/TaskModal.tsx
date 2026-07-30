@@ -5,6 +5,7 @@ import { formatDay, toISODate } from "@/lib/dates";
 import {
   ALL_TASK_FIELDS,
   Developer,
+  ProjectTag,
   Task,
   TaskFields,
   TaskPriority,
@@ -20,6 +21,7 @@ import {
   Modal,
   PriorityMark,
   PrioritySelect,
+  TagPicker,
 } from "@/components/ui";
 import { MAX_ASSIGNEES } from "@/lib/assignees";
 import { TaskHistory } from "@/components/TaskHistory";
@@ -35,6 +37,8 @@ export interface TaskFormValues {
   priority: TaskPriority;
   /** Who is on it, by id: up to four, in the order they were picked. */
   assigneeIds: string[];
+  /** The project's labels it wears, by id. */
+  tagIds: string[];
   /** The tasks this one waits on, by id. */
   blockedBy: string[];
   /** Steps to create along with a new task, each with whoever will do it. */
@@ -49,6 +53,9 @@ export interface NewStep {
 
 /** Nothing to pick from: a stable empty list, so a default can't churn a memo. */
 const NO_TASKS: Task[] = [];
+
+/** A project with no labels of its own. */
+const NO_TAGS: ProjectTag[] = [];
 
 /**
  * One form for both creating and editing. Passing a task switches it to edit
@@ -65,6 +72,7 @@ export function TaskModal({
   subtasks = [],
   projectTasks = NO_TASKS,
   developers,
+  tags = NO_TAGS,
   fields = ALL_TASK_FIELDS,
   onClose,
   onSubmit,
@@ -82,6 +90,8 @@ export function TaskModal({
    */
   projectTasks?: Task[];
   developers: Developer[];
+  /** The labels this project keeps, for the task to wear some of. */
+  tags?: ProjectTag[];
   /**
    * Which of a task's fields this project asks about. A field put away isn't
    * offered here — but what is already written in it is kept and sent back
@@ -119,6 +129,7 @@ export function TaskModal({
   const [assigneeIds, setAssigneeIds] = useState<string[]>(
     task?.assigneeIds ?? []
   );
+  const [tagIds, setTagIds] = useState<string[]>(task?.tagIds ?? []);
   const [pending, setPending] = useState(false);
 
   // What this task waits on. Held in the form rather than written as it is
@@ -221,6 +232,7 @@ export function TaskModal({
       status,
       priority,
       assigneeIds,
+      tagIds,
       blockedBy,
       subtasks: staged,
     });
@@ -261,6 +273,12 @@ export function TaskModal({
                 placeholder="What needs to be done…"
               />
             </Field>
+
+            {fields.tags && (
+              <Field label="Tags">
+                <TagPicker tags={tags} chosen={tagIds} onChange={setTagIds} />
+              </Field>
+            )}
 
             {fields.link && (
               <Field label="Link">

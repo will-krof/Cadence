@@ -25,12 +25,16 @@ export const TASK_FIELDS = {
     select: { developerId: true },
     orderBy: { order: "asc" },
   },
+  // What the project calls it: ids only, joined against the project's own
+  // tags, which the client already holds.
+  tags: { select: { tagId: true } },
 } as const;
 
 /** A task as Prisma hands it back, before the join rows are flattened. */
 type Selected = {
   blockedBy: { blockerId: string }[];
   assignees: { developerId: string }[];
+  tags: { tagId: string }[];
 };
 
 /**
@@ -41,12 +45,14 @@ type Selected = {
 export function taskPayload<T extends Selected>({
   blockedBy,
   assignees,
+  tags,
   ...task
 }: T) {
   return {
     ...task,
     blockedBy: blockedBy.map((d) => d.blockerId),
     assigneeIds: assignees.map((a) => a.developerId),
+    tagIds: tags.map((t) => t.tagId),
   };
 }
 

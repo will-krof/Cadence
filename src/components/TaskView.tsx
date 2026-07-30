@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { formatRange } from "@/lib/dates";
 import { isHttpUrl } from "@/lib/sanitize";
 import { ALL_TASK_FIELDS, Task, TaskFields, priorityMeta, statusMeta } from "@/lib/types";
-import { AvatarStack, Modal, PriorityMark } from "@/components/ui";
+import { AvatarStack, Modal, PriorityMark, TagChip } from "@/components/ui";
 import { TaskHistory } from "@/components/TaskHistory";
 import { TaskComments } from "@/components/TaskComments";
 
@@ -122,6 +122,16 @@ export function TaskView({
                 </span>
               </div>
             </div>
+
+            {fields.tags && task.tags.length > 0 && (
+              <Block label="Tags">
+                <span className="flex flex-wrap gap-1.5">
+                  {task.tags.map((tag) => (
+                    <TagChip key={tag.id} tag={tag} />
+                  ))}
+                </span>
+              </Block>
+            )}
 
             <Block label="Description">
               {task.description ? (

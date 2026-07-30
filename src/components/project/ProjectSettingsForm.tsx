@@ -28,6 +28,7 @@ export interface ProjectSettingsValues {
   taskHasComments: boolean;
   taskHasSubtasks: boolean;
   taskHasDependencies: boolean;
+  taskHasTags: boolean;
 }
 
 /** What the form holds while it is being filled in: dates as the inputs want. */
@@ -59,6 +60,7 @@ function draftOf(project: Project): Draft {
     taskHasComments: project.taskHasComments,
     taskHasSubtasks: project.taskHasSubtasks,
     taskHasDependencies: project.taskHasDependencies,
+    taskHasTags: project.taskHasTags,
   };
 }
 
@@ -87,10 +89,17 @@ const SECTION_KEYS = {
  */
 export function ProjectSettingsForm({
   project,
+  tagEditor,
   onCancel,
   onSave,
 }: {
   project: Project;
+  /**
+   * The project's tags, editable in place. Handed in rather than built here
+   * because a tag is written the moment it is typed — it is a row of the
+   * project, like a sprint, not an answer this form is collecting.
+   */
+  tagEditor?: React.ReactNode;
   onCancel: () => void;
   onSave: (values: ProjectSettingsValues) => Promise<void>;
 }) {
@@ -368,6 +377,10 @@ export function ProjectSettingsForm({
           ))}
         </div>
 
+        {/* Tags are the one field whose answer is the project's own, so the
+            list of them is set up right under the switch that shows it. */}
+        {hasTasks && draft.taskHasTags && tagEditor}
+
         {/* The answer to "so what will the form look like?", without having to
             save and go and open one. */}
         {hasTasks && (
@@ -445,7 +458,7 @@ export function ProjectSettingsForm({
 }
 
 /** What every task carries, whatever the project has switched off. */
-const ALWAYS_ASKED = ["Title", "Description", "Assignee", "Status"];
+const ALWAYS_ASKED = ["Title", "Description", "Who is on it", "Status"];
 
 /** Spans a project is usually given, counted from the day it starts. */
 const SPANS = [

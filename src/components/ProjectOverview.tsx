@@ -6,6 +6,7 @@ import { useFeedback } from "@/components/Feedback";
 import { PeopleSection } from "@/components/project/PeopleSection";
 import { ProjectSettingsForm } from "@/components/project/ProjectSettingsForm";
 import { RolesSection } from "@/components/project/RolesSection";
+import { TagsSection } from "@/components/project/TagsSection";
 import { SprintsSection } from "@/components/project/SprintsSection";
 import { diffDays, formatDay } from "@/lib/dates";
 import { Developer, STATUS_OPTIONS, TaskStatus } from "@/lib/types";
@@ -57,6 +58,9 @@ export function ProjectOverview({
     createRole,
     updateRole,
     deleteRole,
+    createTag,
+    updateTag,
+    deleteTag,
   } = useBoard();
   const tasks = projectTasks;
   const { confirm } = useFeedback();
@@ -198,6 +202,18 @@ export function ProjectOverview({
           <ProjectSettingsForm
             key={activeProject.id}
             project={activeProject}
+            tagEditor={
+              <TagsSection
+                project={activeProject}
+                onAdd={(name, color) =>
+                  createTag(activeProject.id, name, color)
+                }
+                onUpdate={(tagId, patch) =>
+                  updateTag(activeProject.id, tagId, patch)
+                }
+                onRemove={(tagId) => deleteTag(activeProject.id, tagId)}
+              />
+            }
             onCancel={() => setEditing(false)}
             onSave={async (values) => {
               await updateProject(activeProject.id, values);

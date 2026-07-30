@@ -30,6 +30,13 @@ export function ownedRole(userId: string, projectId: string, roleId: string) {
   });
 }
 
+export function ownedTag(userId: string, projectId: string, tagId: string) {
+  return prisma.projectTag.findFirst({
+    where: { id: tagId, projectId, project: { userId } },
+    select: { id: true, name: true },
+  });
+}
+
 export function ownedWikiPage(userId: string, pageId: string) {
   return prisma.wikiPage.findFirst({
     where: { id: pageId, project: { userId } },

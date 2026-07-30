@@ -11,6 +11,7 @@ import { MAX_ASSIGNEES } from "@/lib/assignees";
 import {
   Developer,
   PRIORITY_OPTIONS,
+  ProjectTag,
   Sprint,
   TaskPriority,
   TaskStatus,
@@ -210,6 +211,115 @@ export function RoleChips({
         );
       })}
     </span>
+  );
+}
+
+/**
+ * One of a project's labels, drawn in its own colour.
+ *
+ * The colour is a wash behind the word rather than the word itself: a tag has
+ * to be readable on both themes, and eight coloured words on a card is a
+ * ransom note. `dot` is the same tag with the word taken away, for the places
+ * that have a fixed width to keep.
+ */
+export function TagChip({ tag, dot = false }: { tag: ProjectTag; dot?: boolean }) {
+  const color = safeColor(tag.color) ?? "var(--baseline)";
+  if (dot) {
+    return (
+      <span
+        className="h-2 w-2 shrink-0 rounded-full"
+        style={{ background: color }}
+        title={tag.name}
+        aria-label={tag.name}
+      />
+    );
+  }
+  return (
+    <span
+      className="inline-flex max-w-40 items-center gap-1 rounded-full px-1.5 py-0.5 text-[0.6875rem] leading-tight"
+      style={{
+        background: `color-mix(in srgb, ${color} 16%, transparent)`,
+        color,
+      }}
+    >
+      <span
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ background: color }}
+        aria-hidden="true"
+      />
+      <span className="truncate">{tag.name}</span>
+    </span>
+  );
+}
+
+/**
+ * The tags on a board row or a card. Three at most and dots past that, so a
+ * task wearing eight labels is the same width as one wearing none.
+ */
+export function TagDots({ tags, max = 3 }: { tags: ProjectTag[]; max?: number }) {
+  if (tags.length === 0) return null;
+  return (
+    <span
+      className="flex shrink-0 items-center gap-1"
+      title={tags.map((t) => t.name).join(", ")}
+    >
+      {tags.slice(0, max).map((tag) => (
+        <TagChip key={tag.id} tag={tag} dot />
+      ))}
+      {tags.length > max && (
+        <span className="text-[0.625rem] text-[var(--ink-muted)]">
+          +{tags.length - max}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * Which of a project's tags a task wears. Every tag the project keeps is
+ * offered — there are never many — so this is a row of chips to press rather
+ * than a list to search.
+ */
+export function TagPicker({
+  tags,
+  chosen,
+  onChange,
+}: {
+  tags: ProjectTag[];
+  chosen: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  if (tags.length === 0) {
+    return (
+      <p className="text-[0.75rem] text-[var(--ink-muted)]">
+        This project hasn’t made any tags yet — they are set up on the project’s
+        settings.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {tags.map((tag) => {
+        const on = chosen.includes(tag.id);
+        return (
+          <button
+            key={tag.id}
+            type="button"
+            aria-pressed={on}
+            onClick={() =>
+              onChange(
+                on ? chosen.filter((id) => id !== tag.id) : [...chosen, tag.id]
+              )
+            }
+            className={`rounded-full transition ${
+              on ? "" : "opacity-40 grayscale hover:opacity-70"
+            }`}
+          >
+            <TagChip tag={tag} />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

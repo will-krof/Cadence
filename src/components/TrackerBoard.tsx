@@ -5,6 +5,7 @@ import { useBoard } from "@/components/BoardProvider";
 import {
   AssigneePicker,
   AvatarStack,
+  TagChip,
   CloseIcon,
   PriorityMark,
   SprintPicker,
@@ -607,6 +608,25 @@ const TaskCard = memo(function TaskCard({
           </button>
         )}
       </div>
+
+      {/* A card has the width for the words themselves — three of them, and
+          the rest as a count, so a heavily labelled task doesn't grow a card
+          twice the height of its neighbours. */}
+      {fields.tags && task.tags.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          {task.tags.slice(0, 3).map((tag) => (
+            <TagChip key={tag.id} tag={tag} />
+          ))}
+          {task.tags.length > 3 && (
+            <span
+              className="text-[0.625rem] text-[var(--ink-muted)]"
+              title={task.tags.slice(3).map((t) => t.name).join(", ")}
+            >
+              +{task.tags.length - 3}
+            </span>
+          )}
+        </div>
+      )}
 
       {task.description && (
         <p className="mt-1.5 line-clamp-2 text-[0.75rem] leading-relaxed text-[var(--ink-secondary)]">
