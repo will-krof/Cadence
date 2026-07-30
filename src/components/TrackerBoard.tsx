@@ -3,8 +3,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
 import {
-  AssigneeSelect,
-  Avatar,
+  AssigneePicker,
+  AvatarStack,
   CloseIcon,
   PriorityMark,
   SprintPicker,
@@ -79,7 +79,10 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
   }, [tasks]);
 
   const visible = useMemo(
-    () => (assignee ? tasks.filter((t) => t.developerId === assignee) : tasks),
+    () =>
+      assignee
+        ? tasks.filter((t) => t.assigneeIds.includes(assignee))
+        : tasks,
     [tasks, assignee]
   );
 
@@ -221,7 +224,7 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
     [updateTask]
   );
   const handleAssign = useCallback(
-    (id: string, developerId: string | null) => updateTask(id, { developerId }),
+    (id: string, assigneeIds: string[]) => updateTask(id, { assigneeIds }),
     [updateTask]
   );
   const handleOpen = useCallback(
@@ -253,7 +256,7 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
           />
         )}
         <label className="flex flex-col gap-1">
-          <span className="field-label">Filter by developer</span>
+          <span className="field-label">Filter by person</span>
           <select
             value={assignee}
             onChange={(e) => setAssignee(e.target.value)}
@@ -379,8 +382,8 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
           }}
         >
           <div className="flex items-center gap-2">
-            {draggedTask.developer && (
-              <Avatar person={draggedTask.developer} size={18} />
+            {draggedTask.assignees.length > 0 && (
+              <AvatarStack people={draggedTask.assignees} size={18} />
             )}
             <p className="text-[0.8125rem] font-medium leading-snug">
               {draggedTask.title}
@@ -472,7 +475,7 @@ const TaskCard = memo(function TaskCard({
   dragging: boolean;
   onDragStart: (state: DragState) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
-  onAssign: (id: string, developerId: string | null) => void;
+  onAssign: (id: string, assigneeIds: string[]) => void;
   /** Reading the task: what a click on the card asks for. */
   onOpen: (id: string) => void;
   /** Changing it: the pencil, which only a role that may is shown. */
@@ -626,12 +629,11 @@ const TaskCard = memo(function TaskCard({
             onChange={(status) => onStatusChange(task.id, status)}
           />
         </div>
-        <AssigneeSelect
-          developerId={task.developerId}
-          developer={task.developer}
+        <AssigneePicker
+          assignees={task.assignees}
           developers={developers}
           disabled={!canEdit}
-          onChange={(developerId) => onAssign(task.id, developerId)}
+          onChange={(ids) => onAssign(task.id, ids)}
           emptyLabel="Unassigned"
           taskTitle={task.title}
         />

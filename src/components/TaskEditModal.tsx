@@ -94,7 +94,7 @@ export function TaskEditModal({
           link: "",
           startDate: task.startDate,
           endDate: task.endDate,
-          developerId: step.developerId,
+          assigneeIds: step.assigneeIds,
           parentId: task.id,
         })
       }

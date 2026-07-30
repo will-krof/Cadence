@@ -4,7 +4,7 @@ import { memberDenied, requireViewer, viewerName } from "@/lib/viewer";
 import { TASK_FIELDS, taskPayload } from "@/lib/task-select";
 import { parseTask } from "@/lib/task-input";
 import { blockerProblem, parseBlockers, setBlockers } from "@/lib/task-deps";
-import { ownedDeveloper } from "@/lib/owned";
+import { assigneeRows, parseAssignees } from "@/lib/assignees";
 import { badRequest, done, forbidden, notFound } from "@/lib/responses";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -59,12 +59,16 @@ export async function PATCH(
     }
   }
 
-  // Reassignment must stay within the workspace's own roster.
-  if (
-    body.developerId &&
-    !(await ownedDeveloper(workspaceOwnerId(viewer), body.developerId))
-  ) {
-    return notFound("Developer");
+  // Whoever the request puts on the task has to be on the workspace's own
+  // roster. A request that says nothing about it leaves the list alone.
+  const named = parseAssignees(body.assigneeIds);
+  if ("error" in named) return badRequest(named.error);
+  const assignees = "unsaid" in named ? null : named.ids;
+  if (assignees && assignees.length > 0) {
+    const known = await prisma.developer.count({
+      where: { id: { in: assignees }, userId: workspaceOwnerId(viewer) },
+    });
+    if (known !== assignees.length) return notFound("Developer");
   }
 
   // Moving a task between sprints stays inside its own project.
@@ -93,8 +97,11 @@ export async function PATCH(
     where: { id },
     data: {
       ...parsed.data,
-      developerId:
-        body.developerId === undefined ? undefined : body.developerId || null,
+      // The list as sent, whole: the rows it had go, and the ones it names are
+      // written in the order they were named.
+      ...(assignees
+        ? { assignees: { deleteMany: {}, create: assigneeRows(assignees) } }
+        : {}),
       sprintId: body.sprintId === undefined ? undefined : body.sprintId || null,
       parentId,
     },

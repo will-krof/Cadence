@@ -67,16 +67,21 @@ export default async function ProfilePage({
           roles: { select: { role: { select: { id: true, name: true } } } },
         },
       },
+      // The work they are on, through the join that puts them on it.
       tasks: {
-        where: shared ? { projectId: { in: shared } } : undefined,
+        where: shared ? { task: { projectId: { in: shared } } } : undefined,
         select: {
-          id: true,
-          title: true,
-          status: true,
-          endDate: true,
-          project: { select: { id: true, name: true } },
+          task: {
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              endDate: true,
+              project: { select: { id: true, name: true } },
+            },
+          },
         },
-        orderBy: { endDate: "asc" },
+        orderBy: { task: { endDate: "asc" } },
       },
     },
   });
@@ -89,8 +94,9 @@ export default async function ProfilePage({
     viaTasks: false,
     hasLogin: m.developer.username != null,
   }));
+  const onTasks = person.tasks.map((row) => row.task);
   const named = new Set(projects.map((p) => p.id));
-  for (const task of person.tasks) {
+  for (const task of onTasks) {
     if (named.has(task.project.id)) continue;
     named.add(task.project.id);
     projects.push({
@@ -136,7 +142,7 @@ export default async function ProfilePage({
             notes: person.notes ?? null,
           }}
           projects={projects}
-          tasks={person.tasks.map((task) => ({
+          tasks={onTasks.map((task) => ({
             ...task,
             endDate: task.endDate.toISOString(),
           }))}

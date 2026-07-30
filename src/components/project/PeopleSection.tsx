@@ -36,7 +36,7 @@ export function PeopleSection({
   people: Developer[];
   developers: Developer[];
   memberships: Membership[];
-  tasks: { developerId: string | null; status: string }[];
+  tasks: { assigneeIds: string[]; status: string }[];
   loading: boolean;
   canEdit: boolean;
   onAdd: (projectId: string, developerId: string) => Promise<void>;
@@ -66,8 +66,12 @@ export function PeopleSection({
   const openCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const task of tasks) {
-      if (!task.developerId || task.status === "DONE") continue;
-      counts.set(task.developerId, (counts.get(task.developerId) ?? 0) + 1);
+      if (task.status === "DONE") continue;
+      // A shared task counts once for everybody on it: what the number means
+      // is "how much is on their plate", and it is on all of theirs.
+      for (const id of task.assigneeIds) {
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
     }
     return counts;
   }, [tasks]);

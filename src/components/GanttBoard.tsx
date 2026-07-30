@@ -31,8 +31,8 @@ import {
   useShowDependencies,
 } from "@/lib/prefs";
 import {
-  AssigneeSelect,
-  Avatar,
+  AssigneePicker,
+  AvatarStack,
   PriorityMark,
   SprintPicker,
   Stat,
@@ -110,7 +110,7 @@ const COL_ORDER: ColKey[] = ["task", "status", "developer"];
 const COL_LABELS: Record<ColKey, string> = {
   task: "Task",
   status: "Status",
-  developer: "Developer",
+  developer: "People",
 };
 
 const COL_WIDTHS_WIDE: ColWidths = { task: 240, status: 132, developer: 132 };
@@ -1016,7 +1016,10 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
             <div style={{ height: rowWindow.before }} />
             {rowWindow.rows.map((task) => {
               const bar = spans.get(task.id);
-              const color = task.developer?.color ?? statusMeta(task.status).color;
+              // The bar takes its colour from the first person on it — with
+              // several, one of them has to lead, and the row's faces say who
+              // the rest are.
+              const color = task.assignees[0]?.color ?? statusMeta(task.status).color;
               const critical = showCritical && network.critical.has(task.id);
               return (
                 <div
@@ -1065,7 +1068,7 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
                       }}
                       title={[
                         task.title,
-                        task.developer?.name,
+                        task.assignees.map((d) => d.name).join(", ") || null,
                         critical ? "on the critical path" : null,
                       ]
                         .filter(Boolean)
@@ -1089,11 +1092,20 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
                         </>
                       )}
 
-                      {task.developer && !task.parentId && (
-                        <span className="mr-1.5 -ml-0.5 shrink-0">
-                          <Avatar person={task.developer} size={16} />
-                        </span>
-                      )}
+                      {/* Faces on the bar itself, but only while the bar has
+                          room to spare: on a two-day job they would be the
+                          whole bar, and the row already says who is on it. */}
+                      {task.assignees.length > 0 &&
+                        !task.parentId &&
+                        bar.width > 96 && (
+                          <span className="mr-1.5 -ml-0.5 shrink-0">
+                            <AvatarStack
+                              people={task.assignees}
+                              size={16}
+                              max={2}
+                            />
+                          </span>
+                        )}
                       <span className="truncate">{task.title}</span>
 
                       <span
@@ -1360,12 +1372,11 @@ const TableRow = memo(function TableRow({
       </div>
 
       <div className="flex items-center px-2">
-        <AssigneeSelect
-          developerId={task.developerId}
-          developer={task.developer}
+        <AssigneePicker
+          assignees={task.assignees}
           developers={developers}
           disabled={!canEdit}
-          onChange={(developerId) => onChange(task.id, { developerId })}
+          onChange={(assigneeIds) => onChange(task.id, { assigneeIds })}
           emptyLabel="—"
           taskTitle={task.title}
         />

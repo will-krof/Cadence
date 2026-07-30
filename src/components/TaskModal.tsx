@@ -13,12 +13,15 @@ import {
 } from "@/lib/types";
 import { offeredStatuses, useHiddenStatuses } from "@/lib/prefs";
 import {
+  AssigneeField,
+  AssigneePicker,
   CloseIcon,
   Field,
   Modal,
   PriorityMark,
   PrioritySelect,
 } from "@/components/ui";
+import { MAX_ASSIGNEES } from "@/lib/assignees";
 import { TaskHistory } from "@/components/TaskHistory";
 import { TaskComments } from "@/components/TaskComments";
 
@@ -30,7 +33,8 @@ export interface TaskFormValues {
   endDate: string;
   status: TaskStatus;
   priority: TaskPriority;
-  developerId: string | null;
+  /** Who is on it, by id: up to four, in the order they were picked. */
+  assigneeIds: string[];
   /** The tasks this one waits on, by id. */
   blockedBy: string[];
   /** Steps to create along with a new task, each with whoever will do it. */
@@ -40,7 +44,7 @@ export interface TaskFormValues {
 /** A step staged for a task that doesn't exist yet. */
 export interface NewStep {
   title: string;
-  developerId: string | null;
+  assigneeIds: string[];
 }
 
 /** Nothing to pick from: a stable empty list, so a default can't churn a memo. */
@@ -91,7 +95,7 @@ export function TaskModal({
   onAddSubtask?: (step: NewStep) => Promise<void>;
   onUpdateSubtask?: (
     id: string,
-    patch: { status?: TaskStatus; title?: string; developerId?: string | null }
+    patch: { status?: TaskStatus; title?: string; assigneeIds?: string[] }
   ) => Promise<void>;
   onDeleteSubtask?: (id: string) => Promise<void>;
 }) {
@@ -112,7 +116,9 @@ export function TaskModal({
     task?.priority ?? "MEDIUM"
   );
   const [hiddenStatuses] = useHiddenStatuses();
-  const [developerId, setDeveloperId] = useState(task?.developerId ?? "");
+  const [assigneeIds, setAssigneeIds] = useState<string[]>(
+    task?.assigneeIds ?? []
+  );
   const [pending, setPending] = useState(false);
 
   // What this task waits on. Held in the form rather than written as it is
@@ -126,7 +132,13 @@ export function TaskModal({
   const [stepTitle, setStepTitle] = useState("");
   // Whoever the next step is for. It stays put after adding one, so a run of
   // steps for the same person is typed rather than picked over and over.
-  const [stepWho, setStepWho] = useState("");
+  const [stepWho, setStepWho] = useState<string[]>([]);
+
+  /** The roster rows behind a list of ids, for the pickers on this form. */
+  const peopleOf = (ids: string[]) =>
+    ids
+      .map((id) => developers.find((d) => d.id === id))
+      .filter((d): d is Developer => d != null);
 
   // A step of a step is a task in its own right, so a subtask's form doesn't
   // offer any — and a project that doesn't break work down isn't asked at all.
@@ -189,7 +201,7 @@ export function TaskModal({
   async function addStep() {
     const title = stepTitle.trim();
     if (!title) return;
-    const step: NewStep = { title, developerId: stepWho || null };
+    const step: NewStep = { title, assigneeIds: stepWho };
     setStepTitle("");
     if (isEdit && onAddSubtask) await onAddSubtask(step);
     else setStaged((prev) => [...prev, step]);
@@ -208,7 +220,7 @@ export function TaskModal({
       endDate: endDate < startDate ? startDate : endDate,
       status,
       priority,
-      developerId: developerId || null,
+      assigneeIds,
       blockedBy,
       subtasks: staged,
     });
@@ -307,19 +319,15 @@ export function TaskModal({
                   <PrioritySelect priority={priority} onChange={setPriority} />
                 </Field>
               )}
-              <Field label="Assignee" className="flex-1">
-                <select
-                  value={developerId}
-                  onChange={(e) => setDeveloperId(e.target.value)}
-                  className="select"
-                >
-                  <option value="">Unassigned</option>
-                  {developers.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
+              {/* Up to four people, as a list of names rather than faces:
+                  this is the one place with room to say who they are. */}
+              <Field label={`On it ${assigneeIds.length}/${MAX_ASSIGNEES}`} className="flex-1">
+                <AssigneeField
+                  ids={assigneeIds}
+                  developers={developers}
+                  onChange={setAssigneeIds}
+                  taskTitle={title || "this task"}
+                />
               </Field>
             </div>
           </div>
@@ -384,23 +392,17 @@ export function TaskModal({
                       }`}
                       aria-label={`Title of ${step.title}`}
                     />
-                    <select
-                      value={step.developerId ?? ""}
-                      onChange={(e) =>
-                        onUpdateSubtask?.(step.id, {
-                          developerId: e.target.value || null,
-                        })
-                      }
-                      className="select w-32 shrink-0"
-                      aria-label={`Assignee for ${step.title}`}
-                    >
-                      <option value="">Unassigned</option>
-                      {developers.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
+                    <span className="shrink-0">
+                      <AssigneePicker
+                        assignees={peopleOf(step.assigneeIds)}
+                        developers={developers}
+                        onChange={(assigneeIds) =>
+                          onUpdateSubtask?.(step.id, { assigneeIds })
+                        }
+                        taskTitle={step.title}
+                        size={18}
+                      />
+                    </span>
                     <button
                       type="button"
                       onClick={() => onDeleteSubtask?.(step.id)}
@@ -422,27 +424,21 @@ export function TaskModal({
                     <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
                       {step.title}
                     </span>
-                    <select
-                      value={step.developerId ?? ""}
-                      onChange={(e) =>
-                        setStaged((prev) =>
-                          prev.map((s, n) =>
-                            n === i
-                              ? { ...s, developerId: e.target.value || null }
-                              : s
+                    <span className="shrink-0">
+                      <AssigneePicker
+                        assignees={peopleOf(step.assigneeIds)}
+                        developers={developers}
+                        onChange={(ids) =>
+                          setStaged((prev) =>
+                            prev.map((s, n) =>
+                              n === i ? { ...s, assigneeIds: ids } : s
+                            )
                           )
-                        )
-                      }
-                      className="select w-32 shrink-0"
-                      aria-label={`Assignee for ${step.title}`}
-                    >
-                      <option value="">Unassigned</option>
-                      {developers.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
+                        }
+                        taskTitle={step.title}
+                        size={18}
+                      />
+                    </span>
                     <button
                       type="button"
                       onClick={() =>
@@ -472,19 +468,15 @@ export function TaskModal({
                     placeholder="Add a step…"
                     aria-label="New subtask"
                   />
-                  <select
-                    value={stepWho}
-                    onChange={(e) => setStepWho(e.target.value)}
-                    className="select w-32 shrink-0"
-                    aria-label="Assignee for the new subtask"
-                  >
-                    <option value="">Unassigned</option>
-                    {developers.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
+                  <span className="shrink-0">
+                    <AssigneePicker
+                      assignees={peopleOf(stepWho)}
+                      developers={developers}
+                      onChange={setStepWho}
+                      taskTitle="the next step"
+                      size={18}
+                    />
+                  </span>
                   <button
                     type="button"
                     onClick={addStep}

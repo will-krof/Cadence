@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { formatRange } from "@/lib/dates";
 import { isHttpUrl } from "@/lib/sanitize";
 import { ALL_TASK_FIELDS, Task, TaskFields, priorityMeta, statusMeta } from "@/lib/types";
-import { Modal, PriorityMark } from "@/components/ui";
+import { AvatarStack, Modal, PriorityMark } from "@/components/ui";
 import { TaskHistory } from "@/components/TaskHistory";
 import { TaskComments } from "@/components/TaskComments";
 
@@ -112,12 +112,12 @@ export function TaskView({
                 )}
                 <span className="text-[var(--ink-muted)]">
                   ·{" "}
-                  {task.developer ? (
+                  {task.assignees.length > 0 ? (
                     <span className="text-[var(--ink-secondary)]">
-                      {task.developer.name}
+                      {task.assignees.map((d) => d.name).join(", ")}
                     </span>
                   ) : (
-                    "Unassigned"
+                    "Nobody on it"
                   )}
                 </span>
               </div>
@@ -216,9 +216,9 @@ export function TaskView({
                       >
                         {step.title}
                       </span>
-                      {step.developer && (
-                        <span className="shrink-0 text-[0.6875rem] text-[var(--ink-muted)]">
-                          {step.developer.name}
+                      {step.assignees.length > 0 && (
+                        <span className="shrink-0">
+                          <AvatarStack people={step.assignees} size={16} />
                         </span>
                       )}
                     </li>

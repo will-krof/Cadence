@@ -10,7 +10,8 @@ import { TASK_FIELDS, taskPayload, taskPayloads } from "@/lib/task-select";
 import { parseTask } from "@/lib/task-input";
 import { blockerProblem, parseBlockers } from "@/lib/task-deps";
 import { LIMITS } from "@/lib/sanitize";
-import { ownedDeveloper, ownedProject } from "@/lib/owned";
+import { ownedProject } from "@/lib/owned";
+import { assigneeRows, parseAssignees } from "@/lib/assignees";
 import { badRequest, forbidden, notFound } from "@/lib/responses";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
@@ -29,11 +30,24 @@ export async function GET(request: NextRequest) {
   // scope=all powers the Team view, which only needs to know who works where —
   // not the tasks themselves.
   if (params.get("scope") === "all") {
-    const assignments = await prisma.task.findMany({
-      where: { ...boardFilter(viewer), developerId: { not: null } },
-      select: { developerId: true, projectId: true },
-      distinct: ["developerId", "projectId"],
+    const rows = await prisma.taskAssignee.findMany({
+      where: { task: boardFilter(viewer) },
+      select: { developerId: true, task: { select: { projectId: true } } },
     });
+    // One row per person per project. The pairs are thinned here rather than
+    // by the query: a task is shared now, so "distinct" would have to span the
+    // join, and the answer is a handful of pairs either way.
+    const seen = new Set<string>();
+    const assignments: { developerId: string; projectId: string }[] = [];
+    for (const row of rows) {
+      const pair = `${row.developerId}:${row.task.projectId}`;
+      if (seen.has(pair)) continue;
+      seen.add(pair);
+      assignments.push({
+        developerId: row.developerId,
+        projectId: row.task.projectId,
+      });
+    }
     return jsonResponse(request, assignments);
   }
 
@@ -73,10 +87,10 @@ export async function POST(request: NextRequest) {
 
   if (!(await ownedProject(ownerId, projectId))) return notFound("Project");
 
-  // An assignee must come from the workspace's own roster.
-  if (body.developerId && !(await ownedDeveloper(ownerId, body.developerId))) {
-    return notFound("Developer");
-  }
+  // Whoever is put on it has to come from the workspace's own roster.
+  const named = parseAssignees(body.assigneeIds);
+  if ("error" in named) return badRequest(named.error);
+  const assignees = "unsaid" in named ? [] : named.ids;
 
   // A task belongs to a sprint of its own project. Without this, an id from
   // somewhere else would file the work under a stranger's sprint.
@@ -118,7 +132,7 @@ export async function POST(request: NextRequest) {
   // same dates, same board, and each with whoever is to do it — so they are
   // written here, in one round trip and one transaction, rather than a request
   // each.
-  const steps: { title: string; developerId: string | null }[] = [];
+  const steps: { title: string; assignees: string[] }[] = [];
   if (Array.isArray(body.subtasks)) {
     for (const raw of body.subtasks.slice(0, MAX_STEPS)) {
       const step = typeof raw === "string" ? { title: raw } : raw;
@@ -128,26 +142,23 @@ export async function POST(request: NextRequest) {
       if (title.length > LIMITS.title) {
         return badRequest(`A step's title is ${LIMITS.title} characters or fewer`);
       }
-      steps.push({
-        title,
-        developerId:
-          typeof step.developerId === "string" && step.developerId
-            ? step.developerId
-            : null,
-      });
+      const on = parseAssignees(step.assigneeIds);
+      if ("error" in on) return badRequest(on.error);
+      steps.push({ title, assignees: "unsaid" in on ? [] : on.ids });
     }
   }
 
-  // Whoever they were handed to has to be on this workspace's roster, the same
-  // as the person on the task itself.
-  const stepPeople = [
-    ...new Set(steps.map((s) => s.developerId).filter((id): id is string => !!id)),
+  // Everybody named anywhere in this request — on the task or on one of its
+  // steps — has to be on this workspace's roster, and they are all checked in
+  // one query rather than one each.
+  const people = [
+    ...new Set([...assignees, ...steps.flatMap((step) => step.assignees)]),
   ];
-  if (stepPeople.length > 0) {
+  if (people.length > 0) {
     const known = await prisma.developer.count({
-      where: { id: { in: stepPeople }, userId: ownerId },
+      where: { id: { in: people }, userId: ownerId },
     });
-    if (known !== stepPeople.length) return notFound("Developer");
+    if (known !== people.length) return notFound("Developer");
   }
   if (parentId && steps.length > 0) {
     return badRequest("A subtask can’t have subtasks of its own");
@@ -158,7 +169,6 @@ export async function POST(request: NextRequest) {
     startDate,
     endDate,
     projectId,
-    developerId: body.developerId || null,
     sprintId: body.sprintId || null,
   };
 
@@ -168,6 +178,7 @@ export async function POST(request: NextRequest) {
       ...common,
       title,
       status: parsed.data.status ?? "TODO",
+      assignees: { create: assigneeRows(assignees) },
       parentId,
       order: from,
       // What it waits on, written with it: a task that arrives already blocked
@@ -194,7 +205,7 @@ export async function POST(request: NextRequest) {
           ...common,
           // Whoever was picked beside it, and nobody when nobody was: the
           // form shows that answer, so it is the one that is stored.
-          developerId: step.developerId,
+          assignees: { create: assigneeRows(step.assignees) },
           title: step.title,
           parentId: task.id,
           order: from + i + 1,

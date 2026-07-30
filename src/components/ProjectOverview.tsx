@@ -118,7 +118,7 @@ export function ProjectOverview({
         .filter((m) => m.projectId === activeProject.id)
         .map((m) => m.developerId)
     );
-    for (const t of tasks) if (t.developerId) onProject.add(t.developerId);
+    for (const t of tasks) for (const id of t.assigneeIds) onProject.add(id);
 
     const roster = developers.filter((d) => onProject.has(d.id));
     // Someone can carry a task without a profile in the roster we hold — take
@@ -126,9 +126,10 @@ export function ProjectOverview({
     const known = new Set(roster.map((d) => d.id));
     const strays: Developer[] = [];
     for (const t of tasks) {
-      if (t.developer && !known.has(t.developer.id)) {
-        known.add(t.developer.id);
-        strays.push(t.developer);
+      for (const person of t.assignees) {
+        if (known.has(person.id)) continue;
+        known.add(person.id);
+        strays.push(person);
       }
     }
     return [...roster, ...strays];
@@ -154,7 +155,7 @@ export function ProjectOverview({
 
   if (!activeProject) return null;
 
-  const unassigned = tasks.filter((t) => !t.developerId).length;
+  const unassigned = tasks.filter((t) => t.assigneeIds.length === 0).length;
 
 
   async function remove() {

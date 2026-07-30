@@ -93,7 +93,9 @@ model Developer {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
-  tasks     Task[]
+  /// The work they are on. A task can be shared, so this is the join rather
+  /// than a column on the task.
+  tasks     TaskAssignee[]
   memberships ProjectMember[]
   sessions    DeveloperSession[]
 
@@ -286,8 +288,10 @@ model Task {
   order       Int        @default(0)
   projectId   String
   project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  developerId String?
-  developer   Developer? @relation(fields: [developerId], references: [id], onDelete: SetNull)
+  /// Who is on it — up to four people, in the order they were put on. A short
+  /// list rather than one name: work of any size is done by more than one
+  /// person, and a board that can only say one of them says the wrong thing.
+  assignees   TaskAssignee[]
   /// The task this one is a step of, if it is one. Subtasks go one level deep:
   /// a step of a step is a task in its own right, and the board says so.
   /// Deleting a task takes its subtasks — they are parts of it, not work that
@@ -313,12 +317,25 @@ model Task {
   // The board reads one project's tasks in `order`, so the index carries the
   // sort as well as the filter; the roster reads one person's tasks.
   @@index([projectId, order])
-  // Carries "one person's tasks" and, as a covering index, the distinct
-  // person/project pairs the team roster groups by.
-  @@index([developerId, projectId])
   @@index([sprintId, order])
   // The parts of one task, read together with it.
   @@index([parentId])
+}
+
+/// One person on one task. The row is the whole fact — there is no lead
+/// assignee and no deputy — and `order` only keeps the avatars from shuffling
+/// between renders.
+model TaskAssignee {
+  taskId      String
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  developerId String
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  order       Int       @default(0)
+
+  @@id([taskId, developerId])
+  // Carries "one person's tasks" and, as a covering index, the distinct
+  // person/project pairs the team roster groups by.
+  @@index([developerId, taskId])
 }
 
 /// A project runs a series of these. Each one is its own board: a task belongs

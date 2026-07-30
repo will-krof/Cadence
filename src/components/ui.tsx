@@ -1,6 +1,13 @@
 "use client";
 
-import { memo, useEffect, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+import { MAX_ASSIGNEES } from "@/lib/assignees";
 import {
   Developer,
   PRIORITY_OPTIONS,
@@ -206,51 +213,346 @@ export function RoleChips({
   );
 }
 
-/** The assignee picker shared by both boards. */
-export const AssigneeSelect = memo(function AssigneeSelect({
-  developerId,
-  developer,
-  developers,
-  onChange,
+/**
+ * Who is on a task, as faces rather than a name in a box.
+ *
+ * A task takes up to four people, and a board has no room to grow with them:
+ * the stack is a fixed width whatever it holds — three faces overlapping, and
+ * a "+1" where the fourth would be — so a Gantt row and a tracker card are the
+ * same width for a task shared by four as for one nobody has picked up.
+ */
+export function AvatarStack({
+  people,
+  size = 20,
   emptyLabel,
-  taskTitle,
-  disabled,
+  max = STACK_FACES,
 }: {
-  developerId: string | null;
-  developer: Developer | null;
-  developers: Developer[];
-  onChange: (developerId: string | null) => void;
-  emptyLabel: string;
-  taskTitle: string;
-  disabled?: boolean;
+  people: Developer[];
+  size?: number;
+  /** What stands in for nobody. */
+  emptyLabel?: string;
+  /** Faces before the count takes over. Tighter where the room is tighter. */
+  max?: number;
 }) {
+  if (people.length === 0) {
+    return (
+      <span className="truncate text-[0.75rem] text-[var(--ink-muted)]">
+        {emptyLabel ?? "—"}
+      </span>
+    );
+  }
+
+  const shown = people.slice(0, max);
+  const rest = people.length - shown.length;
   return (
-    <div className="relative flex min-w-0 flex-1 items-center">
-      {developer && (
-        <span className="pointer-events-none absolute left-1.5 z-10">
-          <Avatar person={developer} size={18} />
+    <span className="flex shrink-0 items-center">
+      {shown.map((person, i) => (
+        <span
+          key={person.id}
+          // Overlapped, and each face lifted over the one before it, so the
+          // row of them reads as one group rather than three things.
+          className="rounded-full ring-2 ring-[var(--surface-raised)]"
+          style={{ marginLeft: i === 0 ? 0 : -size / 3, zIndex: shown.length - i }}
+          title={person.name}
+        >
+          <Avatar person={person} size={size} />
+        </span>
+      ))}
+      {rest > 0 && (
+        <span
+          className="flex items-center justify-center rounded-full bg-[var(--gridline)] font-semibold text-[var(--ink-secondary)] ring-2 ring-[var(--surface-raised)]"
+          style={{
+            width: size,
+            height: size,
+            marginLeft: -size / 3,
+            fontSize: Math.max(8, size * 0.36),
+          }}
+          title={people.slice(max).map((p) => p.name).join(", ")}
+        >
+          +{rest}
         </span>
       )}
-      <LazySelect
-        value={developerId ?? ""}
-        onChange={(next) => onChange(next || null)}
-        // Whoever is on the task is always among the options, even if they have
-        // since been archived in another tab: a picker that can't show its own
-        // value would read as unassigned when it isn't.
-        options={[
-          { value: "", label: emptyLabel },
-          ...(developer && !developers.some((d) => d.id === developer.id)
-            ? [{ value: developer.id, label: `${developer.name} (archived)` }]
-            : []),
-          ...developers.map((d) => ({ value: d.id, label: d.name })),
-        ]}
-        className={`select truncate ${developer ? "pl-7" : ""}`}
-        ariaLabel={`Assignee for ${taskTitle}`}
-        disabled={disabled}
-      />
+    </span>
+  );
+}
+
+/** Faces before the count takes over. Four people read as three and a "+1". */
+const STACK_FACES = 3;
+
+/**
+ * The picker both boards and both task forms share: the stack, and a list to
+ * change it by. Nobody is offered a fifth name — the rows past the fourth go
+ * quiet rather than disappearing, so the limit is something you can see rather
+ * than something that happens to you.
+ */
+export function AssigneePicker({
+  assignees,
+  developers,
+  onChange,
+  taskTitle,
+  disabled,
+  emptyLabel = "—",
+  size = 20,
+}: {
+  assignees: Developer[];
+  /** Everyone who could be put on it. */
+  developers: Developer[];
+  onChange: (ids: string[]) => void;
+  /** Names the control for a screen reader: "Who is on <task>". */
+  taskTitle: string;
+  /** A role that may watch a board but not work in it reads the stack alone. */
+  disabled?: boolean;
+  emptyLabel?: string;
+  size?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+
+  if (disabled) {
+    return (
+      <span className="flex min-w-0 items-center">
+        <AvatarStack people={assignees} size={size} emptyLabel={emptyLabel} />
+      </span>
+    );
+  }
+
+  const ids = assignees.map((d) => d.id);
+
+  return (
+    <>
+      <button
+        ref={anchor}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="true"
+        aria-expanded={open}
+        className="flex min-w-0 items-center gap-1 rounded-[var(--radius)] border border-transparent px-1 py-0.5 transition hover:border-[var(--hairline)] hover:bg-[var(--plane)]"
+        aria-label={`Who is on ${taskTitle}`}
+        title={
+          assignees.length > 0
+            ? assignees.map((d) => d.name).join(", ")
+            : "Nobody on this yet"
+        }
+      >
+        <AvatarStack people={assignees} size={size} emptyLabel={emptyLabel} />
+      </button>
+      {open && (
+        <Popover anchor={anchor} onClose={() => setOpen(false)}>
+          <AssigneeMenu ids={ids} developers={developers} onChange={onChange} />
+        </Popover>
+      )}
+    </>
+  );
+}
+
+/** The list itself, shared by the stack on a board and the field on a form. */
+function AssigneeMenu({
+  ids,
+  developers,
+  onChange,
+}: {
+  ids: string[];
+  developers: Developer[];
+  onChange: (ids: string[]) => void;
+}) {
+  const full = ids.length >= MAX_ASSIGNEES;
+
+  function toggle(id: string) {
+    if (ids.includes(id)) onChange(ids.filter((a) => a !== id));
+    else if (!full) onChange([...ids, id]);
+  }
+
+  return (
+    <>
+      <p className="field-label mb-1.5 px-1">
+        On this task {ids.length}/{MAX_ASSIGNEES}
+      </p>
+      <div className="thin-scroll flex max-h-64 flex-col overflow-y-auto">
+        {developers.length === 0 && (
+          <p className="px-1 py-1.5 text-[0.75rem] text-[var(--ink-muted)]">
+            Nobody on the roster yet.
+          </p>
+        )}
+        {developers.map((person) => {
+          const on = ids.includes(person.id);
+          return (
+            <button
+              key={person.id}
+              type="button"
+              onClick={() => toggle(person.id)}
+              disabled={!on && full}
+              aria-pressed={on}
+              className={`flex items-center gap-2 rounded-[var(--radius)] px-1.5 py-1.5 text-left text-[0.8125rem] transition ${
+                on
+                  ? "bg-[var(--accent-wash)] text-[var(--accent)]"
+                  : full
+                    ? "cursor-not-allowed text-[var(--ink-muted)] opacity-50"
+                    : "hover:bg-[var(--plane)]"
+              }`}
+            >
+              <Avatar person={person} size={18} />
+              <span className="min-w-0 flex-1 truncate">{person.name}</span>
+              {on && <span aria-hidden="true">✓</span>}
+            </button>
+          );
+        })}
+      </div>
+      {ids.length > 0 && (
+        <button
+          type="button"
+          onClick={() => onChange([])}
+          className="mt-1 w-full rounded-[var(--radius)] px-1.5 py-1.5 text-left text-[0.75rem] text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+        >
+          Take everyone off
+        </button>
+      )}
+      {full && (
+        <p className="mt-1 px-1.5 text-[0.6875rem] text-[var(--ink-muted)]">
+          Four is the most a task takes. Take somebody off to add another.
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * The same list, on a form, where there is room to say the names.
+ *
+ * A board shows faces because it has a column to fit them in; a form has a
+ * field, and a field that says "Ada, Bo" is worth more than one that makes you
+ * hover three circles to find out who is on the work.
+ */
+export function AssigneeField({
+  ids,
+  developers,
+  onChange,
+  taskTitle,
+}: {
+  ids: string[];
+  developers: Developer[];
+  onChange: (ids: string[]) => void;
+  taskTitle: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const chosen = ids
+    .map((id) => developers.find((d) => d.id === id))
+    .filter((d): d is Developer => d != null);
+
+  return (
+    <div className="flex min-h-[2.125rem] flex-wrap items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-raised)] px-1.5 py-1">
+      {chosen.map((person) => (
+        <span
+          key={person.id}
+          className="flex items-center gap-1.5 rounded-full bg-[var(--plane)] py-0.5 pr-1 pl-1 text-[0.75rem]"
+        >
+          <Avatar person={person} size={16} />
+          <span className="max-w-32 truncate">{person.name}</span>
+          <button
+            type="button"
+            onClick={() => onChange(ids.filter((id) => id !== person.id))}
+            className="rounded-full p-0.5 text-[var(--ink-muted)] transition hover:text-[var(--danger)]"
+            aria-label={`Take ${person.name} off this task`}
+          >
+            <CloseIcon size={9} />
+          </button>
+        </span>
+      ))}
+      <button
+        ref={anchor}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="true"
+        aria-expanded={open}
+        className="rounded-full px-2 py-0.5 text-[0.75rem] text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+        aria-label={`Put somebody on ${taskTitle}`}
+      >
+        {chosen.length === 0 ? "Nobody yet — add someone" : "Add"}
+      </button>
+      {open && (
+        <Popover anchor={anchor} onClose={() => setOpen(false)}>
+          <AssigneeMenu ids={ids} developers={developers} onChange={onChange} />
+        </Popover>
+      )}
     </div>
   );
-});
+}
+
+/**
+ * A small panel hung off a button, drawn into the page itself rather than into
+ * the row that opened it: a board row lives inside two scrolling boxes, and
+ * anything drawn inside one of those is cut off at its edge.
+ */
+function Popover({
+  anchor,
+  onClose,
+  children,
+}: {
+  anchor: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const panel = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+
+  // Placed once it can be measured, and kept on screen: a row near the bottom
+  // of the window opens its list upwards rather than off the end of it.
+  useLayoutEffect(() => {
+    const button = anchor.current?.getBoundingClientRect();
+    const box = panel.current?.getBoundingClientRect();
+    if (!button || !box) return;
+    const gap = 4;
+    const top =
+      button.bottom + gap + box.height > window.innerHeight
+        ? Math.max(gap, button.top - gap - box.height)
+        : button.bottom + gap;
+    const left = Math.min(
+      Math.max(gap, button.left),
+      Math.max(gap, window.innerWidth - box.width - gap)
+    );
+    setAt({ top, left });
+  }, [anchor]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    function onDown(e: MouseEvent) {
+      if (panel.current?.contains(e.target as Node)) return;
+      if (anchor.current?.contains(e.target as Node)) return;
+      onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    // Capture, so a press inside a board that stops its own bubbling still
+    // closes this.
+    window.addEventListener("mousedown", onDown, true);
+    // Scrolling a board would leave the panel behind, pointing at nothing.
+    window.addEventListener("scroll", onClose, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("scroll", onClose, true);
+    };
+  }, [anchor, onClose]);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      ref={panel}
+      className="fixed z-[70] w-56 rounded-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-1.5 shadow-xl"
+      style={{
+        top: at?.top ?? 0,
+        left: at?.left ?? 0,
+        visibility: at ? "visible" : "hidden",
+      }}
+      role="dialog"
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
 
 export function Stat({
   label,

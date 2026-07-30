@@ -34,14 +34,15 @@ interface TaskInput {
   status?: TaskStatus;
   /** What it is worth doing first. Ordinary work when nobody says otherwise. */
   priority?: TaskPriority;
-  developerId: string | null;
+  /** Who is on it, by id: up to four, in the order they were picked. */
+  assigneeIds: string[];
   /** The tasks it waits on, by id — written with it rather than after it. */
   blockedBy?: string[];
   /** The task this one is a step of, if it is one. */
   parentId?: string | null;
   /** Steps to create with it. They take its dates and board, and their own
    *  person — a step is somebody's to do, and not always the same somebody. */
-  subtasks?: { title: string; developerId: string | null }[];
+  subtasks?: { title: string; assigneeIds: string[] }[];
 }
 
 interface RolePatch {
@@ -289,7 +290,9 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     const byId = new Map(developers.map((d) => [d.id, d]));
     return boardRows.map((row) => ({
       ...row,
-      developer: row.developerId ? byId.get(row.developerId) ?? null : null,
+      assignees: row.assigneeIds
+        .map((id) => byId.get(id))
+        .filter((d): d is Developer => d != null),
     }));
   }, [boardRows, developers]);
 
@@ -309,7 +312,9 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     const byId = new Map(developers.map((d) => [d.id, d]));
     return rows.map((row) => ({
       ...row,
-      developer: row.developerId ? byId.get(row.developerId) ?? null : null,
+      assignees: row.assigneeIds
+        .map((id) => byId.get(id))
+        .filter((d): d is Developer => d != null),
     }));
   }, [rows, developers]);
 
@@ -700,14 +705,18 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       setDevelopers((prev) => prev.map((d) => (d.id === id ? updated : d)));
       if (!active) {
         setTasks((prev) =>
-          prev.map((t) => (t.developerId === id ? { ...t, developerId: null } : t))
+          prev.map((t) =>
+            t.assigneeIds.includes(id)
+              ? { ...t, assigneeIds: t.assigneeIds.filter((a) => a !== id) }
+              : t
+          )
         );
       }
       notify(
         "success",
         active
           ? `${updated.name} restored.`
-          : `${updated.name} archived — their tasks are unassigned.`
+          : `${updated.name} archived — they come off the work they were on.`
       );
     },
     [setTasks, notify]
@@ -722,9 +731,13 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setDevelopers((prev) => prev.filter((d) => d.id !== id));
-      // The database nulls the assignee on their tasks; mirror that here.
+      // The database takes them off the work they were on; mirror that here.
       setTasks((prev) =>
-        prev.map((t) => (t.developerId === id ? { ...t, developerId: null } : t))
+        prev.map((t) =>
+          t.assigneeIds.includes(id)
+            ? { ...t, assigneeIds: t.assigneeIds.filter((a) => a !== id) }
+            : t
+        )
       );
       notify("success", `${name} removed from the team.`);
     },

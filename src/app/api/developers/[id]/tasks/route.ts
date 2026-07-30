@@ -32,7 +32,7 @@ export async function GET(
   // The card lists a title, a status, a due date and the project — nothing else
   // needs to travel.
   const tasks = await prisma.task.findMany({
-    where: { developerId: id, ...teamFilter(viewer) },
+    where: { assignees: { some: { developerId: id } }, ...teamFilter(viewer) },
     select: {
       id: true,
       title: true,

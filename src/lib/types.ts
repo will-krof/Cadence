@@ -394,7 +394,12 @@ export interface TaskRow {
   startDate: string;
   endDate: string;
   order: number;
-  developerId: string | null;
+  /**
+   * Who is on it, by id, in the order they were put on. Up to four: work is
+   * shared, and a task that can only name one names the wrong person as often
+   * as not.
+   */
+  assigneeIds: string[];
   /** The sprint this task is planned into, if any. */
   sprintId: string | null;
   /** The task this one is a step of, if it is one. */
@@ -434,7 +439,12 @@ export interface TaskComment {
 
 /** A task as boards use it, with the assignee joined in from the roster. */
 export interface Task extends TaskRow {
-  developer: Developer | null;
+  /**
+   * The people on it, joined against the roster the client holds. Anyone the
+   * roster doesn't know — archived in another tab, say — drops out here, which
+   * is why the ids stay on the row beside them.
+   */
+  assignees: Developer[];
 }
 
 export interface Sprint {

@@ -107,7 +107,7 @@ export function developerScope(viewer: Viewer) {
     userId: viewer.ownerId,
     OR: [
       { memberships: { some: { projectId: { in: projectIds } } } },
-      { tasks: { some: { projectId: { in: projectIds } } } },
+      { tasks: { some: { task: { projectId: { in: projectIds } } } } },
     ],
   };
 }
