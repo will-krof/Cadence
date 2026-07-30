@@ -19,6 +19,8 @@ export const LIMITS = {
   tagName: 24,
   /** A wiki page is the one long thing here — a chapter, not a book. */
   wiki: 100_000,
+  /** A note is somebody thinking, which is shorter than documenting. */
+  note: 50_000,
   /** scrypt is deliberately slow, so a password is not an open-ended input. */
   password: 200,
   /** Nobody holds hundreds of roles on one project. */

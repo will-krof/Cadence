@@ -50,6 +50,7 @@ model User {
   sessions     Session[]
   projects     Project[]
   developers   Developer[]
+  notes        Note[]
 }
 
 model Session {
@@ -98,8 +99,36 @@ model Developer {
   tasks     TaskAssignee[]
   memberships ProjectMember[]
   sessions    DeveloperSession[]
+  /// Their own notes — not the `notes` field above, which is what the roster
+  /// says about them. These are theirs, and nobody else reads them.
+  ownNotes    Note[]
 
   @@index([userId])
+}
+
+/// Somebody's own notes. Nobody else's business — not the account that owns
+/// the workspace, not the people on the same projects — so a note belongs to
+/// whoever is signed in rather than to a project, and every read is scoped to
+/// them. Notes are not a wiki: there is no tree and nothing is shared, just a
+/// flat pile of pages, newest touched first.
+model Note {
+  id      String @id @default(cuid())
+  /// The first line of the writing, kept as a column so a list of notes
+  /// doesn't have to carry the notes.
+  title   String @default("")
+  content String @default("")
+
+  /// Exactly one of these: a workspace's owner, or one of its people.
+  userId      String?
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  developerId String?
+  developer   Developer? @relation(fields: [developerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+  @@index([developerId, updatedAt])
 }
 
 /// A signed-in team member. Kept apart from `Session` because the two answer

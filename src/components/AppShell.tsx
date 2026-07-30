@@ -9,6 +9,7 @@ import { FeedbackProvider } from "@/components/Feedback";
 import { ProjectOverview } from "@/components/ProjectOverview";
 import {
   VIEW_LABELS,
+  NOTES_ICON,
   TEAM_ICON,
   TIMELINE_ICON,
   TRACKER_ICON,
@@ -21,6 +22,7 @@ import {
   PlusIcon,
   ViewButton,
 } from "@/components/shell/parts";
+import { CloseIcon } from "@/components/ui";
 
 /**
  * One tool is on screen at a time, and the project card is where every session
@@ -49,6 +51,10 @@ const WikiView = dynamic(
   () => import("@/components/WikiView").then((m) => m.WikiView),
   { loading }
 );
+const NotesView = dynamic(
+  () => import("@/components/NotesView").then((m) => m.NotesView),
+  { loading }
+);
 const TaskModal = dynamic(() =>
   import("@/components/TaskModal").then((m) => m.TaskModal)
 );
@@ -59,7 +65,7 @@ const ProjectModal = dynamic(() =>
 const InstallStats = dynamic(() =>
   import("@/components/InstallStats").then((m) => m.InstallStats)
 );
-import { HideableView, useHiddenViews } from "@/lib/prefs";
+import { HideableView, useHiddenViews, useShowNotes } from "@/lib/prefs";
 import { taskFields } from "@/lib/types";
 
 /** The views a project carries. Team isn't one: it belongs to the workspace. */
@@ -143,9 +149,10 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   } = useBoard();
 
   const [view, setView] = useState<View>("overview");
-  // The roster sits beside the projects, not inside one, so which of the two is
-  // on show is its own answer — a project stays chosen underneath it.
-  const [onTeam, setOnTeam] = useState(false);
+  // The workspace's own screens sit beside the projects rather than inside one
+  // — the roster, and whoever is signed in's notes — so which of them is on
+  // show is its own answer, and a project stays chosen underneath it.
+  const [workspace, setWorkspace] = useState<"team" | "notes" | null>(null);
   const [roleId, setRoleId] = useState<string | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
@@ -287,6 +294,9 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   // Tools somebody keeps out of their own sidebar. The project card is never
   // one of them: hiding every tool still leaves a project to open.
   const [hiddenViews, { hide: hideView, show: showView }] = useHiddenViews();
+  // Notes belong to whoever is signed in, and so does the choice to keep them
+  // in the sidebar at all.
+  const [notesShown, setShowNotes] = useShowNotes();
 
   const archivedProjects = useMemo(
     () => projects.filter((p) => p.archived),
@@ -318,7 +328,8 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
 
   // Losing the right to the roster (a role change, a project switched off) puts
   // the projects back on show rather than leaving an empty pane.
-  const showingTeam = onTeam && canSeeTeam;
+  const showingTeam = workspace === "team" && canSeeTeam;
+  const showingNotes = workspace === "notes" && notesShown;
 
   /**
    * Opening one of a project's tools. It also steps off the roster, which is
@@ -327,7 +338,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
    */
   function openView(next: View) {
     setView(next);
-    setOnTeam(false);
+    setWorkspace(null);
   }
 
   /** Switching projects opens that project's card, as its admin. */
@@ -335,7 +346,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
     selectProject(id);
     setRoleId(null);
     setView("overview");
-    setOnTeam(false);
+    setWorkspace(null);
   }
 
   return (
@@ -533,31 +544,83 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
             )}
           </div>
 
-          {/* The roster stands on its own, level with the projects rather than
-              under one of them: someone can be on the team — an HR person, say —
-              without being on any project at all. */}
-          {canSeeTeam && (
+          {/* The workspace's own screens: the roster, which stands level with
+              the projects rather than under one of them — someone can be on
+              the team, an HR person say, without being on any project at all —
+              and whoever is signed in's own notes. */}
+          {(canSeeTeam || notesShown) && (
             <div className="flex flex-col gap-1 border-t border-[var(--hairline)] pt-3">
               {wide && (
                 <span className="field-label px-2 pb-1">Workspace</span>
               )}
-              <button
-                onClick={() => setOnTeam(true)}
-                aria-current={showingTeam ? "page" : undefined}
-                title="Team — everyone in the workspace"
-                className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
-                  wide ? "" : "justify-center"
-                } ${
-                  showingTeam
-                    ? "bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
-                    : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
-                }`}
-              >
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                  {TEAM_ICON}
+              {canSeeTeam && (
+                <button
+                  onClick={() => setWorkspace("team")}
+                  aria-current={showingTeam ? "page" : undefined}
+                  title="Team — everyone in the workspace"
+                  className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
+                    wide ? "" : "justify-center"
+                  } ${
+                    showingTeam
+                      ? "bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
+                      : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                    {TEAM_ICON}
+                  </span>
+                  {wide && <span className="truncate">Team</span>}
+                </button>
+              )}
+              {/* Notes are switched on and off from here, the way a board is:
+                  they are one person's own, so whether they are on show is
+                  that person's answer rather than the workspace's. */}
+              {notesShown && (
+                <span className="group/notes relative flex items-center">
+                  <button
+                    onClick={() => setWorkspace("notes")}
+                    aria-current={showingNotes ? "page" : undefined}
+                    title="Notes — yours alone"
+                    className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
+                      wide ? "" : "justify-center"
+                    } ${
+                      showingNotes
+                        ? "bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
+                        : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                      {NOTES_ICON}
+                    </span>
+                    {wide && <span className="truncate">Notes</span>}
+                  </button>
+                  {wide && (
+                    <button
+                      onClick={() => {
+                        setShowNotes(false);
+                        setWorkspace((at) => (at === "notes" ? null : at));
+                      }}
+                      className="absolute right-1.5 rounded p-1 text-[var(--ink-muted)] opacity-0 transition hover:bg-[var(--surface)] hover:text-[var(--ink)] focus:opacity-100 group-hover/notes:opacity-100"
+                      aria-label="Put Notes away"
+                      title="Put Notes away"
+                    >
+                      <CloseIcon size={10} />
+                    </button>
+                  )}
                 </span>
-                {wide && <span className="truncate">Team</span>}
-              </button>
+              )}
+              {!notesShown && wide && (
+                <span className="flex flex-wrap items-center gap-1 px-2 pt-1">
+                  <span className="field-label">Hidden</span>
+                  <button
+                    onClick={() => setShowNotes(true)}
+                    className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[0.625rem] text-[var(--ink-muted)] transition hover:border-[var(--baseline)] hover:text-[var(--ink)]"
+                    title="Show Notes again"
+                  >
+                    Notes
+                  </button>
+                </span>
+              )}
             </div>
           )}
 
@@ -619,6 +682,18 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
         <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--surface)]">
           {loading ? (
             <Centered>Loading…</Centered>
+          ) : showingNotes ? (
+            <>
+              <div className="flex items-baseline gap-2 border-b border-[var(--hairline)] px-4 py-2.5 sm:px-6">
+                <h2 className="text-[0.8125rem] font-semibold tracking-tight">
+                  Notes
+                </h2>
+                <p className="truncate text-[0.75rem] text-[var(--ink-muted)]">
+                  Yours alone — nobody else in this workspace can read them.
+                </p>
+              </div>
+              <NotesView />
+            </>
           ) : showingTeam ? (
             <>
               <div className="flex items-baseline gap-2 border-b border-[var(--hairline)] px-4 py-2.5 sm:px-6">
@@ -677,7 +752,9 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                   // follow you to the next, and a project just made opens into
                   // the settings it was created without.
                   key={activeProject.id}
-                  onOpenView={(v) => (v === "team" ? setOnTeam(true) : openView(v))}
+                  onOpenView={(v) =>
+                    v === "team" ? setWorkspace("team") : openView(v)
+                  }
                   visibleViews={[
                     ...shown.filter(
                       (v): v is "timeline" | "tracker" | "wiki" =>

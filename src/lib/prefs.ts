@@ -187,6 +187,18 @@ export function useShowCriticalPath() {
 }
 
 /**
+ * Whether somebody keeps their notes in the sidebar.
+ *
+ * On to begin with, and their own choice either way: notes are private to
+ * whoever is signed in, so whether they are on show is as personal as what is
+ * written in them — and the answer belongs to this browser rather than to the
+ * workspace, like the boards somebody puts away.
+ */
+export function useShowNotes() {
+  return useStoredFlag("show-notes", true);
+}
+
+/**
  * How wide somebody has dragged the timeline's columns. Sizing a table is a
  * choice about a screen, not about the work, so it lives here with the rest of
  * them — and it survives a reload, which is the whole point of dragging it once.

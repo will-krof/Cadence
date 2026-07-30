@@ -38,6 +38,24 @@ export const TRACKER_ICON = (
 );
 
 
+/** Notes: a page with a couple of lines on it, and a corner turned. */
+export const NOTES_ICON = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path
+      d="M3 2.4h6.2L13 6.2v7.4H3V2.4z"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M9 2.6v3.6h3.6M5.4 9h5.2M5.4 11.2h3.4"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
 export const TEAM_ICON = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
     <circle cx="6" cy="5" r="2.6" stroke="currentColor" strokeWidth="1.5" />
