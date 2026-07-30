@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { boardFilter, workspaceOwnerId } from "@/lib/api-auth";
+import { boardFilter, scopedToProject, workspaceOwnerId } from "@/lib/api-auth";
 import {
   memberCannotRead,
   memberDenied,
@@ -54,11 +54,10 @@ export async function GET(request: NextRequest) {
 
   const tasks = await prisma.task.findMany({
     // Scoping through the project relation keeps other workspaces' tasks out
-    // even when an arbitrary projectId is supplied.
-    where: {
-      ...boardFilter(viewer),
-      ...(projectId ? { projectId } : {}),
-    },
+    // even when an arbitrary projectId is supplied. The two clauses are ANDed
+    // rather than spread together: a member's scope is keyed on `projectId`
+    // too, so spreading let whichever was written second erase the other.
+    where: scopedToProject(boardFilter(viewer), projectId),
     // The assignee's profile is left out on purpose: the client already holds
     // the roster, and repeating a profile per task dwarfed the tasks themselves.
     select: TASK_FIELDS,

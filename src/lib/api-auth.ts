@@ -24,6 +24,29 @@ export function workspaceOwnerId(viewer: Viewer) {
   return viewer.kind === "owner" ? viewer.user.id : viewer.ownerId;
 }
 
+/**
+ * Narrows one of the filters below to a single project, without the two ever
+ * being merged into the same object.
+ *
+ * This exists because spreading them together silently threw one of them away.
+ * A member's filter is `{ projectId: { in: [...] } }` and a caller's choice is
+ * `{ projectId: "…" }` — the same key — so `{ ...scope, ...asked }` kept only
+ * the caller's, scope and all, and `{ ...asked, ...scope }` kept only the
+ * scope and ignored what was asked for. One of those is a hole and the other
+ * is wrong data, and which one you got depended on the order two spreads
+ * happened to be written in.
+ *
+ * `AND` has no such edge: both clauses stand, whatever they are keyed on. Every
+ * route that lets a caller name a project goes through here, so the scope can't
+ * be dropped by writing the spread the other way round.
+ */
+export function scopedToProject<T extends object>(
+  scope: T,
+  projectId: string | null | undefined
+) {
+  return projectId ? { AND: [scope, { projectId }] } : scope;
+}
+
 /** The projects where a member's roles open a board of some kind. */
 function boardProjectIds(member: MemberViewer) {
   return member.places

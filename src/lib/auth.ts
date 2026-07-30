@@ -5,6 +5,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { promisify } from "node:util";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
@@ -106,8 +107,21 @@ export interface SessionUser {
   role: "ADMIN" | "SUPERADMIN";
 }
 
-/** Returns the signed-in user, or null. Expired sessions are cleaned up. */
-export async function getSessionUser(): Promise<SessionUser | null> {
+/**
+ * Returns the signed-in user, or null. Expired sessions are cleaned up.
+ *
+ * Memoized for the length of one request. Today every route asks exactly once,
+ * so this buys nothing measurable — it is here so that stays true for free.
+ * "Who is asking" is the first line of every handler and every server
+ * component, and the moment two of them want it in the same render the naive
+ * version is two round trips for a row that cannot have changed in between.
+ * With `cache` the second ask costs nothing and neither caller has to know the
+ * other exists, so the DAL can be called wherever it is needed rather than
+ * threaded through props to avoid asking twice.
+ */
+export const getSessionUser = cache(async function getSessionUser(): Promise<
+  SessionUser | null
+> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -133,28 +147,70 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     name: session.user.name,
     role: session.user.role,
   };
-}
+});
 
-/** The signed-in team member, or null. Their session dies with their profile. */
-export async function getSessionDeveloperId(): Promise<string | null> {
+/**
+ * The signed-in team member, or null. Their session dies with their profile.
+ * Memoized per request for the same reason as the above.
+ */
+export const getSessionDeveloperId = cache(
+  async function getSessionDeveloperId(): Promise<string | null> {
+    const store = await cookies();
+    const token = store.get(MEMBER_SESSION_COOKIE)?.value;
+    if (!token) return null;
+
+    const session = await prisma.developerSession.findUnique({
+      where: { tokenHash: hashToken(token) },
+      select: { id: true, developerId: true, expiresAt: true },
+    });
+    if (!session) return null;
+
+    if (session.expiresAt.getTime() < Date.now()) {
+      await prisma.developerSession
+        .delete({ where: { id: session.id } })
+        .catch(() => {});
+      return null;
+    }
+
+    return session.developerId;
+  }
+);
+
+/**
+ * Ends every session but the one making the request.
+ *
+ * Called when a password changes, which is the moment somebody is most likely
+ * to be doing it *because* they think another browser has their account. Until
+ * this existed the new password locked nobody out: whoever held a stolen cookie
+ * kept it for the full thirty days, and the one action taken to shut them out
+ * was the one action that didn't. Changing the password now ends the theft.
+ *
+ * The current browser is kept signed in — being asked to log in again right
+ * after proving you know both passwords teaches nothing and annoys everybody.
+ */
+export async function destroyOtherSessions(
+  owner: { userId: string } | { developerId: string }
+) {
   const store = await cookies();
-  const token = store.get(MEMBER_SESSION_COOKIE)?.value;
-  if (!token) return null;
 
-  const session = await prisma.developerSession.findUnique({
-    where: { tokenHash: hashToken(token) },
-    select: { id: true, developerId: true, expiresAt: true },
-  });
-  if (!session) return null;
-
-  if (session.expiresAt.getTime() < Date.now()) {
-    await prisma.developerSession
-      .delete({ where: { id: session.id } })
-      .catch(() => {});
-    return null;
+  if ("userId" in owner) {
+    const token = store.get(SESSION_COOKIE)?.value;
+    await prisma.session.deleteMany({
+      where: {
+        userId: owner.userId,
+        ...(token ? { NOT: { tokenHash: hashToken(token) } } : {}),
+      },
+    });
+    return;
   }
 
-  return session.developerId;
+  const token = store.get(MEMBER_SESSION_COOKIE)?.value;
+  await prisma.developerSession.deleteMany({
+    where: {
+      developerId: owner.developerId,
+      ...(token ? { NOT: { tokenHash: hashToken(token) } } : {}),
+    },
+  });
 }
 
 /** Signing out drops whichever of the two sessions this browser is holding. */

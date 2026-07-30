@@ -10,9 +10,12 @@ import {
 import { LIMITS } from "@/lib/sanitize";
 import {
   clearRateLimit,
+  clearRateLimitBySubject,
+  LOGIN_ACCOUNT_LIMIT,
   LOGIN_LIMIT,
   LOGIN_SPRAY_LIMIT,
   rateLimited,
+  rateLimitedBySubject,
 } from "@/lib/rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -45,6 +48,20 @@ export async function POST(request: NextRequest) {
     rateLimited(request, "login-spray", LOGIN_SPRAY_LIMIT);
   if (limited) return limited;
 
+  // And counted against the account on its own, which is the only one of the
+  // three a caller can't sidestep by writing themselves a fresh address header.
+  //
+  // This one doesn't return here, though. It is keyed on the account being
+  // guessed at rather than on whoever is guessing, so refusing outright would
+  // hand anybody a way to lock a stranger out of their own workspace by
+  // spending their window for them. Instead it is carried down to the end: the
+  // password is checked as usual and a correct one still gets in, while a wrong
+  // one is answered 429 rather than 401. The guesser learns nothing and gets
+  // nowhere; the owner signs in through the whole attempt.
+  const throttled = account
+    ? rateLimitedBySubject("login-account", LOGIN_ACCOUNT_LIMIT, account)
+    : null;
+
   // scrypt is deliberately expensive, which makes an unbounded password an
   // invitation to spend the server's CPU on one request.
   if (password.length > LIMITS.password) return wrong();
@@ -55,6 +72,7 @@ export async function POST(request: NextRequest) {
     : null;
   if (user && (await verifyPassword(password, user.passwordHash))) {
     clearRateLimit(request, "login", account);
+    clearRateLimitBySubject("login-account", account);
     await createSession(user.id);
     return NextResponse.json({
       kind: "owner",
@@ -77,6 +95,7 @@ export async function POST(request: NextRequest) {
     (await verifyPassword(password, developer.passwordHash))
   ) {
     clearRateLimit(request, "login", account);
+    clearRateLimitBySubject("login-account", account);
     await createMemberSession(developer.id);
     return NextResponse.json({
       kind: "member",
@@ -89,5 +108,8 @@ export async function POST(request: NextRequest) {
   // that comes back quickly isn't a hint that the name is unknown.
   if (!user && !developer?.passwordHash) await burnPasswordTime(password);
 
-  return wrong();
+  // A wrong password once the account's window is spent: say so as a limit
+  // rather than as a refusal, so a guessing run is told to stop and the person
+  // who actually knows the password never sees this at all.
+  return throttled ?? wrong();
 }

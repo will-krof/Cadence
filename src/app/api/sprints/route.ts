@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { boardFilter, requireUser } from "@/lib/api-auth";
+import { boardFilter, requireUser, scopedToProject } from "@/lib/api-auth";
 import { memberCannotRead, requireViewer } from "@/lib/viewer";
 import { ownedProject } from "@/lib/owned";
 import { badRequest, forbidden, notFound } from "@/lib/responses";
@@ -16,8 +16,11 @@ export async function GET(request: NextRequest) {
   // being on a project with neither is being on it without a calendar.
   if (memberCannotRead(viewer, projectId)) return forbidden();
 
+  // Both clauses stand: the project that was asked for, and the projects this
+  // viewer may open. Spread together the member's scope landed on top of the
+  // `projectId` and handed back every sprint they could reach anywhere.
   const sprints = await prisma.sprint.findMany({
-    where: { projectId, ...boardFilter(viewer) },
+    where: scopedToProject(boardFilter(viewer), projectId),
     orderBy: { number: "asc" },
   });
   return NextResponse.json(sprints);

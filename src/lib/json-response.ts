@@ -1,5 +1,8 @@
-import { gzipSync } from "node:zlib";
+import { gzip as gzipCallback } from "node:zlib";
+import { promisify } from "node:util";
 import { NextRequest, NextResponse } from "next/server";
+
+const gzip = promisify(gzipCallback);
 
 /** Below this, compressing costs more than it saves. */
 const MIN_BYTES = 1024;
@@ -14,8 +17,16 @@ const PRIVATE = "no-store, private";
  * and goes out untouched — which for a board's worth of tasks meant six figures
  * of bytes on the wire. Compressing here is a few milliseconds for roughly a
  * tenth of the transfer.
+ *
+ * Those milliseconds used to be spent on the event loop: `gzipSync` stops the
+ * process, so one person opening a large board paused every other request in
+ * flight — and the endpoints that call this are exactly the ones with enough
+ * data to be worth compressing. The async form does the same work on libuv's
+ * thread pool, off the one thread everything else is queued behind. It is the
+ * same few milliseconds for the person who asked, and none at all for everybody
+ * who happened to ask at the same moment.
  */
-export function jsonResponse(request: NextRequest, data: unknown) {
+export async function jsonResponse(request: NextRequest, data: unknown) {
   const body = JSON.stringify(data);
   const accepted = request.headers.get("accept-encoding") ?? "";
 
@@ -23,7 +34,7 @@ export function jsonResponse(request: NextRequest, data: unknown) {
     return NextResponse.json(data, { headers: { "cache-control": PRIVATE } });
   }
 
-  const packed = gzipSync(body);
+  const packed = await gzip(body);
   return new NextResponse(packed, {
     headers: {
       "content-type": "application/json",

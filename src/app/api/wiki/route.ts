@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { wikiFilter, workspaceOwnerId } from "@/lib/api-auth";
-import { memberWritesWiki, requireViewer } from "@/lib/viewer";
+import { scopedToProject, wikiFilter, workspaceOwnerId } from "@/lib/api-auth";
+import {
+  memberCannotReadWiki,
+  memberWritesWiki,
+  requireViewer,
+} from "@/lib/viewer";
 import { ownedProject } from "@/lib/owned";
 import { badRequest, forbidden, notFound } from "@/lib/responses";
 import { boundedText, LIMITS } from "@/lib/sanitize";
@@ -19,8 +23,13 @@ export async function GET(request: NextRequest) {
   if (response) return response;
 
   const projectId = request.nextUrl.searchParams.get("projectId");
+  // Asked about one project: the role has to open that project's wiki. Without
+  // this the only thing standing between a member and another workspace's
+  // contents was the filter below, and the filter was being overwritten.
+  if (memberCannotReadWiki(viewer, projectId)) return forbidden();
+
   const pages = await prisma.wikiPage.findMany({
-    where: { ...wikiFilter(viewer), ...(projectId ? { projectId } : {}) },
+    where: scopedToProject(wikiFilter(viewer), projectId),
     select: WIKI_INDEX_FIELDS,
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
   });

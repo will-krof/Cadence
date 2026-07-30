@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireViewer } from "@/lib/viewer";
 import { badRequest, conflict, done, notFound } from "@/lib/responses";
 import {
+  destroyOtherSessions,
   destroySession,
   hashPassword,
   isValidEmail,
@@ -151,6 +152,10 @@ export async function PATCH(request: NextRequest) {
       },
       select: { id: true, name: true, email: true, role: true, createdAt: true },
     });
+    // A new password ends every other session on the account — see
+    // `destroyOtherSessions`. Done after the write, so a session is only cut
+    // off once the password it no longer matches is actually stored.
+    if (passwordHash) await destroyOtherSessions({ userId: viewer.user.id });
     return NextResponse.json({ ...user, kind: "owner", username: null, places: [] });
   }
 
@@ -164,6 +169,9 @@ export async function PATCH(request: NextRequest) {
     },
     select: { id: true, name: true, email: true, username: true, createdAt: true },
   });
+  if (passwordHash) {
+    await destroyOtherSessions({ developerId: viewer.developerId });
+  }
   return NextResponse.json({
     ...developer,
     kind: "member",

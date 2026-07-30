@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -43,8 +44,18 @@ export interface MemberViewer {
 
 export type Viewer = OwnerViewer | MemberViewer;
 
-/** Reads the signed-in team member, and what each of their projects allows. */
-export async function getSessionMember(): Promise<MemberViewer | null> {
+/**
+ * Reads the signed-in team member, and what each of their projects allows.
+ *
+ * This is the widest query the app runs before it does anything — a person,
+ * their memberships, and every role on each — and it answers a question that
+ * cannot change part-way through a request. Memoized for the same reason as
+ * `getSessionUser`: one ask per request is what happens now, and this is what
+ * keeps it one ask when a second caller turns up.
+ */
+export const getSessionMember = cache(async function getSessionMember(): Promise<
+  MemberViewer | null
+> {
   const developerId = await getSessionDeveloperId();
   if (!developerId) return null;
 
@@ -113,17 +124,17 @@ export async function getSessionMember(): Promise<MemberViewer | null> {
       };
     }),
   };
-}
+});
 
 /**
  * An account session wins over a member one: someone who owns a workspace and
  * is also on somebody's project should land in their own.
  */
-export async function getViewer(): Promise<Viewer | null> {
+export const getViewer = cache(async function getViewer(): Promise<Viewer | null> {
   const user = await getSessionUser();
   if (user) return { kind: "owner", user };
   return getSessionMember();
-}
+});
 
 const notSignedIn = () =>
   NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -199,4 +210,17 @@ export function memberCannotRead(viewer: Viewer, projectId: string | null) {
   if (viewer.kind !== "member") return false;
   if (projectId != null) return !memberSeesBoards(viewer, projectId);
   return !viewer.places.some((p) => p.canViewTimeline || p.canViewTracker);
+}
+
+/**
+ * And for the wiki, which is its own tool with its own flag: a role given the
+ * boards is not thereby given what the project wrote down.
+ *
+ * A project the member isn't on at all reads the same as one whose roles close
+ * the wiki — `placeOn` returns null, and null can't view anything.
+ */
+export function memberCannotReadWiki(viewer: Viewer, projectId: string | null) {
+  if (viewer.kind !== "member") return false;
+  if (projectId != null) return placeOn(viewer, projectId)?.canViewWiki !== true;
+  return !viewer.places.some((p) => p.canViewWiki);
 }

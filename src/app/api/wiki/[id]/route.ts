@@ -14,18 +14,28 @@ import { NextRequest, NextResponse } from "next/server";
  * leave a ring of pages nothing points at, so the walk up from the candidate
  * has to clear the page being moved.
  */
-async function wouldLoop(pageId: string, candidateId: string) {
+async function wouldLoop(
+  projectId: string,
+  pageId: string,
+  candidateId: string
+) {
+  // One query for the project's shape rather than one per step up the tree.
+  // The walk was a round trip per ancestor, run while somebody held a page they
+  // had just dragged — and it read the same handful of rows every time. A wiki
+  // is titles and parents; the whole skeleton of one costs less to fetch than
+  // three of those round trips.
+  const pages = await prisma.wikiPage.findMany({
+    where: { projectId },
+    select: { id: true, parentId: true },
+  });
+  const parentOf = new Map(pages.map((p) => [p.id, p.parentId]));
+
   let at: string | null = candidateId;
   // The wiki is a tree, so this terminates at the top; the cap is there for a
   // row that somehow already loops rather than for a deep wiki.
-  for (let step = 0; at && step < 100; step++) {
+  for (let step = 0; at && step < pages.length + 1; step++) {
     if (at === pageId) return true;
-    const parent: { parentId: string | null } | null =
-      await prisma.wikiPage.findUnique({
-        where: { id: at },
-        select: { parentId: true },
-      });
-    at = parent?.parentId ?? null;
+    at = parentOf.get(at) ?? null;
   }
   return false;
 }
@@ -105,7 +115,7 @@ export async function PATCH(
         select: { id: true },
       });
       if (!parent) return notFound("That section is");
-      if (await wouldLoop(id, parent.id)) {
+      if (await wouldLoop(page.projectId, id, parent.id)) {
         return badRequest("A section can’t be filed inside itself");
       }
       parentId = parent.id;
@@ -137,13 +147,23 @@ export async function PATCH(
     const siblings = await prisma.wikiPage.findMany({
       where: { projectId: page.projectId, parentId: updated.parentId },
       orderBy: [{ order: "asc" }, { updatedAt: "desc" }],
-      select: { id: true },
+      select: { id: true, order: true },
     });
-    await prisma.$transaction(
-      siblings.map((s, i) =>
-        prisma.wikiPage.update({ where: { id: s.id }, data: { order: i * 2 } })
-      )
-    );
+    // Only the rows whose number actually changes. Dragging one page used to
+    // rewrite every page beside it, which also bumped their `updatedAt` — so a
+    // section's whole contents looked freshly edited because somebody moved one
+    // page within it. Most of a renumber is rows that were already right.
+    const moved = siblings.filter((s, i) => s.order !== i * 2);
+    if (moved.length > 0) {
+      await prisma.$transaction(
+        moved.map((s) =>
+          prisma.wikiPage.update({
+            where: { id: s.id },
+            data: { order: siblings.indexOf(s) * 2 },
+          })
+        )
+      );
+    }
     return NextResponse.json({
       ...updated,
       order: siblings.findIndex((s) => s.id === id) * 2,

@@ -7,7 +7,15 @@ import { AcceptInvite } from "@/components/AcceptInvite";
 import { INVITE_DAYS, inviteHasExpired } from "@/lib/invite";
 import { ROLE_TOOLS, accessOf } from "@/lib/types";
 
-export const metadata: Metadata = { title: "You're invited — Cadence" };
+/**
+ * The address carries the token, so this page is never one to be indexed: a
+ * crawler that reached a pasted link would put a live invite — and the name of
+ * the person and project behind it — into a search result.
+ */
+export const metadata: Metadata = {
+  title: "You're invited — Cadence",
+  robots: { index: false, follow: false },
+};
 
 /**
  * What an invite link opens: the project it is for, the roles it carries, and a
