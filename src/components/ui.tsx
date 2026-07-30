@@ -565,7 +565,12 @@ export function SettingToggle({
 }) {
   return (
     <label
-      className={`flex cursor-pointer items-start gap-3 rounded-[var(--radius)] border p-3 transition ${
+      // Positioned, so the tick box this hides is placed against the row.
+      // Left to the page, an absolutely positioned box belongs to the viewport
+      // instead — it slips out of the scrolling panel it is drawn in and lands
+      // below the window, which stretches the page and shows as a band of
+      // empty colour under the app.
+      className={`relative flex cursor-pointer items-start gap-3 rounded-[var(--radius)] border p-3 transition ${
         checked
           ? "border-[var(--accent)] bg-[var(--accent-wash)]"
           : "border-[var(--hairline)] hover:bg-[var(--plane)]"
