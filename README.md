@@ -19,6 +19,28 @@ in — `npm install` generates it, so a fresh checkout needs nothing else. After
 pulling a change that touches `prisma/schema.prisma`, run `npm install` (or
 `npx prisma generate`) again to bring it back in step.
 
+### A migration that says a column is already there
+
+```
+Error: P3018 … duplicate column name: taskHasSubtasks
+Migration name: 20260730110000_task_steps_and_links_are_fields
+```
+
+That migration was released under a later timestamp and then moved earlier, so
+that a database built from nothing applies it before the migration that rebuilds
+the same table. A database that had already run it under the old name sees the
+moved one as new and tries to add the columns a second time.
+
+The columns are already there and the schema is right, so the migration only
+has to be written down as done:
+
+```bash
+npx prisma migrate resolve --applied 20260730110000_task_steps_and_links_are_fields
+npx prisma migrate deploy
+```
+
+A database created after this was written never meets it.
+
 ## Accounts
 
 Signing up at [/signup](http://localhost:3000/signup) makes a workspace and makes
