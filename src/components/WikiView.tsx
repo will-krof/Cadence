@@ -5,6 +5,7 @@ import { useFeedback } from "@/components/Feedback";
 import { Markdown } from "@/components/Markdown";
 import { PageForm } from "@/components/wiki/PageForm";
 import { Row, WikiTree } from "@/components/wiki/WikiTree";
+import { CollapseIcon } from "@/components/shell/parts";
 import { Project, WikiEntry, WikiPage } from "@/lib/types";
 
 /**
@@ -29,6 +30,9 @@ export function WikiView({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Whether the list of pages is on show. Folded away, the page being read or
+  // written has the window to itself.
+  const [contentsOpen, setContentsOpen] = useState(true);
   // What has been read so far. A wiki is mostly text, and the contents list
   // carries none of it, so a page's writing is fetched the first time it is
   // opened and kept for as long as the view is.
@@ -236,11 +240,44 @@ export function WikiView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-      <div className="thin-scroll flex flex-col gap-3 overflow-y-auto border-b border-[var(--hairline)] p-4 lg:w-72 lg:shrink-0 lg:border-b-0 lg:border-r lg:p-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[0.8125rem] font-semibold tracking-tight">
+      {/* Folded away, the contents leave a rail with the way back on it. A
+          page being written wants the whole window, and the list of pages is
+          the one thing on this screen that isn't the page. */}
+      {!contentsOpen && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--hairline)] px-2 py-1.5 lg:flex-col lg:border-r lg:border-b-0 lg:px-1.5 lg:py-2">
+          <button
+            onClick={() => setContentsOpen(true)}
+            className="rounded p-1.5 text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+            aria-label="Show the contents"
+            aria-expanded={false}
+            title="Show the contents"
+          >
+            <CollapseIcon pointsLeft={false} />
+          </button>
+          <span className="text-[0.6875rem] text-[var(--ink-muted)] lg:[writing-mode:vertical-rl]">
             Contents
-            <span className="ml-2 font-normal text-[var(--ink-muted)]">
+          </span>
+        </div>
+      )}
+
+      <div
+        className={`thin-scroll flex-col gap-3 overflow-y-auto border-b border-[var(--hairline)] p-4 lg:w-72 lg:shrink-0 lg:border-r lg:border-b-0 lg:p-5 ${
+          contentsOpen ? "flex" : "hidden"
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-[0.8125rem] font-semibold tracking-tight">
+            <button
+              onClick={() => setContentsOpen(false)}
+              className="rounded p-1 text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+              aria-label="Hide the contents"
+              aria-expanded={true}
+              title="Hide the contents"
+            >
+              <CollapseIcon pointsLeft={true} />
+            </button>
+            Contents
+            <span className="font-normal text-[var(--ink-muted)]">
               {here.length}
             </span>
           </h2>
@@ -288,7 +325,20 @@ export function WikiView({
         )}
       </div>
 
-      <div className="thin-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+      {/* The writing pane. The form inside it lays itself out and scrolls its
+          own text box, so it is handed the whole pane rather than a scrolling
+          column with padding around it. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {selected != null && editing && canEdit ? (
+          <PageForm
+            key={selected.id}
+            page={selected}
+            content={read.get(selected.id) ?? ""}
+            onCancel={() => setEditing(false)}
+            onSave={(values) => savePage(selected.id, values)}
+          />
+        ) : (
+          <div className="thin-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
         {selected == null ? (
           <p className="text-[0.8125rem] text-[var(--ink-muted)]">
             {canEdit
@@ -297,14 +347,6 @@ export function WikiView({
           </p>
         ) : loadingPage && !read.has(selected.id) ? (
           <p className="text-[0.8125rem] text-[var(--ink-muted)]">Loading…</p>
-        ) : editing && canEdit ? (
-          <PageForm
-            key={selected.id}
-            page={selected}
-            content={read.get(selected.id) ?? ""}
-            onCancel={() => setEditing(false)}
-            onSave={(values) => savePage(selected.id, values)}
-          />
         ) : (
           <article className="mx-auto flex max-w-2xl flex-col gap-3">
             <header className="flex flex-wrap items-start justify-between gap-3">
@@ -354,6 +396,8 @@ export function WikiView({
               </p>
             )}
           </article>
+        )}
+          </div>
         )}
       </div>
     </div>

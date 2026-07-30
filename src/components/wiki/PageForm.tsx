@@ -100,7 +100,14 @@ export function PageForm({
   }
 
   return (
-    <form onSubmit={submit} className="mx-auto flex max-w-2xl flex-col gap-3">
+    // The whole pane, rather than a column down the middle of it: writing is
+    // the one thing in this app that wants every inch of the screen, and a
+    // page written in a 42-character column is a page written through a
+    // letterbox. The box grows with the window; only the writing scrolls.
+    <form
+      onSubmit={submit}
+      className="flex min-h-0 flex-1 flex-col gap-3 p-4 sm:p-6"
+    >
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
@@ -136,7 +143,7 @@ export function PageForm({
       </div>
 
       {preview ? (
-        <div className="min-h-[24rem] rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-4">
+        <div className="thin-scroll min-h-0 flex-1 overflow-y-auto rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-4">
           {content.trim() ? (
             <Markdown text={content} />
           ) : (
@@ -150,7 +157,7 @@ export function PageForm({
           ref={bodyRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          className="input min-h-[24rem] resize-y font-normal leading-relaxed"
+          className="input min-h-0 flex-1 resize-none font-normal leading-relaxed"
           placeholder={"# A heading\n\nSomething **worth** writing down.\n\n- a point\n- another"}
           aria-label="Page content"
         />
