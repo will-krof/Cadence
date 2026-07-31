@@ -76,15 +76,20 @@ export function PeopleSection({
     return counts;
   }, [tasks]);
 
-  const onProject = new Set(people.map((p) => p.id));
-  const available = developers.filter((d) => d.active && !onProject.has(d.id));
+  // Who can be added is a question about the membership list, not about who is
+  // drawn below it: somebody carrying a task is listed here without being on
+  // the project, and asking the roster instead left them in neither list — off
+  // the project, and unofferable because they were already on screen.
+  const available = developers.filter(
+    (d) => d.active && !membershipOf.has(d.id)
+  );
 
   async function remove(person: Developer) {
     const open = openCounts.get(person.id) ?? 0;
     const ok = await confirm({
       title: `Take ${person.name} off ${project.name}?`,
       body: open
-        ? `Their ${open} open task${open === 1 ? "" : "s"} stay where they are — reassign them first if they shouldn't.`
+        ? `Their ${open} open task${open === 1 ? "" : "s"} stay with them, so they keep a row here for the work they carry — reassign it first if they shouldn't.`
         : "They keep their profile and their work elsewhere.",
       confirmLabel: "Take off project",
       destructive: true,
@@ -167,7 +172,7 @@ export function PeopleSection({
                     }
                   />
 
-                  {canEdit && (
+                  {canEdit && membership && (
                     <button
                       onClick={() => remove(person)}
                       className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[var(--danger)]"
@@ -182,10 +187,15 @@ export function PeopleSection({
                 {/* Inviting somebody is this card's business, and it waits for
                     a role: the link is only worth sending once it opens
                     something. Carrying a task isn't being put on the project,
-                    so those rows have no link either. */}
+                    so those rows say why they are here instead — silence read
+                    as the invite having gone missing. */}
                 {canEdit &&
-                  membership &&
-                  (held.length > 0 || membership.hasLogin ? (
+                  (!membership ? (
+                    <p className="border-t border-[var(--hairline)] pt-2 text-[0.75rem] text-[var(--ink-muted)]">
+                      Not on the project — listed for the work they carry on it.
+                      Give them a role to put them on it and invite them.
+                    </p>
+                  ) : held.length > 0 || membership.hasLogin ? (
                     <InviteRow
                       person={person}
                       invite={membership.invite}
