@@ -19,6 +19,10 @@ export const DEVELOPER_FIELDS = {
   employmentType: true,
   active: true,
   notes: true,
+  timezone: true,
+  country: true,
+  languages: true,
+  workLocation: true,
   username: true,
   createdAt: true,
 } as const;
@@ -39,6 +43,12 @@ export const TEAMMATE_FIELDS = {
   workStatus: true,
   active: true,
   currency: true,
+  // Which hours somebody keeps, and in what languages, is the same kind of
+  // fact: you need it to work with them at all. A colleague gets these.
+  timezone: true,
+  country: true,
+  languages: true,
+  workLocation: true,
   createdAt: true,
 } as const;
 
@@ -50,6 +60,10 @@ interface Teammate {
   workStatus: string | null;
   active: boolean;
   currency: string;
+  timezone: string | null;
+  country: string | null;
+  languages: string | null;
+  workLocation: string | null;
   createdAt: Date;
 }
 

@@ -33,7 +33,7 @@ which of them it wants.
 |---|---|
 | **📅 Timeline** | A Gantt chart of the sprint. Drag a bar to move the work, drag its edge to change how long it takes. Weekends fold away. |
 | **🗂 Tracker** | The same tasks as cards in five columns. Drag between them, hide the columns nobody is watching, filter to one person. |
-| **👥 Team** | A roster with a profile per person — what they do, what they're on, what they're carrying. Pay and contact details stay with the workspace owner. |
+| **👥 Team** | A roster with a profile per person — what they do, what they're on, what they're carrying, and what time it is where they are. Pay and contact details stay with the workspace owner. |
 | **📖 Wiki** | A per-project tree of pages for the things that aren't tasks. |
 | **🔑 Roles & invite links** | Every project has its own roles, and a role is a list of what it opens. Invite somebody with a link that expires in three days and is spent on one login. |
 | **🎚 Nothing you didn't ask for** | A project starts with everything switched off. Tick the tools it needs — and the fields a task should ask for — and the rest never appears. |
@@ -227,6 +227,14 @@ Every profile has an address of its own — `/people/<id>` — and a **Share** b
 that copies it. The link is an address, not a key: opening it takes a session and
 a project shared with that person. Colleagues see the working half of a profile;
 pay, contact details and notes are the workspace's own.
+
+A profile also says where in the world somebody is: a time zone, a country, the
+languages they speak, and whether they work remotely, from an office, or both.
+The zone is stored — `Europe/Kyiv`, not `+03:00`, so it stays right when the
+clocks change — and the card reads the time off it, ticking on the minute. It
+sits beside the name on the roster as well, so scrolling the list tells you who
+is still at their desk. All four are the working half of a card: a colleague
+plans around them, so a colleague can see them.
 
 </details>
 

@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Avatar, Field, RoleChips } from "@/components/ui";
+import { LocalTime } from "@/components/LocalTime";
 import {
   CURRENCIES,
   WORK_STATUSES,
+  WORK_LOCATIONS,
+  WorkLocation,
   WorkStatus,
   DEVELOPER_PALETTE,
   Developer,
@@ -15,6 +18,8 @@ import {
   Project,
 } from "@/lib/types";
 import { toISODate } from "@/lib/dates";
+import { useHydrated } from "@/lib/hydrated";
+import { timezoneNames, viewerZone, zoneLabel } from "@/lib/timezones";
 
 export function ProfileForm({
   person,
@@ -64,6 +69,12 @@ export function ProfileForm({
   const [employmentType, setEmploymentType] = useState<EmploymentType | "">(
     person?.employmentType ?? "FULL_TIME"
   );
+  const [timezone, setTimezone] = useState(person?.timezone ?? "");
+  const [country, setCountry] = useState(person?.country ?? "");
+  const [languages, setLanguages] = useState(person?.languages ?? "");
+  const [workLocation, setWorkLocation] = useState<WorkLocation | "">(
+    person?.workLocation ?? ""
+  );
   const [active, setActive] = useState(person?.active ?? true);
   const [notes, setNotes] = useState(person?.notes ?? "");
   const [color, setColor] = useState(
@@ -84,6 +95,24 @@ export function ProfileForm({
 
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  /**
+   * The zones on offer, and the reader's own. Both are the browser's answer:
+   * what the server's ICU knows and what this browser knows are not always the
+   * same list, and a select whose options differ between the two tears on
+   * hydration. So the first paint offers whatever the profile already had, and
+   * the full list arrives on the render after it.
+   *
+   * A zone saved before a tzdata change is still this person's zone, so it is
+   * kept at the head of the list rather than quietly dropped on the next save.
+   */
+  const hydrated = useHydrated();
+  const savedZone = person?.timezone ?? null;
+  const zoneOptions = useMemo(() => {
+    const zones = hydrated ? timezoneNames() : savedZone ? [savedZone] : [];
+    return timezone && !zones.includes(timezone) ? [timezone, ...zones] : zones;
+  }, [hydrated, savedZone, timezone]);
+  const here = hydrated ? viewerZone() : null;
 
   function setOnProject(projectId: string, on: boolean) {
     setPlaces((prev) => {
@@ -124,6 +153,10 @@ export function ProfileForm({
               phone,
               birthday: birthday || null,
               workStatus: workStatus || null,
+              timezone: timezone || null,
+              country,
+              languages,
+              workLocation: workLocation || null,
               color,
             }
           : {
@@ -133,6 +166,10 @@ export function ProfileForm({
               phone,
               birthday: birthday || null,
               workStatus: workStatus || null,
+              timezone: timezone || null,
+              country,
+              languages,
+              workLocation: workLocation || null,
               startDate: startDate || null,
               salary: salary === "" ? null : Number(salary),
               currency,
@@ -211,6 +248,87 @@ export function ProfileForm({
             {WORK_STATUSES.map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </section>
+
+      {/* Where in the world they are. Part of the working half of a card: a
+          colleague plans around somebody's hours and their language far more
+          often than around anything the owner keeps to themselves, so a role
+          that keeps the roster tidy writes these too. */}
+      <section className="grid gap-3.5 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Field label="Time zone">
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className="select"
+            >
+              <option value="">Not set</option>
+              {zoneOptions.map((zone) => (
+                <option key={zone} value={zone}>
+                  {zoneLabel(zone)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {/* What the choice means, in the only terms that matter: what time it
+              is there now. Saving is what puts it on the card, but there is no
+              reason to make somebody save to find out they picked Sydney.
+              Outside the Field, because the shortcut is a button and a button
+              inside a label is a click that does two things. */}
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-[var(--ink-muted)]">
+            {timezone ? (
+              <span className="text-[var(--ink-secondary)]">
+                Now there: <LocalTime timezone={timezone} showOffset />
+              </span>
+            ) : (
+              <span>Their local time shows on the card once this is set.</span>
+            )}
+            {here && here !== timezone && (
+              <button
+                type="button"
+                onClick={() => setTimezone(here)}
+                className="text-[var(--accent)] hover:underline"
+              >
+                Use mine ({zoneLabel(here)})
+              </button>
+            )}
+          </p>
+        </div>
+        <Field label="Country">
+          <input
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+            className="input"
+            placeholder="Ukraine"
+          />
+        </Field>
+        <Field label="Languages">
+          <input
+            value={languages}
+            onChange={(e) => setLanguages(e.target.value)}
+            className="input"
+            placeholder="Ukrainian, English"
+          />
+          <p className="mt-1.5 text-[0.6875rem] text-[var(--ink-muted)]">
+            Separated by commas.
+          </p>
+        </Field>
+        <Field label="Where they work">
+          <select
+            value={workLocation}
+            onChange={(e) =>
+              setWorkLocation(e.target.value as WorkLocation | "")
+            }
+            className="select"
+          >
+            <option value="">Not set</option>
+            {WORK_LOCATIONS.map((l) => (
+              <option key={l.value} value={l.value}>
+                {l.label}
               </option>
             ))}
           </select>

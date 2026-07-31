@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
 import { Avatar, CloseIcon } from "@/components/ui";
+import { LocalTime } from "@/components/LocalTime";
 import { useFeedback } from "@/components/Feedback";
 import { ProfileCard } from "@/components/team/ProfileCard";
 import { ProfileForm } from "@/components/team/ProfileForm";
@@ -420,16 +421,27 @@ function PersonRow({
           {!person.active && <span className="chip shrink-0">Archived</span>}
         </span>
         {/* What they do and how many projects they are on, on one line: two
-            stacked whispers under every name was most of the noise here. */}
-        <span className="t-small block truncate text-[var(--ink-muted)]">
-          {[
-            person.role || person.email,
-            projectCount > 0
-              ? `${projectCount} project${projectCount === 1 ? "" : "s"}`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(" · ") || "—"}
+            stacked whispers under every name was most of the noise here. Their
+            clock joins that line when they have a zone — the whole point of a
+            roster that crosses time zones is seeing, while you scroll it, who
+            is still at their desk. */}
+        <span className="t-small flex min-w-0 items-baseline gap-1.5 text-[var(--ink-muted)]">
+          <span className="min-w-0 truncate">
+            {[
+              person.role || person.email,
+              projectCount > 0
+                ? `${projectCount} project${projectCount === 1 ? "" : "s"}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "—"}
+          </span>
+          {person.timezone && (
+            <LocalTime
+              timezone={person.timezone}
+              className="shrink-0 before:mr-1.5 before:content-['·']"
+            />
+          )}
         </span>
       </span>
     </button>

@@ -8,7 +8,7 @@ import { Wordmark } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProfileResume, ResumeProject } from "@/components/ProfileResume";
 import { ShareProfile } from "@/components/ShareProfile";
-import { EmploymentType, WorkStatus } from "@/lib/types";
+import { EmploymentType, WorkLocation, WorkStatus } from "@/lib/types";
 
 // A profile is nobody's business but the team's, so it stays out of indexes.
 export const metadata: Metadata = {
@@ -52,6 +52,13 @@ export default async function ProfilePage({
       active: true,
       currency: true,
       employmentType: true,
+      // The working half: which hours somebody keeps, where, in what languages,
+      // and whether they are in an office at all. A colleague plans around all
+      // four, so they travel to whoever may read the page.
+      timezone: true,
+      country: true,
+      languages: true,
+      workLocation: true,
       // The private half travels only when the viewer is the owner.
       email: isOwner,
       phone: isOwner,
@@ -132,6 +139,10 @@ export default async function ProfilePage({
             active: person.active,
             currency: person.currency,
             employmentType: person.employmentType as EmploymentType | null,
+            timezone: person.timezone,
+            country: person.country,
+            languages: person.languages,
+            workLocation: (person.workLocation ?? null) as WorkLocation | null,
             email: person.email ?? null,
             phone: person.phone ?? null,
             birthday: person.birthday ? person.birthday.toISOString() : null,

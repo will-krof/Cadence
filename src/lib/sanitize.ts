@@ -15,6 +15,8 @@ export const LIMITS = {
   email: 200,
   phone: 40,
   roleName: 60,
+  /** The languages somebody speaks, on one line. A list, not a CV. */
+  languages: 200,
   /** A tag is a word or two — anything longer is a description. */
   tagName: 24,
   /** A wiki page is the one long thing here — a chapter, not a book. */

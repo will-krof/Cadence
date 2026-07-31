@@ -21,6 +21,13 @@ const TEAM_EDITABLE = [
   "phone",
   "birthday",
   "workStatus",
+  // Which hours somebody keeps, where they are and how they work there is the
+  // working half of a card — the part a colleague plans around, and so the part
+  // a roster-keeping role may correct.
+  "timezone",
+  "country",
+  "languages",
+  "workLocation",
   "color",
 ] as const;
 

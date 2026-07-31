@@ -84,6 +84,25 @@ model Developer {
   active         Boolean   @default(true)
   notes          String?
 
+  /// Where they are in the world, and how they work there. A team spread over
+  /// three continents plans around these more often than around anything else
+  /// on a card, so they are the working half of a profile rather than the
+  /// owner's: colleagues see them.
+  ///
+  /// The zone is an IANA name — `Europe/Kyiv` — kept rather than an offset,
+  /// because an offset is only right until the clocks change. What the card
+  /// shows is the time read off it, worked out fresh every minute.
+  timezone       String?
+  /// Said in words rather than as a code: the roster is read by people, and
+  /// nothing here sorts or groups by country.
+  country        String?
+  /// The languages they speak, comma separated. A list somebody types, not one
+  /// this app decided on — a team knows its own languages, and half of them
+  /// aren't on anybody's dropdown.
+  languages      String?
+  /// REMOTE | OFFICE | HYBRID. Null is nobody having said.
+  workLocation   String?
+
   /// The login they set up when they followed an invite link. Nothing until
   /// then: most of a roster never signs in, and a profile doesn't need one.
   /// One login per person, not per project — what they reach is decided by the

@@ -1,14 +1,28 @@
 "use client";
 
 import { Avatar } from "@/components/ui";
+import { LocalTime } from "@/components/LocalTime";
 import { formatDay } from "@/lib/dates";
 import {
   Developer,
   DeveloperTask,
   EMPLOYMENT_TYPES,
+  languageList,
   statusMeta,
+  workLocationLabel,
   workStatusMeta,
 } from "@/lib/types";
+
+/**
+ * One line of the details grid. The value is a node rather than a string
+ * because some of these are drawn rather than written — a clock that ticks, a
+ * row of language chips — and a label paired with a value is still the shape.
+ */
+interface Detail {
+  label: string;
+  value: React.ReactNode;
+  href?: string;
+}
 
 /** One project this person appears on, and what they hold there. */
 export interface ResumeProject {
@@ -53,6 +67,10 @@ export function ProfileResume({
     | "currency"
     | "employmentType"
     | "notes"
+    | "timezone"
+    | "country"
+    | "languages"
+    | "workLocation"
   >;
   projects: ResumeProject[];
   /** Null while they are still loading. */
@@ -72,7 +90,41 @@ export function ProfileResume({
 }) {
   const openCount = tasks?.filter((t) => t.status !== "DONE").length ?? 0;
 
-  const details = [
+  const spoken = languageList(person.languages);
+
+  const details: Detail[] = ([
+    // What time it is where they are, first: of everything on a card it is the
+    // one thing that is true only right now, and the one a colleague checks
+    // before they write. The zone was saved; the clock is read off it here.
+    person.timezone
+      ? {
+          label: "Local time",
+          value: (
+            <LocalTime timezone={person.timezone} showZone showOffset />
+          ),
+        }
+      : null,
+    person.country ? { label: "Country", value: person.country } : null,
+    spoken.length > 0
+      ? {
+          label: "Speaks",
+          value: (
+            <span className="flex flex-wrap gap-1">
+              {spoken.map((language) => (
+                <span
+                  key={language}
+                  className="rounded-full bg-[var(--plane)] px-2 py-0.5 text-[0.6875rem] text-[var(--ink-secondary)]"
+                >
+                  {language}
+                </span>
+              ))}
+            </span>
+          ),
+        }
+      : null,
+    person.workLocation
+      ? { label: "Works", value: workLocationLabel(person.workLocation) }
+      : null,
     showPrivate && person.email
       ? { label: "Email", value: person.email, href: `mailto:${person.email}` }
       : null,
@@ -100,9 +152,7 @@ export function ProfileResume({
           value: `${person.salary.toLocaleString()} ${person.currency}`,
         }
       : null,
-  ].filter((d): d is { label: string; value: string; href?: string } =>
-    Boolean(d?.value)
-  );
+  ] as (Detail | null)[]).filter((d): d is Detail => Boolean(d && d.value));
 
   return (
     <article className="mx-auto w-full max-w-2xl overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--surface)]">

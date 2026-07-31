@@ -100,6 +100,36 @@ export function workStatusMeta(status: WorkStatus | null) {
   return WORK_STATUSES.find((s) => s.value === status) ?? WORK_STATUSES[0];
 }
 
+/**
+ * Where somebody works from. A different question from `WorkStatus`: that one
+ * is this week — off sick, on holiday — and this one is how the job is done at
+ * all. Null is nobody having said, which is not the same as being in an office.
+ */
+export type WorkLocation = "REMOTE" | "OFFICE" | "HYBRID";
+
+export const WORK_LOCATIONS: { value: WorkLocation; label: string }[] = [
+  { value: "REMOTE", label: "Remote" },
+  { value: "OFFICE", label: "In the office" },
+  { value: "HYBRID", label: "Hybrid" },
+];
+
+export function workLocationLabel(location: WorkLocation | null) {
+  return WORK_LOCATIONS.find((l) => l.value === location)?.label ?? null;
+}
+
+/**
+ * The languages field, split back into the languages. Stored as one line
+ * because that is how somebody types it; read as a list because that is how a
+ * card draws it.
+ */
+export function languageList(languages: string | null): string[] {
+  if (!languages) return [];
+  return languages
+    .split(",")
+    .map((one) => one.trim())
+    .filter(Boolean);
+}
+
 export interface Developer {
   id: string;
   name: string;
@@ -115,6 +145,12 @@ export interface Developer {
   employmentType: EmploymentType | null;
   active: boolean;
   notes: string | null;
+  /** An IANA zone — "Europe/Kyiv" — that their local time is read off. */
+  timezone: string | null;
+  country: string | null;
+  /** The languages they speak, comma separated. `languageList` splits it. */
+  languages: string | null;
+  workLocation: WorkLocation | null;
   /** The login they picked when they followed an invite link, if they have. */
   username: string | null;
   createdAt: string;
