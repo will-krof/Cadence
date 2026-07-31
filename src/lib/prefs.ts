@@ -234,6 +234,19 @@ export function useShowNotes() {
 }
 
 /**
+ * And whether they keep the roster there. The same question as the one above,
+ * and the same answer's to give: the sidebar is a view of the workspace rather
+ * than the workspace itself, so what somebody keeps in their own is theirs.
+ *
+ * Putting Team away hides the screen, not the right to it — the chip that
+ * brings it back is right there, and nothing about who may read the roster
+ * changes either way.
+ */
+export function useShowTeam() {
+  return useStoredFlag("show-team", true);
+}
+
+/**
  * How wide somebody has dragged the timeline's columns. Sizing a table is a
  * choice about a screen, not about the work, so it lives here with the rest of
  * them — and it survives a reload, which is the whole point of dragging it once.

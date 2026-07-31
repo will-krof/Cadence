@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useFeedback } from "@/components/Feedback";
-import { CloseIcon } from "@/components/ui";
+import { CloseIcon, Disclosure } from "@/components/ui";
 import {
   ACCESS_OPTIONS,
   Project,
@@ -54,15 +54,30 @@ export function RolesSection({
   }
 
   return (
+    // A grid of every role against every tool is the tallest thing on the card,
+    // and it is read on the day the roles are decided rather than on the days
+    // after it. So it folds, the way the people list beside it does — open to
+    // begin with, because a project card should say what it holds.
+    <Disclosure
+      label="Roles"
+      count={project.roles.length}
+      hint="What each role may do with this project’s tools: nothing, watch, or work in it."
+      summary={
+        project.roles.length > 0 ? (
+          <p className="flex flex-wrap gap-1">
+            {project.roles.map((role) => (
+              <span
+                key={role.id}
+                className="rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[0.625rem] uppercase tracking-wide text-[var(--accent)]"
+              >
+                {role.name}
+              </span>
+            ))}
+          </p>
+        ) : undefined
+      }
+    >
     <section className="flex flex-col gap-2.5">
-      <div>
-        <h3 className="text-[0.8125rem] font-semibold tracking-tight">Roles</h3>
-        <p className="text-[0.75rem] text-[var(--ink-muted)]">
-          Admins choose what each role may do with this project’s tools: nothing,
-          watch, or work in it.
-        </p>
-      </div>
-
       <div className="overflow-x-auto">
         <table className="w-full min-w-[26rem] border-collapse text-[0.8125rem]">
           <thead>
@@ -173,6 +188,7 @@ export function RolesSection({
         what the role is called, not what it opens.
       </p>
     </section>
+    </Disclosure>
   );
 }
 

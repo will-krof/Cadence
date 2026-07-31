@@ -35,7 +35,7 @@ which of them it wants.
 | **🗂 Tracker** | The same tasks as cards in five columns. Drag between them, hide the columns nobody is watching, filter to one person. |
 | **👥 Team** | A roster with a profile per person — what they do, what they're on, what they're carrying, and what time it is where they are. Pay and contact details stay with the workspace owner. |
 | **📖 Wiki** | A per-project tree of pages for the things that aren't tasks. |
-| **🗒 Notes** | A private pile per person, in whatever order they drag it into. Nobody else in the workspace can read them. |
+| **🗒 Notes** | A private pile per person, in whatever order they drag it into — right-click one to pin, copy or delete it. Nobody else in the workspace can read them. |
 | **🔑 Roles & invite links** | Every project has its own roles, and a role is a list of what it opens. Invite somebody with a link that expires in three days and is spent on one login. |
 | **🎚 Nothing you didn't ask for** | A project starts with everything switched off. Tick the tools it needs — and the fields a task should ask for — and the rest never appears. |
 
@@ -207,11 +207,17 @@ with the × in its header. Hidden columns collect above the board with their
 counts, one click each to bring back, and their tasks were never filtered out of
 anything.
 
+A task is written where it will live: the **+** beside the timeline's Task
+column, or the **+** on a tracker column — which also decides what the task
+starts as, so one written under "In test" arrives in test.
+
 In the **sidebar**, every project lists the tools it carries, open to begin with:
 what the workspace is made of should be readable without clicking into it. Fold a
 project away with the arrow beside it and it stays folded, per project and per
 browser. Pressing a tool under a project opens that project *and* that tool,
-which is what pressing it meant.
+which is what pressing it meant. Only one row is ever lit — whatever is actually
+on screen. **Team** and **Notes** can each be put away with the × on their row,
+and come back from the chips underneath.
 
 </details>
 
@@ -234,6 +240,11 @@ Commenting is the one thing a view-only role can still do. Opening a task shows
 its history and, under it, what people have said about it: anybody who can open
 the board can add to that, whether or not their role lets them change the work. A
 comment can be taken back by whoever wrote it, and by the workspace's owner.
+
+A note is read as it will look and written by clicking into it: stepping out of
+the text renders it, so there is no Preview button to press. Right-clicking a
+note in the list is where the rest of it lives — a new note, a copy of this one,
+pinning it to the top of the pile, and deleting it.
 
 Every profile has an address of its own — `/people/<id>` — and a **Share** button
 that copies it. The link is an address, not a key: opening it takes a session and

@@ -14,11 +14,11 @@ const MAX_NOTES = 200;
  * them, as titles and the first line or two. The writing itself arrives a note
  * at a time — the list is for finding one, not for reading them all.
  *
- * The order is theirs rather than the clock's. Newest-touched-first sounds
- * right until you use it: opening a note to read it moves it to the top, and
- * the one you always want there sinks. Notes written before the pile could be
- * arranged all sit at the same place, so the time they were last touched still
- * settles them among each other.
+ * Pinned notes sit above the rest; the order is otherwise theirs rather than
+ * the clock's. Newest-touched-first sounds right until you use it: opening a
+ * note to read it moves it to the top, and the one you always want there sinks.
+ * Notes written before the pile could be arranged all sit at the same place, so
+ * the time they were last touched still settles them among each other.
  */
 export async function GET(request: NextRequest) {
   const { viewer, response } = await requireViewer();
@@ -26,8 +26,17 @@ export async function GET(request: NextRequest) {
 
   const notes = await prisma.note.findMany({
     where: noteOwner(viewer),
-    select: { id: true, title: true, content: true, updatedAt: true },
-    orderBy: [{ order: "asc" }, { updatedAt: "desc" }],
+    select: {
+      id: true,
+      title: true,
+      content: true,
+      pinned: true,
+      updatedAt: true,
+    },
+    // Pinned first, then the order they were dragged into. A pinned note holds
+    // its place among the other pinned ones rather than jumping to the very
+    // top: pinning says "keep this above the pile", not "put this first".
+    orderBy: [{ pinned: "desc" }, { order: "asc" }, { updatedAt: "desc" }],
   });
 
   // The snippet is cut here rather than sent whole: a hundred notes of a
@@ -79,7 +88,13 @@ export async function POST(request: NextRequest) {
       title: titleOf(content),
       order: (first?.order ?? 0) - 1,
     },
-    select: { id: true, title: true, content: true, updatedAt: true },
+    select: {
+      id: true,
+      title: true,
+      content: true,
+      pinned: true,
+      updatedAt: true,
+    },
   });
   return NextResponse.json(note, { status: 201 });
 }

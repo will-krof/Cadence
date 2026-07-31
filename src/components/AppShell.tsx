@@ -70,8 +70,9 @@ import {
   useFoldedProjects,
   useHiddenViews,
   useShowNotes,
+  useShowTeam,
 } from "@/lib/prefs";
-import { taskFields } from "@/lib/types";
+import { TaskStatus, taskFields } from "@/lib/types";
 
 /** The views a project carries. Team isn't one: it belongs to the workspace. */
 type View = "overview" | "timeline" | "tracker" | "wiki";
@@ -159,7 +160,12 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   // show is its own answer, and a project stays chosen underneath it.
   const [workspace, setWorkspace] = useState<"team" | "notes" | null>(null);
   const [roleId, setRoleId] = useState<string | null>(null);
-  const [showAddTask, setShowAddTask] = useState(false);
+  // The task being written, if one is — and which column of the tracker asked
+  // for it, so a task written under "In test" arrives in test rather than
+  // needing to be moved there straight afterwards. Null is nobody writing one.
+  const [addingTask, setAddingTask] = useState<{
+    status?: TaskStatus;
+  } | null>(null);
   const [showNewProject, setShowNewProject] = useState(false);
   // The project just made, if the card hasn't been told what it is made of yet.
   // A new project arrives with nothing switched on, so its settings are the
@@ -224,7 +230,6 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
       return role == null || role.isAdmin || role[edit] === true;
     };
     return {
-      boards: answer("canEditTimeline") || answer("canEditTracker"),
       timeline: answer("canEditTimeline"),
       tracker: answer("canEditTracker"),
       wiki: answer("canEditWiki"),
@@ -335,8 +340,10 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   // somebody folds it: a sidebar should show what the workspace is made of.
   const [foldedProjects, foldProject] = useFoldedProjects();
   // Notes belong to whoever is signed in, and so does the choice to keep them
-  // in the sidebar at all.
+  // in the sidebar at all. The roster is the same: being allowed to read it and
+  // wanting it in your sidebar are different questions.
   const [notesShown, setShowNotes] = useShowNotes();
+  const [teamShown, setShowTeam] = useShowTeam();
 
   const archivedProjects = useMemo(
     () => projects.filter((p) => p.archived),
@@ -357,9 +364,44 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   const activeView = shown.includes(view) ? view : shown[0];
 
   // Losing the right to the roster (a role change, a project switched off) puts
-  // the projects back on show rather than leaving an empty pane.
-  const showingTeam = workspace === "team" && canSeeTeam;
+  // the projects back on show rather than leaving an empty pane. So does
+  // putting a screen away, which is why both conditions are read here rather
+  // than only where the sidebar draws them.
+  const showingTeam = workspace === "team" && canSeeTeam && teamShown;
   const showingNotes = workspace === "notes" && notesShown;
+
+  /**
+   * The workspace's own screens, as one list. Team and Notes behave the same
+   * way — open one, put either away, bring it back from the chips underneath —
+   * so they are described once rather than written twice.
+   */
+  const workspaceScreens = [
+    {
+      key: "team" as const,
+      label: "Team",
+      title: "Team — everyone in the workspace",
+      icon: TEAM_ICON,
+      // The right to the roster is the project's to give; keeping it in the
+      // sidebar is this browser's. A screen nobody may open isn't put away,
+      // it simply isn't offered.
+      offered: canSeeTeam,
+      shown: canSeeTeam && teamShown,
+      setShown: setShowTeam,
+      on: showingTeam,
+    },
+    {
+      key: "notes" as const,
+      label: "Notes",
+      title: "Notes — yours alone",
+      icon: NOTES_ICON,
+      offered: true,
+      shown: notesShown,
+      setShown: setShowNotes,
+      on: showingNotes,
+    },
+  ];
+
+  const putAwayScreens = workspaceScreens.filter((s) => s.offered && !s.shown);
 
   /**
    * Opening one of a project's tools. It also steps off the roster, which is
@@ -398,13 +440,6 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--hairline)] bg-[var(--surface)] px-3 py-2.5 sm:px-4">
         <Wordmark />
         <div className="flex items-center gap-2">
-          {activeProject &&
-            may.boards &&
-            (activeView === "timeline" || activeView === "tracker") && (
-            <button onClick={() => setShowAddTask(true)} className="btn-primary">
-              New task
-            </button>
-          )}
           <ThemeToggle />
           {member ? <MemberMenu member={member} /> : user && <AccountMenu user={user} />}
         </div>
@@ -457,6 +492,13 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                 a project and an "Overview" button meant two controls doing the
                 same thing.
 
+                Only one thing on the sidebar is ever lit: whatever is actually
+                on screen. A project row and one of its tools both wearing the
+                selected colour was the sidebar claiming to be in two places at
+                once — so a project reads as chosen (a firmer name, no wash)
+                while one of its tools is open, and is lit only when its own
+                card is what you are looking at.
+
                 Archived projects are still openable — their work didn't go
                 anywhere — they just sit apart from the run of projects being
                 worked on, the way an archived sprint does. */}
@@ -464,6 +506,13 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
               .filter((p) => !p.archived || p.id === activeProject?.id)
               .map((p) => {
                 const active = p.id === activeProject?.id;
+                // On screen right now, as against merely the project you are
+                // working inside.
+                const lit =
+                  active &&
+                  activeView === "overview" &&
+                  !showingTeam &&
+                  !showingNotes;
                 // What this project is made of, and what of that is on show.
                 // Every project says so, not only the one being worked in: the
                 // sidebar is the shape of the workspace, and a tool you have to
@@ -497,22 +546,22 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                   )}
                   <button
                     onClick={() => openProject(p.id)}
-                    aria-current={active && activeView === "overview" ? "page" : undefined}
+                    aria-current={lit ? "page" : undefined}
                     title={p.description ? `${p.name} — ${p.description}` : p.name}
                     className={`flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
                       wide ? "" : "justify-center"
                     } ${
-                      active
+                      lit
                         ? "bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
-                        : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+                        : active
+                          ? "font-medium text-[var(--ink)] hover:bg-[var(--plane)]"
+                          : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
                     }`}
                   >
                     <span
                       className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[0.3rem] text-[0.625rem] font-semibold uppercase"
                       style={{
-                        background: active
-                          ? "var(--accent)"
-                          : "var(--gridline)",
+                        background: active ? "var(--accent)" : "var(--gridline)",
                         color: active ? "#fff" : "var(--ink-secondary)",
                       }}
                     >
@@ -604,78 +653,68 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
           {/* The workspace's own screens: the roster, which stands level with
               the projects rather than under one of them — someone can be on
               the team, an HR person say, without being on any project at all —
-              and whoever is signed in's own notes. */}
-          {(canSeeTeam || notesShown) && (
+              and whoever is signed in's own notes.
+
+              Either can be put away, the way a project's tools can. Both are
+              this browser's answer rather than the workspace's: what you keep
+              in your own sidebar is nobody else's business. */}
+          {workspaceScreens.some((screen) => screen.offered) && (
             <div className="flex flex-col gap-1 border-t border-[var(--hairline)] pt-3">
               {wide && (
                 <span className="field-label px-2 pb-1">Workspace</span>
               )}
-              {canSeeTeam && (
-                <button
-                  onClick={() => setWorkspace("team")}
-                  aria-current={showingTeam ? "page" : undefined}
-                  title="Team — everyone in the workspace"
-                  className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
-                    wide ? "" : "justify-center"
-                  } ${
-                    showingTeam
-                      ? "bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
-                      : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
-                  }`}
-                >
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                    {TEAM_ICON}
-                  </span>
-                  {wide && <span className="truncate">Team</span>}
-                </button>
-              )}
-              {/* Notes are switched on and off from here, the way a board is:
-                  they are one person's own, so whether they are on show is
-                  that person's answer rather than the workspace's. */}
-              {notesShown && (
-                <span className="group/notes relative flex items-center">
-                  <button
-                    onClick={() => setWorkspace("notes")}
-                    aria-current={showingNotes ? "page" : undefined}
-                    title="Notes — yours alone"
-                    className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
-                      wide ? "" : "justify-center"
-                    } ${
-                      showingNotes
-                        ? "bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
-                        : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
-                    }`}
+              {workspaceScreens.map((screen) =>
+                screen.shown ? (
+                  <span
+                    key={screen.key}
+                    className="group/screen relative flex items-center"
                   >
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                      {NOTES_ICON}
-                    </span>
-                    {wide && <span className="truncate">Notes</span>}
-                  </button>
-                  {wide && (
                     <button
-                      onClick={() => {
-                        setShowNotes(false);
-                        setWorkspace((at) => (at === "notes" ? null : at));
-                      }}
-                      className="absolute right-1.5 rounded p-1 text-[var(--ink-muted)] opacity-0 transition hover:bg-[var(--surface)] hover:text-[var(--ink)] focus:opacity-100 group-hover/notes:opacity-100"
-                      aria-label="Put Notes away"
-                      title="Put Notes away"
+                      onClick={() => setWorkspace(screen.key)}
+                      aria-current={screen.on ? "page" : undefined}
+                      title={screen.title}
+                      className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
+                        wide ? "" : "justify-center"
+                      } ${
+                        screen.on
+                          ? "bg-[var(--accent-wash)] font-medium text-[var(--accent)]"
+                          : "text-[var(--ink-secondary)] hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+                      }`}
                     >
-                      <CloseIcon size={10} />
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                        {screen.icon}
+                      </span>
+                      {wide && <span className="truncate">{screen.label}</span>}
                     </button>
-                  )}
-                </span>
+                    {wide && (
+                      <button
+                        onClick={() => {
+                          screen.setShown(false);
+                          setWorkspace((at) => (at === screen.key ? null : at));
+                        }}
+                        className="absolute right-1.5 rounded p-1 text-[var(--ink-muted)] opacity-0 transition hover:bg-[var(--surface)] hover:text-[var(--ink)] focus:opacity-100 group-hover/screen:opacity-100"
+                        aria-label={`Put ${screen.label} away`}
+                        title={`Put ${screen.label} away`}
+                      >
+                        <CloseIcon size={10} />
+                      </button>
+                    )}
+                  </span>
+                ) : null
               )}
-              {!notesShown && wide && (
+              {putAwayScreens.length > 0 && wide && (
                 <span className="flex flex-wrap items-center gap-1 px-2 pt-1">
                   <span className="field-label">Hidden</span>
-                  <button
-                    onClick={() => setShowNotes(true)}
-                    className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[0.625rem] text-[var(--ink-muted)] transition hover:border-[var(--baseline)] hover:text-[var(--ink)]"
-                    title="Show Notes again"
-                  >
-                    Notes
-                  </button>
+                  {putAwayScreens.map((screen) => (
+                    <button
+                      key={screen.key}
+                      onClick={() => screen.setShown(true)}
+                      className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[0.625rem] text-[var(--ink-muted)] transition hover:border-[var(--baseline)] hover:text-[var(--ink)]"
+                      title={`Show ${screen.label} again`}
+                    >
+                      {screen.label}
+                    </button>
+                  ))}
                 </span>
               )}
             </div>
@@ -830,29 +869,36 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
               ) : projectLoading ? (
                 <Centered>Loading project…</Centered>
               ) : activeView === "timeline" ? (
-                <GanttBoard canEdit={may.timeline} />
+                <GanttBoard
+                  canEdit={may.timeline}
+                  onNewTask={() => setAddingTask({})}
+                />
               ) : activeView === "wiki" ? (
                 <WikiView project={activeProject} canEdit={may.wiki} />
               ) : (
-                <TrackerBoard canEdit={may.tracker} />
+                <TrackerBoard
+                  canEdit={may.tracker}
+                  onNewTask={(status) => setAddingTask({ status })}
+                />
               )}
             </>
           )}
         </main>
       </div>
 
-      {showAddTask && activeProject && (
+      {addingTask && activeProject && (
         <TaskModal
+          initialStatus={addingTask.status}
           developers={assignable}
           // A task can be written already waiting on something, so the form
           // needs the plan it is being written into.
           projectTasks={projectTasks}
           tags={activeProject.tags}
           fields={taskFields(activeProject)}
-          onClose={() => setShowAddTask(false)}
+          onClose={() => setAddingTask(null)}
           onSubmit={async (values) => {
             await createTask(values);
-            setShowAddTask(false);
+            setAddingTask(null);
           }}
         />
       )}

@@ -24,7 +24,13 @@ export async function GET(
   const { id } = await ctx.params;
   const note = await prisma.note.findFirst({
     where: { id, ...noteOwner(viewer) },
-    select: { id: true, title: true, content: true, updatedAt: true },
+    select: {
+      id: true,
+      title: true,
+      content: true,
+      pinned: true,
+      updatedAt: true,
+    },
   });
   if (!note) return notFound("Note");
 
@@ -40,24 +46,48 @@ export async function PATCH(
 
   const { id } = await ctx.params;
   const body = await request.json().catch(() => ({}));
-  if (typeof body.content !== "string") return badRequest("Nothing to write");
-  if (body.content.length > LIMITS.note) {
-    return badRequest(
-      `A note is ${LIMITS.note.toLocaleString()} characters or fewer`
-    );
+
+  // Two things can be said about a note, and either on its own: what is written
+  // on it, and whether it is held at the top of the pile. Pinning one shouldn't
+  // have to send the writing back with it.
+  const data: {
+    content?: string;
+    title?: string;
+    pinned?: boolean;
+  } = {};
+
+  if (body.content !== undefined) {
+    if (typeof body.content !== "string") return badRequest("Nothing to write");
+    if (body.content.length > LIMITS.note) {
+      return badRequest(
+        `A note is ${LIMITS.note.toLocaleString()} characters or fewer`
+      );
+    }
+    data.content = body.content;
+    data.title = titleOf(body.content);
   }
+
+  if (typeof body.pinned === "boolean") data.pinned = body.pinned;
+
+  if (Object.keys(data).length === 0) return badRequest("Nothing to write");
 
   // updateMany rather than update: the owner clause belongs in the where, and
   // update() insists on a unique one.
   const written = await prisma.note.updateMany({
     where: { id, ...noteOwner(viewer) },
-    data: { content: body.content, title: titleOf(body.content) },
+    data,
   });
   if (written.count === 0) return notFound("Note");
 
   const note = await prisma.note.findFirst({
     where: { id, ...noteOwner(viewer) },
-    select: { id: true, title: true, content: true, updatedAt: true },
+    select: {
+      id: true,
+      title: true,
+      content: true,
+      pinned: true,
+      updatedAt: true,
+    },
   });
   return NextResponse.json(note);
 }

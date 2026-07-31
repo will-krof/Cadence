@@ -12,15 +12,20 @@ export function MarkupToolbar({
   field,
   content,
   onChange,
-  preview,
+  preview = false,
   onPreview,
 }: {
   field: React.RefObject<HTMLTextAreaElement | null>;
   content: string;
   onChange: (text: string) => void;
-  /** Whether the writing is being read back rather than written. */
-  preview: boolean;
-  onPreview: (on: boolean) => void;
+  /**
+   * Whether the writing is being read back rather than written, and how to say
+   * so. Both optional: notes have no Preview button — they read themselves back
+   * the moment you step out of the text — so there the toolbar is only ever on
+   * screen while somebody is writing, and has nothing to toggle.
+   */
+  preview?: boolean;
+  onPreview?: (on: boolean) => void;
 }) {
   function apply(mark: (typeof MARKS)[number]) {
     const box = field.current;
@@ -54,18 +59,20 @@ export function MarkupToolbar({
           {mark.label}
         </button>
       ))}
-      <button
-        type="button"
-        onClick={() => onPreview(!preview)}
-        aria-pressed={preview}
-        className={`ml-auto rounded-[var(--radius)] border px-2 py-1 text-[0.6875rem] transition ${
-          preview
-            ? "border-[var(--accent)] bg-[var(--accent-wash)] text-[var(--accent)]"
-            : "border-[var(--hairline)] text-[var(--ink-secondary)] hover:text-[var(--ink)]"
-        }`}
-      >
-        Preview
-      </button>
+      {onPreview && (
+        <button
+          type="button"
+          onClick={() => onPreview(!preview)}
+          aria-pressed={preview}
+          className={`ml-auto rounded-[var(--radius)] border px-2 py-1 text-[0.6875rem] transition ${
+            preview
+              ? "border-[var(--accent)] bg-[var(--accent-wash)] text-[var(--accent)]"
+              : "border-[var(--hairline)] text-[var(--ink-secondary)] hover:text-[var(--ink)]"
+          }`}
+        >
+          Preview
+        </button>
+      )}
     </div>
   );
 }

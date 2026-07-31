@@ -117,7 +117,14 @@ const COL_LABELS: Record<ColKey, string> = {
 const COL_WIDTHS_WIDE: ColWidths = { task: 240, status: 132, developer: 132 };
 const COL_WIDTHS_COMPACT: ColWidths = { task: 132, status: 104, developer: 96 };
 
-export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
+export function GanttBoard({
+  canEdit = true,
+  onNewTask,
+}: {
+  canEdit?: boolean;
+  /** Writing a task from the board it will appear on. */
+  onNewTask?: () => void;
+}) {
   const {
     activeProject,
     tasks,
@@ -864,8 +871,28 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
             style={{ height: ROW_HEIGHT, gridTemplateColumns }}
           >
             {COL_ORDER.map((key) => (
-              <div key={key} className={key === "task" ? "truncate px-3" : "truncate px-2"}>
-                {COL_LABELS[key]}
+              <div
+                key={key}
+                className={
+                  key === "task"
+                    ? "flex items-center gap-1.5 px-3"
+                    : "truncate px-2"
+                }
+              >
+                <span className="truncate">{COL_LABELS[key]}</span>
+                {/* Writing a task begins where the tasks are — at the top of
+                    the column they will be listed in — rather than in a corner
+                    of the app that belongs to no board in particular. */}
+                {key === "task" && canEdit && onNewTask && (
+                  <button
+                    onClick={onNewTask}
+                    className="shrink-0 rounded p-0.5 text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--accent)]"
+                    aria-label="New task"
+                    title="New task"
+                  >
+                    <PlusMark />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -1422,6 +1449,20 @@ function GripIcon() {
       <circle cx="7" cy="6" r="1" />
       <circle cx="3" cy="10" r="1" />
       <circle cx="7" cy="10" r="1" />
+    </svg>
+  );
+}
+
+/** The mark on every "write one of these" button: a plus, and nothing else. */
+function PlusMark() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path
+        d="M6 2v8M2 6h8"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

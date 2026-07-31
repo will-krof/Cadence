@@ -42,7 +42,14 @@ interface DragState {
   active: boolean;
 }
 
-export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
+export function TrackerBoard({
+  canEdit = true,
+  onNewTask,
+}: {
+  canEdit?: boolean;
+  /** Writing a task into a particular column, which sets what it starts as. */
+  onNewTask?: (status: TaskStatus) => void;
+}) {
   const {
     activeProject,
     tasks,
@@ -331,6 +338,19 @@ export function TrackerBoard({ canEdit = true }: { canEdit?: boolean }) {
                 <span className="ml-auto rounded-full bg-[var(--surface-raised)] px-2 py-0.5 text-[0.6875rem] tabular-nums text-[var(--ink-secondary)]">
                   {col.items.length}
                 </span>
+                {/* A task is written into a column rather than into the board:
+                    the one you press decides what the task starts as, which is
+                    the whole of what "new task, in test" ever meant. */}
+                {canEdit && onNewTask && (
+                  <button
+                    onClick={() => onNewTask(col.value)}
+                    className="rounded p-0.5 text-[var(--ink-muted)] transition hover:text-[var(--accent)]"
+                    aria-label={`New task in ${col.label}`}
+                    title={`New task in ${col.label}`}
+                  >
+                    <PlusMark />
+                  </button>
+                )}
                 {/* The last column standing keeps its cards reachable: there is
                     nowhere to drag to on an empty board. */}
                 {shownColumns.length > 1 && (
@@ -663,3 +683,17 @@ const TaskCard = memo(function TaskCard({
     </article>
   );
 })
+
+/** The mark on every "write one of these" button: a plus, and nothing else. */
+function PlusMark() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path
+        d="M6 2v8M2 6h8"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

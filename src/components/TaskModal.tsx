@@ -70,6 +70,7 @@ const NO_TAGS: ProjectTag[] = [];
  */
 export function TaskModal({
   task,
+  initialStatus,
   subtasks = [],
   projectTasks = NO_TASKS,
   developers,
@@ -83,6 +84,12 @@ export function TaskModal({
   onDeleteSubtask,
 }: {
   task?: Task;
+  /**
+   * What a new task starts as. The tracker writes tasks into a column, and the
+   * column it was written from is the answer — a task written under "In test"
+   * shouldn't arrive as To Do and need moving straight afterwards.
+   */
+  initialStatus?: TaskStatus;
   /** The steps this task already has, when there is a task to have them. */
   subtasks?: Task[];
   /**
@@ -124,7 +131,11 @@ export function TaskModal({
   const [endDate, setEndDate] = useState(
     task?.endDate ? toISODate(new Date(task.endDate)) : ""
   );
-  const [status, setStatus] = useState<TaskStatus>(task?.status ?? "TODO");
+  // A task written from a tracker column starts in that column. Nothing else
+  // asks, so everywhere else this is To Do, as it was.
+  const [status, setStatus] = useState<TaskStatus>(
+    task?.status ?? initialStatus ?? "TODO"
+  );
   const [priority, setPriority] = useState<TaskPriority>(
     task?.priority ?? "MEDIUM"
   );
