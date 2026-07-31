@@ -466,8 +466,14 @@ export interface TaskRow {
   status: TaskStatus;
   /** What it is worth doing first. Ordinary work unless somebody says so. */
   priority: TaskPriority;
-  startDate: string;
-  endDate: string;
+  /**
+   * When it runs, if anybody has said. Null is work that hasn't been placed in
+   * time yet — a project that doesn't ask about dates writes tasks this way,
+   * and so does one that asks and is left blank. The timeline draws a bar for a
+   * task with both ends and leaves the rest to its list.
+   */
+  startDate: string | null;
+  endDate: string | null;
   order: number;
   /**
    * Who is on it, by id, in the order they were put on. Up to four: work is
@@ -546,7 +552,8 @@ export interface DeveloperTask {
   id: string;
   title: string;
   status: TaskStatus;
-  endDate: string;
+  /** Null where the work hasn't been given dates. */
+  endDate: string | null;
   project: { id: string; name: string };
 }
 

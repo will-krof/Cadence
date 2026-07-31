@@ -137,6 +137,12 @@ model Note {
   title   String @default("")
   content String @default("")
 
+  /// Where it sits in the pile. Notes were listed newest-touched-first, which
+  /// is a sensible order nobody chose: opening a note to read it moved it, and
+  /// the one you always want at the top drifted down. So the pile is ordered by
+  /// hand — drag a note where it belongs — and a new one lands at the top.
+  order   Int    @default(0)
+
   /// Exactly one of these: a workspace's owner, or one of its people.
   userId      String?
   user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -146,8 +152,9 @@ model Note {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([userId, updatedAt])
-  @@index([developerId, updatedAt])
+  // Read in the order they were arranged, one owner at a time.
+  @@index([userId, order])
+  @@index([developerId, order])
 }
 
 /// A signed-in team member. Kept apart from `Session` because the two answer
@@ -365,8 +372,13 @@ model Task {
   status      TaskStatus @default(TODO)
   /// What it is worth doing first. Ordinary work until somebody says otherwise.
   priority    TaskPriority @default(MEDIUM)
-  startDate   DateTime
-  endDate     DateTime
+  /// When the task runs, if anybody has said. A project that doesn't ask about
+  /// dates writes tasks without them, and so does one that does ask and was
+  /// left blank — work that hasn't been placed in time yet is a real state, and
+  /// today-to-today was this app inventing an answer nobody gave. The timeline
+  /// draws a bar for a task that has both and leaves the rest to the list.
+  startDate   DateTime?
+  endDate     DateTime?
   order       Int        @default(0)
   projectId   String
   project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)

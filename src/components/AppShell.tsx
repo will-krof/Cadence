@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { BoardProvider, useBoard } from "@/components/BoardProvider";
 import { Wordmark } from "@/components/Logo";
@@ -8,17 +8,17 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { FeedbackProvider } from "@/components/Feedback";
 import { ProjectOverview } from "@/components/ProjectOverview";
 import {
+  VIEW_ICONS,
   VIEW_LABELS,
+  VIEW_ORDER,
   NOTES_ICON,
   TEAM_ICON,
-  TIMELINE_ICON,
-  TRACKER_ICON,
-  WIKI_ICON,
 } from "@/components/shell/icons";
 import { AccountMenu, MemberMenu } from "@/components/shell/Menus";
 import {
   Centered,
   CollapseIcon,
+  FoldIcon,
   PlusIcon,
   ViewButton,
 } from "@/components/shell/parts";
@@ -65,7 +65,12 @@ const ProjectModal = dynamic(() =>
 const InstallStats = dynamic(() =>
   import("@/components/InstallStats").then((m) => m.InstallStats)
 );
-import { HideableView, useHiddenViews, useShowNotes } from "@/lib/prefs";
+import {
+  HideableView,
+  useFoldedProjects,
+  useHiddenViews,
+  useShowNotes,
+} from "@/lib/prefs";
 import { taskFields } from "@/lib/types";
 
 /** The views a project carries. Team isn't one: it belongs to the workspace. */
@@ -227,34 +232,66 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
     };
   }, [member, heldRoles, role]);
 
-  // A tool has to be enabled on the project *and* visible to the viewer.
-  // Overview is always there — it is the project's own card, not one of its
-  // tools — so a project with no board enabled still has somewhere to land.
-  // Held roles are additive: whatever any one of them sees, the member sees.
-  const available: View[] = useMemo(() => {
-    if (!activeProject) return [];
-    const admin = member
-      ? heldRoles.some((r) => r.isAdmin)
-      : role?.isAdmin ?? true;
-    const sees = (
-      tool: boolean,
-      key: "canViewTimeline" | "canViewTracker" | "canViewWiki"
-    ) =>
-      tool &&
-      (admin ||
-        (member ? heldRoles.some((r) => r[key]) : role?.[key] === true));
+  /**
+   * What a project offers this viewer. A tool has to be enabled on the project
+   * *and* visible to them. Overview is always there — it is the project's own
+   * card, not one of its tools — so a project with no board enabled still has
+   * somewhere to land. Held roles are additive: whatever any one of them sees,
+   * the member sees.
+   *
+   * Asked of any project rather than only the one on show, because the sidebar
+   * lists what every project is made of. Trying a role on for size is the one
+   * thing that stays local to the project on show: a role belongs to its
+   * project, and it has nothing to say about the others.
+   */
+  const viewsOf = useCallback(
+    (project: (typeof projects)[number]): View[] => {
+      const held = member
+        ? project.roles.filter((r) =>
+            (
+              member.places.find((p) => p.projectId === project.id)?.roleIds ??
+              []
+            ).includes(r.id)
+          )
+        : null;
+      const previewing =
+        !member && project.id === activeProject?.id ? role : null;
 
-    return [
-      "overview" as View,
-      ...(sees(activeProject.hasTimeline, "canViewTimeline")
-        ? (["timeline"] as View[])
-        : []),
-      ...(sees(activeProject.hasTracker, "canViewTracker")
-        ? (["tracker"] as View[])
-        : []),
-      ...(sees(activeProject.hasWiki, "canViewWiki") ? (["wiki"] as View[]) : []),
-    ];
-  }, [activeProject, role, member, heldRoles]);
+      const admin = held
+        ? held.some((r) => r.isAdmin)
+        : previewing
+          ? previewing.isAdmin
+          : true;
+      const sees = (
+        tool: boolean,
+        key: "canViewTimeline" | "canViewTracker" | "canViewWiki"
+      ) =>
+        tool &&
+        (admin ||
+          (held
+            ? held.some((r) => r[key])
+            : previewing
+              ? previewing[key] === true
+              : true));
+
+      return [
+        "overview" as View,
+        ...(sees(project.hasTimeline, "canViewTimeline")
+          ? (["timeline"] as View[])
+          : []),
+        ...(sees(project.hasTracker, "canViewTracker")
+          ? (["tracker"] as View[])
+          : []),
+        ...(sees(project.hasWiki, "canViewWiki") ? (["wiki"] as View[]) : []),
+      ];
+    },
+    [member, role, activeProject?.id]
+  );
+
+  const available: View[] = useMemo(
+    () => (activeProject ? viewsOf(activeProject) : []),
+    [activeProject, viewsOf]
+  );
 
   /**
    * Which projects' people the viewer may read — `null` for the whole
@@ -294,6 +331,9 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   // Tools somebody keeps out of their own sidebar. The project card is never
   // one of them: hiding every tool still leaves a project to open.
   const [hiddenViews, { hide: hideView, show: showView }] = useHiddenViews();
+  // Which projects have had their tools folded away. Everything is open until
+  // somebody folds it: a sidebar should show what the workspace is made of.
+  const [foldedProjects, foldProject] = useFoldedProjects();
   // Notes belong to whoever is signed in, and so does the choice to keep them
   // in the sidebar at all.
   const [notesShown, setShowNotes] = useShowNotes();
@@ -307,16 +347,6 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
     () =>
       available.filter(
         (v) => v === "overview" || !hiddenViews.includes(v as HideableView)
-      ),
-    [available, hiddenViews]
-  );
-
-  /** Tools this project has that are only missing because they were put away. */
-  const putAway = useMemo(
-    () =>
-      available.filter(
-        (v): v is HideableView =>
-          v !== "overview" && hiddenViews.includes(v as HideableView)
       ),
     [available, hiddenViews]
   );
@@ -346,6 +376,20 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
     selectProject(id);
     setRoleId(null);
     setView("overview");
+    setWorkspace(null);
+  }
+
+  /**
+   * A tool named under a project in the sidebar, which may not be the project
+   * on show. Pressing one is two things said at once — that project, that tool
+   * — so it does both rather than making somebody open the project first.
+   */
+  function openProjectView(id: string, next: View) {
+    if (id !== activeProject?.id) {
+      selectProject(id);
+      setRoleId(null);
+    }
+    setView(next);
     setWorkspace(null);
   }
 
@@ -420,13 +464,42 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
               .filter((p) => !p.archived || p.id === activeProject?.id)
               .map((p) => {
                 const active = p.id === activeProject?.id;
+                // What this project is made of, and what of that is on show.
+                // Every project says so, not only the one being worked in: the
+                // sidebar is the shape of the workspace, and a tool you have to
+                // open a project to discover is one you don't know is there.
+                const tools = viewsOf(p).filter(
+                  (v): v is HideableView => v !== "overview"
+                );
+                const here = tools.filter((v) => !hiddenViews.includes(v));
+                const awayHere = tools.filter((v) => hiddenViews.includes(v));
+                const folded = foldedProjects.has(p.id);
                 return (
                 <div key={p.id} className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-0.5">
+                  {/* The fold, where there is anything to fold. Its own control
+                      rather than a second meaning for the project row: pressing
+                      a project should open it, every time. */}
+                  {wide && tools.length > 0 && (
+                    <button
+                      onClick={() => foldProject(p.id, !folded)}
+                      className="shrink-0 rounded p-1 text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--ink)]"
+                      aria-label={
+                        folded
+                          ? `Show what ${p.name} is made of`
+                          : `Fold ${p.name} away`
+                      }
+                      aria-expanded={!folded}
+                      title={folded ? "Show its tools" : "Fold its tools away"}
+                    >
+                      <FoldIcon open={!folded} />
+                    </button>
+                  )}
                   <button
                     onClick={() => openProject(p.id)}
                     aria-current={active && activeView === "overview" ? "page" : undefined}
                     title={p.description ? `${p.name} — ${p.description}` : p.name}
-                    className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
+                    className={`flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-left text-[0.8125rem] transition ${
                       wide ? "" : "justify-center"
                     } ${
                       active
@@ -452,8 +525,9 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                       </span>
                     )}
                   </button>
+                  </div>
 
-                  {active && (shown.length > 1 || putAway.length > 0) && (
+                  {!folded && (here.length > 0 || awayHere.length > 0) && (
                     <div
                       className={`flex flex-col gap-0.5 ${
                         wide
@@ -461,44 +535,27 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                           : ""
                       }`}
                     >
-                      {shown.includes("timeline") && (
+                      {VIEW_ORDER.filter((v) => here.includes(v)).map((v) => (
                         <ViewButton
-                          active={activeView === "timeline"}
-                          onClick={() => openView("timeline")}
-                          onHide={() => hideView("timeline")}
-                          icon={TIMELINE_ICON}
-                          label="Timeline"
+                          key={v}
+                          // Only the project being worked in has a view on
+                          // show; the rest are ways in, not places you are.
+                          active={active && activeView === v}
+                          onClick={() => openProjectView(p.id, v)}
+                          onHide={() => hideView(v)}
+                          icon={VIEW_ICONS[v]}
+                          label={VIEW_LABELS[v]}
                           wide={wide}
                         />
-                      )}
-                      {shown.includes("tracker") && (
-                        <ViewButton
-                          active={activeView === "tracker"}
-                          onClick={() => openView("tracker")}
-                          onHide={() => hideView("tracker")}
-                          icon={TRACKER_ICON}
-                          label="Tracker"
-                          wide={wide}
-                        />
-                      )}
-                      {shown.includes("wiki") && (
-                        <ViewButton
-                          active={activeView === "wiki"}
-                          onClick={() => openView("wiki")}
-                          onHide={() => hideView("wiki")}
-                          icon={WIKI_ICON}
-                          label="Wiki"
-                          wide={wide}
-                        />
-                      )}
+                      ))}
 
                       {/* What was put away, and the way back. Hiding a tool is
                           this browser's preference, not the project's setting,
                           so it is undone from here rather than from the card. */}
-                      {putAway.length > 0 && wide && (
+                      {awayHere.length > 0 && wide && (
                         <span className="flex flex-wrap items-center gap-1 px-1 pt-1">
                           <span className="field-label">Hidden</span>
-                          {putAway.map((v) => (
+                          {awayHere.map((v) => (
                             <button
                               key={v}
                               onClick={() => showView(v)}

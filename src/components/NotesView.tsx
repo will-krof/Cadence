@@ -24,6 +24,12 @@ interface Note extends NoteEntry {
 /** How long the typing has to stop before what was typed is sent. */
 const SAVE_AFTER_MS = 700;
 
+/** Which half of a row the pointer is in — above the note, or below it. */
+function landsAfter(e: React.DragEvent) {
+  const box = e.currentTarget.getBoundingClientRect();
+  return e.clientY - box.top > box.height / 2;
+}
+
 /**
  * Somebody's own notes. Private to whoever is signed in — nobody else in the
  * workspace can read them, the account that owns it included — and kept apart
@@ -31,10 +37,12 @@ const SAVE_AFTER_MS = 700;
  * people on it, and this is a person thinking.
  *
  * So it works the way notes work rather than the way a document does. A flat
- * pile, newest touched first; no tree, no titles to fill in — the first line
- * is the title, as it is in every notes app anybody has used; and no Save,
- * because nobody saves a note. What is typed is written a moment after the
- * typing stops, and the list says so.
+ * pile in whatever order its writer dragged it into; no tree, no titles to fill
+ * in — the first line is the title, as it is in every notes app anybody has
+ * used; and no Save, because nobody saves a note. What is typed is written a
+ * moment after the typing stops, and the list says so.
+ *
+ * Opening Notes opens the note at the top, which is the one somebody put there.
  */
 export function NotesView() {
   const { notify, confirm } = useFeedback();
@@ -45,6 +53,10 @@ export function NotesView() {
   const [preview, setPreview] = useState(false);
   const [listOpen, setListOpen] = useState(true);
   const [state, setState] = useState<"clean" | "typing" | "saving">("clean");
+  // The note being dragged, and the row it is currently over — with which half
+  // of that row the pointer is in, since that is where it would land.
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [over, setOver] = useState<{ id: string; after: boolean } | null>(null);
   const body = useRef<HTMLTextAreaElement>(null);
 
   // The note being written, so the debounce can save it without being rebuilt
@@ -52,6 +64,15 @@ export function NotesView() {
   const pending = useRef<{ id: string; content: string } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /**
+   * The pile, and the note at the top of it opened.
+   *
+   * Arriving at your own notes and being asked to pick one is a question with
+   * an obvious answer — the first is the one you put there — so the answer is
+   * given. Both fetches happen here rather than in an effect that watches the
+   * list, so opening the first note is part of loading rather than a second
+   * render reacting to the first.
+   */
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -59,7 +80,23 @@ export function NotesView() {
         const res = await fetch("/api/notes");
         if (!res.ok) throw new Error("failed");
         const list: NoteEntry[] = await res.json();
-        if (!cancelled) setNotes(list);
+        if (cancelled) return;
+        setNotes(list);
+
+        const first = list[0];
+        if (!first) return;
+        setOpenId(first.id);
+        try {
+          const page = await fetch(`/api/notes/${first.id}`);
+          if (!page.ok) throw new Error("failed");
+          const note: Note = await page.json();
+          if (!cancelled) setDraft(note.content);
+        } catch {
+          // The pile itself arrived, so the list is not what failed. Leaving
+          // the box empty is wrong, so the note is closed again rather than
+          // shown as though it had nothing written on it.
+          if (!cancelled) setOpenId(null);
+        }
       } catch {
         if (!cancelled) setFailed(true);
       }
@@ -153,6 +190,47 @@ export function NotesView() {
     requestAnimationFrame(() => body.current?.focus());
   }
 
+  /**
+   * Moving a note in the pile. The list is rearranged here and sent as a whole
+   * — a move renumbers everything under it, and one request writing the final
+   * order is simpler to reason about than a request per note.
+   *
+   * The list is set before the request goes: dragging is direct, and a row that
+   * springs back while a fetch is in flight reads as a failure. If the write
+   * really does fail, the order is put back and said out loud.
+   */
+  async function moveNote(id: string, beforeId: string, after: boolean) {
+    if (id === beforeId) return;
+    const was = notes ?? [];
+    const moving = was.find((n) => n.id === id);
+    if (!moving) return;
+
+    const without = was.filter((n) => n.id !== id);
+    const at = without.findIndex((n) => n.id === beforeId);
+    if (at === -1) return;
+    const next = [
+      ...without.slice(0, at + (after ? 1 : 0)),
+      moving,
+      ...without.slice(at + (after ? 1 : 0)),
+    ];
+    if (next.every((n, i) => n.id === was[i]?.id)) return;
+
+    setNotes(next);
+    try {
+      const res = await fetch("/api/notes/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order: next.map((n, i) => ({ id: n.id, order: i })),
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+    } catch {
+      setNotes(was);
+      notify("error", "Could not move that note.");
+    }
+  }
+
   async function remove(note: NoteEntry) {
     const ok = await confirm({
       title: `Delete ${note.title ? `“${note.title}”` : "this note"}?`,
@@ -169,10 +247,14 @@ export function NotesView() {
       notify("error", "Could not delete that note.");
       return;
     }
-    setNotes((prev) => (prev ?? []).filter((n) => n.id !== note.id));
+    const left = (notes ?? []).filter((n) => n.id !== note.id);
+    setNotes(left);
+    // Deleting what you were reading leaves you at the top of the pile rather
+    // than at nothing — the same place opening Notes puts you.
     if (openId === note.id) {
       setOpenId(null);
       setDraft("");
+      if (left[0]) void open(left[0].id);
     }
   }
 
@@ -242,36 +324,82 @@ export function NotesView() {
           </p>
         )}
 
+        {/* The pile is dragged into whatever order suits it. A note isn't
+            filed under anything, so there is no landing but between two others
+            — which makes the whole gesture "above this one, or below it". */}
         <div className="flex flex-col">
           {here.map((note) => (
-            <button
+            <div
               key={note.id}
-              onClick={() => open(note.id)}
-              aria-current={note.id === openId ? "true" : undefined}
-              className={`group/note flex flex-col gap-0.5 border-t border-[var(--hairline)] px-3 py-2.5 text-left transition ${
-                note.id === openId
-                  ? "bg-[var(--accent-wash)]"
-                  : "hover:bg-[var(--plane)]"
+              draggable
+              onDragStart={(e) => {
+                // Firefox refuses to start a drag without something on the
+                // transfer.
+                e.dataTransfer.setData("text/plain", note.id);
+                e.dataTransfer.effectAllowed = "move";
+                setDragId(note.id);
+              }}
+              onDragEnd={() => {
+                setDragId(null);
+                setOver(null);
+              }}
+              onDragOver={(e) => {
+                if (!dragId || dragId === note.id) return;
+                e.preventDefault();
+                setOver({ id: note.id, after: landsAfter(e) });
+              }}
+              onDragLeave={() =>
+                setOver((o) => (o?.id === note.id ? null : o))
+              }
+              onDrop={(e) => {
+                e.preventDefault();
+                const after =
+                  over?.id === note.id ? over.after : landsAfter(e);
+                setOver(null);
+                if (dragId) void moveNote(dragId, note.id, after);
+                setDragId(null);
+              }}
+              className={`relative border-t border-[var(--hairline)] ${
+                dragId === note.id ? "opacity-40" : ""
               }`}
             >
-              <span className="flex items-baseline gap-2">
+              {/* The line it would land on, drawn where it would land. */}
+              {over?.id === note.id && (
                 <span
-                  className={`min-w-0 flex-1 truncate text-[0.8125rem] font-medium ${
-                    note.title ? "" : "text-[var(--ink-muted)] italic"
+                  className={`pointer-events-none absolute inset-x-1 h-0.5 rounded bg-[var(--accent)] ${
+                    over.after ? "bottom-0" : "top-0"
                   }`}
-                >
-                  {note.title || "New note"}
-                </span>
-                <span className="shrink-0 text-[0.625rem] text-[var(--ink-muted)] tabular-nums">
-                  {formatDayShort(note.updatedAt)}
-                </span>
-              </span>
-              {note.snippet && (
-                <span className="truncate text-[0.75rem] text-[var(--ink-muted)]">
-                  {note.snippet}
-                </span>
+                />
               )}
-            </button>
+              <button
+                onClick={() => open(note.id)}
+                aria-current={note.id === openId ? "true" : undefined}
+                title="Drag to move it up or down the pile"
+                className={`group/note flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition ${
+                  note.id === openId
+                    ? "bg-[var(--accent-wash)]"
+                    : "hover:bg-[var(--plane)]"
+                }`}
+              >
+                <span className="flex items-baseline gap-2">
+                  <span
+                    className={`min-w-0 flex-1 truncate text-[0.8125rem] font-medium ${
+                      note.title ? "" : "text-[var(--ink-muted)] italic"
+                    }`}
+                  >
+                    {note.title || "New note"}
+                  </span>
+                  <span className="shrink-0 text-[0.625rem] text-[var(--ink-muted)] tabular-nums">
+                    {formatDayShort(note.updatedAt)}
+                  </span>
+                </span>
+                {note.snippet && (
+                  <span className="truncate text-[0.75rem] text-[var(--ink-muted)]">
+                    {note.snippet}
+                  </span>
+                )}
+              </button>
+            </div>
           ))}
         </div>
       </div>

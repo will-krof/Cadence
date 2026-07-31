@@ -180,8 +180,19 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
   // A project that doesn't ask what a task waits on has no network to draw:
   // no lines, no chips, no critical path, and nothing in the toolbar offering
   // to show them.
+  // Only work with both ends can be timed, so undated tasks are left out of it
+  // rather than counted as taking no time at all — a chain through them would
+  // be arithmetic on an answer nobody gave.
   const network = useMemo(
-    () => (fields.dependencies ? analyseNetwork(rows) : EMPTY_NETWORK),
+    () =>
+      fields.dependencies
+        ? analyseNetwork(
+            rows.filter(
+              (t): t is typeof t & { startDate: string; endDate: string } =>
+                t.startDate != null && t.endDate != null
+            )
+          )
+        : EMPTY_NETWORK,
     [rows, fields.dependencies]
   );
   /** Where each row sits, for drawing a line from one bar to another. */
@@ -291,7 +302,9 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
     let start = addDays(today, -DAYS_BEFORE_TODAY);
     let end = addDays(today, MIN_DAYS_AFTER_TODAY);
 
+    // Work nobody has placed in time widens nothing: there is no bar to fit.
     for (const t of tasks) {
+      if (!t.startDate || !t.endDate) continue;
       const s = startOfDay(new Date(t.startDate));
       const e = startOfDay(new Date(t.endDate));
       if (s < start) start = s;
@@ -483,10 +496,16 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
     };
   }, [rows, offsets, window_]);
 
-  /** Where each task's bar sits, recomputed only when the calendar moves. */
+  /**
+   * Where each task's bar sits, recomputed only when the calendar moves. A task
+   * without dates gets no entry and so no bar: it is still on the board, in the
+   * list on the left, but the chart has nothing to say about when it runs and
+   * says nothing rather than drawing a day it was never given.
+   */
   const spans = useMemo(() => {
     const map = new Map<string, { left: number; width: number }>();
     for (const task of rows) {
+      if (!task.startDate || !task.endDate) continue;
       const span = columnSpan(
         startOfDay(new Date(task.startDate)),
         startOfDay(new Date(task.endDate))
@@ -681,7 +700,12 @@ export function GanttBoard({ canEdit = true }: { canEdit?: boolean }) {
       const { fromIdx, toIdx } = draggedTo(d, d.shift);
       const startDate = dayKeys[fromIdx];
       const endDate = dayKeys[toIdx];
+      // Only a task with a bar can be dragged, so it has both dates — but they
+      // are read here rather than assumed, and a drag that lands where it began
+      // writes nothing.
       if (
+        task.startDate != null &&
+        task.endDate != null &&
         startDate === toISODate(startOfDay(new Date(task.startDate))) &&
         endDate === toISODate(startOfDay(new Date(task.endDate)))
       ) {

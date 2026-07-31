@@ -40,7 +40,9 @@ export async function GET(
       endDate: true,
       project: { select: { id: true, name: true } },
     },
-    orderBy: [{ endDate: "asc" }],
+    // Soonest first, with work that has no date yet at the end: a list of what
+    // somebody is carrying reads as what is due, and "no date" is not due.
+    orderBy: [{ endDate: { sort: "asc", nulls: "last" } }],
   });
 
   return jsonResponse(request, tasks);

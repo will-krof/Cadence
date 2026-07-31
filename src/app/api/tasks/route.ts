@@ -77,9 +77,13 @@ export async function POST(request: NextRequest) {
   if ("error" in parsed) return badRequest(parsed.error);
   const waiting = parseBlockers(body.blockedBy);
   if (waiting.error) return badRequest(waiting.error);
-  const { title, startDate, endDate } = parsed.data;
-  if (!projectId || !title || !startDate || !endDate) {
-    return badRequest("projectId, title, startDate and endDate are required");
+  // Dates are not among the things a task needs to exist: work is written down
+  // before anybody knows when it runs, and a project that never asks about
+  // dates writes none at all. What can't be missing is what it is and where it
+  // lives.
+  const { title, startDate = null, endDate = null } = parsed.data;
+  if (!projectId || !title) {
+    return badRequest("projectId and title are required");
   }
   if (memberDenied(viewer, projectId)) return forbidden();
 

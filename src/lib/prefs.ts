@@ -161,6 +161,41 @@ export function useHiddenViews(): [
 }
 
 /**
+ * The projects whose tools somebody has folded away in the sidebar.
+ *
+ * Stored the other way up from how it reads: every project shows its tools to
+ * begin with — a sidebar that hides what a project is made of until you click
+ * it is a sidebar you have to explore — so what is remembered is the folding,
+ * and a project nobody has touched is open.
+ *
+ * Ids rather than names, and unknown ones are simply carried: a project deleted
+ * in another tab leaves a line in storage that answers to nothing, which costs
+ * nothing, and rejoining it to a real project id is what makes it mean anything
+ * again.
+ */
+export function useFoldedProjects(): [
+  Set<string>,
+  (projectId: string, folded: boolean) => void,
+] {
+  const raw = useSyncExternalStore(
+    subscribe,
+    () => snapshot(FOLDED_PROJECTS_KEY),
+    () => EMPTY
+  );
+  const folded = useMemo(() => new Set(raw), [raw]);
+  const set = useCallback(
+    (projectId: string, next: boolean) => {
+      const without = raw.filter((id) => id !== projectId);
+      store(FOLDED_PROJECTS_KEY, next ? [...without, projectId] : without);
+    },
+    [raw]
+  );
+  return [folded, set];
+}
+
+const FOLDED_PROJECTS_KEY = "folded-projects";
+
+/**
  * Whether the timeline is folded down to whole tasks, with their steps put
  * away. A long plan reads as its shape when the parts are folded in, and this
  * is the reader's own choice, so it is remembered like the rest of them.

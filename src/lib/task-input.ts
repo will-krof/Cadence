@@ -17,8 +17,9 @@ export interface ParsedTask {
   link?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
-  startDate?: Date;
-  endDate?: Date;
+  /** Null is work nobody has placed in time yet, which is a real answer. */
+  startDate?: Date | null;
+  endDate?: Date | null;
   order?: number;
 }
 
@@ -83,16 +84,26 @@ export function parseTask(
     data.priority = priority;
   }
 
+  // Cleared as readily as they are set: a task can be taken back off the
+  // calendar, and a project that doesn't ask about dates writes neither.
   if (body.startDate !== undefined) {
-    const start = date(body.startDate);
-    if (!start) return { error: "Invalid start date" };
-    data.startDate = start;
+    if (!body.startDate) {
+      data.startDate = null;
+    } else {
+      const start = date(body.startDate);
+      if (!start) return { error: "Invalid start date" };
+      data.startDate = start;
+    }
   }
 
   if (body.endDate !== undefined) {
-    const end = date(body.endDate);
-    if (!end) return { error: "Invalid end date" };
-    data.endDate = end;
+    if (!body.endDate) {
+      data.endDate = null;
+    } else {
+      const end = date(body.endDate);
+      if (!end) return { error: "Invalid end date" };
+      data.endDate = end;
+    }
   }
 
   if (data.startDate && data.endDate && data.endDate < data.startDate) {

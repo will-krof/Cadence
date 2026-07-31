@@ -307,7 +307,7 @@ export function ProfileResume({
                     {meta.label}
                   </span>
                   <span className="shrink-0 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
-                    {formatDay(task.endDate)}
+                    {task.endDate ? formatDay(task.endDate) : "No dates"}
                   </span>
                 </li>
               );

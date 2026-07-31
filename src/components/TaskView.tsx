@@ -105,7 +105,7 @@ export function TaskView({
                     {priority.label} priority
                   </span>
                 )}
-                {fields.dates && (
+                {fields.dates && task.startDate && task.endDate && (
                   <span className="tabular-nums text-[var(--ink-muted)]">
                     {formatRange(task.startDate, task.endDate)}
                   </span>

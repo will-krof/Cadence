@@ -30,8 +30,9 @@ interface TaskInput {
   title: string;
   description: string;
   link: string;
-  startDate: string;
-  endDate: string;
+  /** Empty where the work hasn't been placed in time — both ends or neither. */
+  startDate: string | null;
+  endDate: string | null;
   status?: TaskStatus;
   /** What it is worth doing first. Ordinary work when nobody says otherwise. */
   priority?: TaskPriority;

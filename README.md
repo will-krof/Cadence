@@ -35,6 +35,7 @@ which of them it wants.
 | **🗂 Tracker** | The same tasks as cards in five columns. Drag between them, hide the columns nobody is watching, filter to one person. |
 | **👥 Team** | A roster with a profile per person — what they do, what they're on, what they're carrying, and what time it is where they are. Pay and contact details stay with the workspace owner. |
 | **📖 Wiki** | A per-project tree of pages for the things that aren't tasks. |
+| **🗒 Notes** | A private pile per person, in whatever order they drag it into. Nobody else in the workspace can read them. |
 | **🔑 Roles & invite links** | Every project has its own roles, and a role is a list of what it opens. Invite somebody with a link that expires in three days and is spent on one login. |
 | **🎚 Nothing you didn't ask for** | A project starts with everything switched off. Tick the tools it needs — and the fields a task should ask for — and the rest never appears. |
 
@@ -189,6 +190,11 @@ fixed width, so a row is the same size for a task shared by four as for one
 nobody has picked up. Tasks carry steps, dependencies on other tasks, tags,
 comments and a history of what changed and when.
 
+**Dates are optional.** Work gets written down before anybody knows when it runs,
+so a task with no dates is a task nobody has placed in time yet — it sits in the
+timeline's list like any other, and the chart draws no bar for it. Give it dates
+and the bar appears where they put it.
+
 A project runs as a series of **sprints**, and each one is its own board. When a
 sprint is done with, **Archive** puts it away: nothing moves, and its tasks stay
 where they are. It drops out of the run of sprints on the project card into an
@@ -200,6 +206,12 @@ On the **tracker**, columns are the five statuses, and any of them can be hidden
 with the × in its header. Hidden columns collect above the board with their
 counts, one click each to bring back, and their tasks were never filtered out of
 anything.
+
+In the **sidebar**, every project lists the tools it carries, open to begin with:
+what the workspace is made of should be readable without clicking into it. Fold a
+project away with the arrow beside it and it stays folded, per project and per
+browser. Pressing a tool under a project opens that project *and* that tool,
+which is what pressing it meant.
 
 </details>
 

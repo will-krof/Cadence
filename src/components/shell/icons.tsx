@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { HideableView } from "@/lib/prefs";
 
 /**
@@ -86,9 +87,22 @@ export const WIKI_ICON = (
   </svg>
 );
 
-/** What a put-away tool is called while it is out of the way. */
+/** What a tool is called, put away or on show. */
 export const VIEW_LABELS: Record<HideableView, string> = {
   timeline: "Timeline",
   tracker: "Tracker",
   wiki: "Wiki",
 };
+
+/** And how it is drawn, so a list of tools is one list rather than three. */
+export const VIEW_ICONS: Record<HideableView, ReactNode> = {
+  timeline: TIMELINE_ICON,
+  tracker: TRACKER_ICON,
+  wiki: WIKI_ICON,
+};
+
+/**
+ * The order they are always listed in: when the work runs, where it stands,
+ * what the project wrote down about it. Sidebar and project card agree on it.
+ */
+export const VIEW_ORDER: HideableView[] = ["timeline", "tracker", "wiki"];

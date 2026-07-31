@@ -482,8 +482,10 @@ const TaskCard = memo(function TaskCard({
   /** Changing it: the pencil, which only a role that may is shown. */
   onEdit: (id: string) => void;
 }) {
-  const start = formatDayShort(task.startDate);
-  const end = formatDay(task.endDate);
+  // Null where the work hasn't been placed in time, and the card then says
+  // nothing about when it runs rather than inventing a day for it.
+  const start = task.startDate ? formatDayShort(task.startDate) : null;
+  const end = task.endDate ? formatDay(task.endDate) : null;
 
   // Where the press landed, so the click that follows can tell a click from the
   // end of a drag. The board's own threshold decides whether the task moved;
@@ -634,7 +636,7 @@ const TaskCard = memo(function TaskCard({
         </p>
       )}
 
-      {fields.dates && (
+      {fields.dates && start && end && (
         <p className="mt-2 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
           {start === end ? start : `${start} → ${end}`}
         </p>

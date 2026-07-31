@@ -88,6 +88,32 @@ export function CollapseIcon({ pointsLeft }: { pointsLeft: boolean }) {
   );
 }
 
+/**
+ * The disclosure arrow beside a project: pointing right, its tools are folded
+ * away; pointing down, they are on show. The same mark the wiki's tree uses,
+ * because it is the same gesture.
+ */
+export function FoldIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="9"
+      height="9"
+      viewBox="0 0 10 10"
+      fill="none"
+      aria-hidden="true"
+      className={`transition-transform ${open ? "rotate-90" : ""}`}
+    >
+      <path
+        d="M3.5 1.5L7 5l-3.5 3.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function PlusIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 12 12" fill="none">

@@ -155,7 +155,7 @@ export default async function ProfilePage({
           projects={projects}
           tasks={onTasks.map((task) => ({
             ...task,
-            endDate: task.endDate.toISOString(),
+            endDate: task.endDate ? task.endDate.toISOString() : null,
           }))}
           showPrivate={isOwner}
           actions={<ShareProfile developerId={person.id} />}

@@ -31,8 +31,9 @@ export interface TaskFormValues {
   title: string;
   description: string;
   link: string;
-  startDate: string;
-  endDate: string;
+  /** Empty where the work hasn't been placed in time. */
+  startDate: string | null;
+  endDate: string | null;
   status: TaskStatus;
   priority: TaskPriority;
   /** Who is on it, by id: up to four, in the order they were picked. */
@@ -109,17 +110,19 @@ export function TaskModal({
   ) => Promise<void>;
   onDeleteSubtask?: (id: string) => Promise<void>;
 }) {
-  const today = toISODate(new Date());
   const isEdit = Boolean(task);
 
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [link, setLink] = useState(task?.link ?? "");
+  // Blank until somebody says. A new task used to arrive already dated today
+  // at both ends, which put a bar on the timeline for work nobody had placed —
+  // so the fields start empty and a task without them is simply unplanned.
   const [startDate, setStartDate] = useState(
-    task ? toISODate(new Date(task.startDate)) : today
+    task?.startDate ? toISODate(new Date(task.startDate)) : ""
   );
   const [endDate, setEndDate] = useState(
-    task ? toISODate(new Date(task.endDate)) : today
+    task?.endDate ? toISODate(new Date(task.endDate)) : ""
   );
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? "TODO");
   const [priority, setPriority] = useState<TaskPriority>(
@@ -226,9 +229,13 @@ export function TaskModal({
       title: title.trim(),
       description: description.trim(),
       link: link.trim(),
-      startDate,
+      startDate: startDate || null,
       // Guard against an end before the start rather than rejecting the save.
-      endDate: endDate < startDate ? startDate : endDate,
+      // With only one end given, that end is the whole of what is known and the
+      // other stays empty — half a span is still not a bar.
+      endDate: endDate && startDate && endDate < startDate
+        ? startDate
+        : endDate || null,
       status,
       priority,
       assigneeIds,
@@ -292,9 +299,10 @@ export function TaskModal({
               </Field>
             )}
 
-            {/* Every task has dates whatever this says — the timeline is drawn
-                from them. Put away, the form stops asking and a new task takes
-                today at both ends. */}
+            {/* When the work runs, if anybody knows yet. Left empty, the task
+                is written all the same and the timeline draws no bar for it —
+                which is what a plan looks like before it is a plan. Put away,
+                the form stops asking and the task keeps whatever it had. */}
             {fields.dates && (
               <div className="flex flex-col gap-3.5 sm:flex-row">
                 <Field label="Start" className="flex-1">
@@ -565,7 +573,8 @@ function Dependencies({
   onAdd,
   onRemove,
 }: {
-  /** This task's start, for saying when a blocker finishes after it. */
+  /** This task's start, for saying when a blocker finishes after it. Empty
+   *  where this task has no dates, and then there is nothing to be late for. */
   startDate: string;
   blockedBy: string[];
   blocking: Task[];
@@ -599,7 +608,9 @@ function Dependencies({
         // thing a plan most often gets wrong, so the row says so rather than
         // leaving it to be noticed on the chart.
         const late =
-          blocker != null && toISODate(new Date(blocker.endDate)) >= startDate;
+          blocker?.endDate != null &&
+          startDate !== "" &&
+          toISODate(new Date(blocker.endDate)) >= startDate;
         return (
           <div
             key={id}
@@ -621,9 +632,11 @@ function Dependencies({
                     late ? "text-[var(--danger)]" : "text-[var(--ink-muted)]"
                   }`}
                 >
-                  {late
-                    ? `Finishes ${formatDay(blocker.endDate)} — after this starts`
-                    : `Finishes ${formatDay(blocker.endDate)}`}
+                  {blocker.endDate == null
+                    ? "No dates yet"
+                    : late
+                      ? `Finishes ${formatDay(blocker.endDate)} — after this starts`
+                      : `Finishes ${formatDay(blocker.endDate)}`}
                 </span>
               )}
             </span>

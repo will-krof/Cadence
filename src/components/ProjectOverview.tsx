@@ -85,6 +85,8 @@ export function ProjectOverview({
     let start: Date | null = null;
     let end: Date | null = null;
     for (const t of tasks) {
+      // Work with no dates says nothing about when the project runs.
+      if (!t.startDate || !t.endDate) continue;
       const s = new Date(t.startDate);
       const e = new Date(t.endDate);
       if (!start || s < start) start = s;

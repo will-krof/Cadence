@@ -10,9 +10,15 @@ import { NextRequest, NextResponse } from "next/server";
 const MAX_NOTES = 200;
 
 /**
- * The list: every note the person asking wrote, newest touched first, as
- * titles and the first line or two. The writing itself arrives a note at a
- * time — the list is for finding one, not for reading them all.
+ * The list: every note the person asking wrote, in the order they arranged
+ * them, as titles and the first line or two. The writing itself arrives a note
+ * at a time — the list is for finding one, not for reading them all.
+ *
+ * The order is theirs rather than the clock's. Newest-touched-first sounds
+ * right until you use it: opening a note to read it moves it to the top, and
+ * the one you always want there sinks. Notes written before the pile could be
+ * arranged all sit at the same place, so the time they were last touched still
+ * settles them among each other.
  */
 export async function GET(request: NextRequest) {
   const { viewer, response } = await requireViewer();
@@ -21,7 +27,7 @@ export async function GET(request: NextRequest) {
   const notes = await prisma.note.findMany({
     where: noteOwner(viewer),
     select: { id: true, title: true, content: true, updatedAt: true },
-    orderBy: { updatedAt: "desc" },
+    orderBy: [{ order: "asc" }, { updatedAt: "desc" }],
   });
 
   // The snippet is cut here rather than sent whole: a hundred notes of a
@@ -57,8 +63,22 @@ export async function POST(request: NextRequest) {
     return badRequest(`You can keep ${MAX_NOTES} notes at a time`);
   }
 
+  // A new note lands at the top of the pile, which is where you were looking
+  // when you asked for one. Above whatever is currently first rather than at
+  // zero, so it doesn't tie with a note already sitting there.
+  const first = await prisma.note.findFirst({
+    where: owner,
+    orderBy: { order: "asc" },
+    select: { order: true },
+  });
+
   const note = await prisma.note.create({
-    data: { ...owner, content, title: titleOf(content) },
+    data: {
+      ...owner,
+      content,
+      title: titleOf(content),
+      order: (first?.order ?? 0) - 1,
+    },
     select: { id: true, title: true, content: true, updatedAt: true },
   });
   return NextResponse.json(note, { status: 201 });
