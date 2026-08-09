@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { formatRange } from "@/lib/dates";
 import { isHttpUrl } from "@/lib/sanitize";
+import { formatEstimate, inUnit, isEstimateUnit } from "@/lib/estimate";
 import { ALL_TASK_FIELDS, Task, TaskFields, priorityMeta, statusMeta } from "@/lib/types";
 import { AvatarStack, Modal, PriorityMark, TagChip } from "@/components/ui";
 import { TaskHistory } from "@/components/TaskHistory";
@@ -108,6 +109,16 @@ export function TaskView({
                 {fields.dates && task.startDate && task.endDate && (
                   <span className="tabular-nums text-[var(--ink-muted)]">
                     {formatRange(task.startDate, task.endDate)}
+                  </span>
+                )}
+                {/* How long it should take, said in the unit it was written
+                    in, with the plain reading of it in the tooltip. */}
+                {fields.estimate && task.estimateMinutes != null && (
+                  <span
+                    className="rounded-full border border-[var(--hairline)] px-2 py-0.5 tabular-nums text-[var(--ink-secondary)]"
+                    title={estimateTitle(task.estimateMinutes, task.estimateUnit)}
+                  >
+                    {formatEstimate(task.estimateMinutes)}
                   </span>
                 )}
                 <span className="text-[var(--ink-muted)]">
@@ -257,6 +268,20 @@ export function TaskView({
       </div>
     </Modal>
   );
+}
+
+/**
+ * An estimate said in full, for the chip's tooltip: the number as it was
+ * typed, and the same length in the other unit — which is the question anybody
+ * reading "2d" next to somebody else's "12h" is about to ask.
+ */
+function estimateTitle(minutes: number, unit: string | null) {
+  const written = isEstimateUnit(unit) ? unit : "HOURS";
+  const hours = inUnit(minutes, "HOURS");
+  const days = inUnit(minutes, "DAYS");
+  return written === "DAYS"
+    ? `Estimated ${days} days — ${hours} hours`
+    : `Estimated ${hours} hours — ${days} days`;
 }
 
 /** One labelled thing the card has to say, headed the way the form heads its fields. */

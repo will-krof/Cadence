@@ -12,6 +12,9 @@ export const TASK_FIELDS = {
   priority: true,
   startDate: true,
   endDate: true,
+  // How long it should take, and which unit somebody wrote that in.
+  estimateMinutes: true,
+  estimateUnit: true,
   order: true,
   projectId: true,
   sprintId: true,

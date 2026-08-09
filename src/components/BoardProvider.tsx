@@ -38,6 +38,9 @@ interface TaskInput {
   priority?: TaskPriority;
   /** Who is on it, by id: up to four, in the order they were picked. */
   assigneeIds: string[];
+  /** How long it should take, in minutes, and which unit that was typed in. */
+  estimateMinutes?: number | null;
+  estimateUnit?: string | null;
   /** The tasks it waits on, by id — written with it rather than after it. */
   blockedBy?: string[];
   /** The task this one is a step of, if it is one. */
@@ -90,6 +93,9 @@ interface ProjectInput {
   taskHasComments?: boolean;
   taskHasSubtasks?: boolean;
   taskHasDependencies?: boolean;
+  taskHasTags?: boolean;
+  /** Whether a task says how long it is expected to take. */
+  taskHasEstimate?: boolean;
   /** Put away, or brought back. */
   archived?: boolean;
 }

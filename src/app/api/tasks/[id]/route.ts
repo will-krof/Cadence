@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { boardFilter, workspaceOwnerId } from "@/lib/api-auth";
+import { boardWriteFilter, workspaceOwnerId } from "@/lib/api-auth";
 import { memberDenied, requireViewer, viewerName } from "@/lib/viewer";
 import { TASK_FIELDS, taskPayload } from "@/lib/task-select";
 import { parseTask } from "@/lib/task-input";
@@ -15,8 +15,10 @@ export async function PATCH(
 ) {
   const { viewer, response } = await requireViewer();
   if (response) return response;
-  // Which project the task is in is settled by the lookup below; this is the
-  // role's say on whether a member may touch tasks at all.
+  // Whether a member may change work anywhere at all. Which project this task
+  // is in is the lookup's question, and it asks it with the *writing* scope:
+  // being allowed to run one project's board is not being allowed to rewrite
+  // another one you can only watch.
   if (memberDenied(viewer, null)) return forbidden();
 
   const { id } = await ctx.params;
@@ -28,7 +30,7 @@ export async function PATCH(
   if (waiting.error) return badRequest(waiting.error);
 
   const reachable = await prisma.task.findFirst({
-    where: { id, ...boardFilter(viewer) },
+    where: { id, ...boardWriteFilter(viewer) },
     select: { id: true, projectId: true, parentId: true, status: true },
   });
   if (!reachable) return notFound("Task");
@@ -150,7 +152,7 @@ export async function DELETE(
   const { id } = await ctx.params;
 
   const deleted = await prisma.task.deleteMany({
-    where: { id, ...boardFilter(viewer) },
+    where: { id, ...boardWriteFilter(viewer) },
   });
   if (deleted.count === 0) return notFound("Task");
 

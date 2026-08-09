@@ -222,6 +222,10 @@ model Project {
   /// own — every team labels its work in its own words — so they are rows
   /// rather than a list this app decided on.
   taskHasTags         Boolean @default(false)
+  /// Whether a task says how long it is expected to take. A guess at the size
+  /// of a job is a thing some teams live by and others never write down, so it
+  /// is a field like the rest: off until a project asks for it.
+  taskHasEstimate     Boolean @default(false)
   /// Put away: still openable and still holding its work, but out of the run of
   /// projects being worked on.
   archived    Boolean  @default(false)
@@ -383,6 +387,20 @@ model Task {
   /// draws a bar for a task that has both and leaves the rest to the list.
   startDate   DateTime?
   endDate     DateTime?
+  /// How long the work is expected to take, in minutes. One canonical unit
+  /// rather than a number and a unit that have to be read together: hours and
+  /// days are two ways of saying the same quantity, and storing the quantity
+  /// means nothing has to convert to compare two tasks or add a column up.
+  ///
+  /// Minutes rather than hours because half a day and a quarter of an hour are
+  /// both things people write, and integers avoid the rounding a float would
+  /// bring to something as ordinary as "1.5h".
+  estimateMinutes Int?
+  /// Which unit it was written in — HOURS or DAYS — so the form says it back
+  /// the way it was typed. This is a display note and nothing more: the
+  /// quantity above is the answer, and a task written as 2 days reads as 16
+  /// hours the moment somebody switches the picker.
+  estimateUnit    String?
   order       Int        @default(0)
   projectId   String
   project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)

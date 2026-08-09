@@ -29,6 +29,7 @@ export interface ProjectSettingsValues {
   taskHasSubtasks: boolean;
   taskHasDependencies: boolean;
   taskHasTags: boolean;
+  taskHasEstimate: boolean;
 }
 
 /** What the form holds while it is being filled in: dates as the inputs want. */
@@ -61,6 +62,7 @@ function draftOf(project: Project): Draft {
     taskHasSubtasks: project.taskHasSubtasks,
     taskHasDependencies: project.taskHasDependencies,
     taskHasTags: project.taskHasTags,
+    taskHasEstimate: project.taskHasEstimate,
   };
 }
 

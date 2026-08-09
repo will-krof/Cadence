@@ -23,6 +23,7 @@ import {
 import { useHiddenStatuses } from "@/lib/prefs";
 import { formatDay, formatDayShort } from "@/lib/dates";
 import { isHttpUrl } from "@/lib/sanitize";
+import { formatEstimate } from "@/lib/estimate";
 
 /** Pointer travel before a press turns into a drag rather than a click. */
 const DRAG_THRESHOLD = 5;
@@ -659,6 +660,14 @@ const TaskCard = memo(function TaskCard({
       {fields.dates && start && end && (
         <p className="mt-2 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
           {start === end ? start : `${start} → ${end}`}
+        </p>
+      )}
+
+      {/* How long it should take. On the card rather than only in the dialog:
+          it is the number somebody scanning a column is weighing up. */}
+      {fields.estimate && task.estimateMinutes != null && (
+        <p className="mt-2 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
+          Est. {formatEstimate(task.estimateMinutes)}
         </p>
       )}
 

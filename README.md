@@ -172,8 +172,9 @@ A project can also say **when it runs**, rather than leaving it to be worked out
 from the earliest and latest task. Set a start date, an end date, or just one of
 them.
 
-The same card says **what a task asks for**: its dates, its priority, its link,
-its tags, its steps, its dependencies, its history, its comments. Each one can be
+The same card says **what a task asks for**: its dates, its estimate, its
+priority, its link, its tags, its steps, its dependencies, its history, its
+comments. Each one can be
 put away, and then the form stops offering it, the card stops drawing it, and the
 boards stop marking it. Nothing already written is lost — turn a field back on and
 it is all still there.
@@ -189,6 +190,11 @@ A task is shared by **up to four people**: the boards draw a stack of faces of a
 fixed width, so a row is the same size for a task shared by four as for one
 nobody has picked up. Tasks carry steps, dependencies on other tasks, tags,
 comments and a history of what changed and when.
+
+**How long it should take** is a task's own field, written in whichever unit the
+team thinks in. Type three days, switch the picker to hours, and the box says
+twenty-four — one length of time, said two ways, and a day is eight hours. It is
+stored as one quantity, so two tasks sized in different units still compare.
 
 **Dates are optional.** Work gets written down before anybody knows when it runs,
 so a task with no dates is a task nobody has placed in time yet — it sits in the

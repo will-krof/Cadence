@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { boardFilter } from "@/lib/api-auth";
+import { boardWriteFilter } from "@/lib/api-auth";
 import { memberDenied, requireViewer } from "@/lib/viewer";
 import { badRequest, done, forbidden } from "@/lib/responses";
 import { NextRequest } from "next/server";
@@ -38,9 +38,10 @@ export async function POST(request: NextRequest) {
   }
   if (rows.length === 0) return badRequest("Nothing to reorder");
 
-  // Which of them the viewer may move at all.
+  // Which of them the viewer may move at all — the projects whose boards they
+  // may *change*, not the wider set they may look at.
   const allowed = await prisma.task.findMany({
-    where: { id: { in: rows.map((r) => r.id) }, ...boardFilter(viewer) },
+    where: { id: { in: rows.map((r) => r.id) }, ...boardWriteFilter(viewer) },
     select: { id: true },
   });
   const mine = new Set(allowed.map((t) => t.id));

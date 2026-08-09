@@ -128,6 +128,7 @@ export function GanttBoard({
   const {
     activeProject,
     tasks,
+    projectTasks,
     assignable: developers,
     sprints,
     sprint,
@@ -207,14 +208,27 @@ export function GanttBoard({
     () => new Map(rows.map((t, i) => [t.id, i])),
     [rows]
   );
-  /** How many tasks each one is holding up, for the chip on its row. */
+  /**
+   * How many tasks each one is holding up, for the chip on its row.
+   *
+   * Counted from the work itself rather than from the network drawn above.
+   * The network is only the part of the plan that can be *timed* — both ends
+   * dated, both bars on this board — and a chip counting that said "blocks 1"
+   * about a task holding up three, because the other two hadn't been given
+   * dates yet. Which read as the dependency not having been saved at all.
+   *
+   * So the chip's two halves now come from the same place: "waits on N" is
+   * read off the row, and this is the same fact from the other end.
+   */
   const blockCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const link of network.links) {
-      counts.set(link.from, (counts.get(link.from) ?? 0) + 1);
+    for (const task of projectTasks) {
+      for (const blockerId of task.blockedBy) {
+        counts.set(blockerId, (counts.get(blockerId) ?? 0) + 1);
+      }
     }
     return counts;
-  }, [network]);
+  }, [projectTasks]);
   // The task on screen, and whether it was opened to be read or to be changed.
   // Clicking a task asks for the first; the pencil asks for the second, and is
   // only there for a role that may have it.

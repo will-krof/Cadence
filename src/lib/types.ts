@@ -285,6 +285,8 @@ export interface Project {
   taskHasSubtasks: boolean;
   taskHasDependencies: boolean;
   taskHasTags: boolean;
+  /** Whether a task says how long it is expected to take. */
+  taskHasEstimate: boolean;
   /** Put away: still openable, but out of the run of projects being worked on. */
   archived: boolean;
   roles: ProjectRole[];
@@ -339,6 +341,8 @@ export interface TaskFields {
   dependencies: boolean;
   /** Whether a task carries the project's labels. */
   tags: boolean;
+  /** Whether a task says how long it is expected to take. */
+  estimate: boolean;
 }
 
 /** Everything on, for the screens that have no project to ask. */
@@ -351,6 +355,7 @@ export const ALL_TASK_FIELDS: TaskFields = {
   subtasks: true,
   dependencies: true,
   tags: true,
+  estimate: true,
 };
 
 export function taskFields(project: Project | null): TaskFields {
@@ -364,6 +369,7 @@ export function taskFields(project: Project | null): TaskFields {
     subtasks: project.taskHasSubtasks,
     dependencies: project.taskHasDependencies,
     tags: project.taskHasTags,
+    estimate: project.taskHasEstimate,
   };
 }
 
@@ -414,7 +420,8 @@ export const TASK_FIELD_TOGGLES: {
     | "taskHasComments"
     | "taskHasSubtasks"
     | "taskHasDependencies"
-    | "taskHasTags";
+    | "taskHasTags"
+    | "taskHasEstimate";
   label: string;
   hint: string;
 }[] = [
@@ -454,6 +461,11 @@ export const TASK_FIELD_TOGGLES: {
     label: "Tags",
     hint: "Labels of your own, in your own colours",
   },
+  {
+    key: "taskHasEstimate",
+    label: "Estimate",
+    hint: "How long a task should take, in hours or days — either converts",
+  },
 ];
 
 /** A task as it travels: the assignee is an id, not a copy of their profile. */
@@ -474,6 +486,14 @@ export interface TaskRow {
    */
   startDate: string | null;
   endDate: string | null;
+  /**
+   * How long it should take, in minutes, or null where nobody has guessed.
+   * Kept in one unit so two tasks written in different ones still compare; the
+   * unit beside it is only how the form says it back.
+   */
+  estimateMinutes: number | null;
+  /** HOURS or DAYS — which way it was written. */
+  estimateUnit: string | null;
   order: number;
   /**
    * Who is on it, by id, in the order they were put on. Up to four: work is

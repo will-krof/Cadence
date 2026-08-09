@@ -24,6 +24,7 @@ const TASK_FIELDS = [
   "taskHasSubtasks",
   "taskHasDependencies",
   "taskHasTags",
+  "taskHasEstimate",
 ] as const;
 
 export type ProjectFlag = (typeof TOOLS)[number] | (typeof TASK_FIELDS)[number];

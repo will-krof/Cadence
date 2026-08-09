@@ -14,6 +14,15 @@ import {
 } from "@/lib/types";
 import { offeredStatuses, useHiddenStatuses } from "@/lib/prefs";
 import {
+  amountFor,
+  ESTIMATE_UNITS,
+  EstimateUnit,
+  HOURS_PER_DAY,
+  isEstimateUnit,
+  otherUnit,
+  toMinutes,
+} from "@/lib/estimate";
+import {
   AssigneeField,
   AssigneePicker,
   CloseIcon,
@@ -40,6 +49,10 @@ export interface TaskFormValues {
   assigneeIds: string[];
   /** The project's labels it wears, by id. */
   tagIds: string[];
+  /** How long it should take, in minutes. Null where nobody has guessed. */
+  estimateMinutes: number | null;
+  /** Which unit that was written in, so the form says it back the same way. */
+  estimateUnit: EstimateUnit;
   /** The tasks this one waits on, by id. */
   blockedBy: string[];
   /** Steps to create along with a new task, each with whoever will do it. */
@@ -146,6 +159,33 @@ export function TaskModal({
   const [tagIds, setTagIds] = useState<string[]>(task?.tagIds ?? []);
   const [pending, setPending] = useState(false);
 
+  // How long the work should take. The unit is a way of saying it rather than
+  // part of the answer, so the two are held apart: the number is whatever is in
+  // the box, and changing the unit rewrites that number instead of quietly
+  // meaning something else by it.
+  const [estimateUnit, setEstimateUnit] = useState<EstimateUnit>(
+    isEstimateUnit(task?.estimateUnit) ? task.estimateUnit : "HOURS"
+  );
+  const [estimate, setEstimate] = useState(() =>
+    amountFor(
+      task?.estimateMinutes ?? null,
+      isEstimateUnit(task?.estimateUnit) ? task.estimateUnit : "HOURS"
+    )
+  );
+  /** What is in the box right now, as the one quantity that gets stored. */
+  const estimateMinutes = toMinutes(estimate, estimateUnit);
+
+  /**
+   * Switching hours to days, or back. The length of the job hasn't changed —
+   * only the unit it is being said in — so the number is converted rather than
+   * left to be read as the other unit's worth of the same digits.
+   */
+  function changeUnit(next: EstimateUnit) {
+    if (next === estimateUnit) return;
+    setEstimate(amountFor(estimateMinutes, next));
+    setEstimateUnit(next);
+  }
+
   // What this task waits on. Held in the form rather than written as it is
   // picked: a dependency and the dates it argues with are one thought, and
   // they are saved together.
@@ -251,6 +291,8 @@ export function TaskModal({
       priority,
       assigneeIds,
       tagIds,
+      estimateMinutes,
+      estimateUnit,
       blockedBy,
       subtasks: staged,
     });
@@ -332,6 +374,51 @@ export function TaskModal({
                     className="input"
                   />
                 </Field>
+              </div>
+            )}
+
+            {/* How long the job should take. One box and one picker: the
+                number is the answer and the unit is how it is being said, so
+                changing the picker converts what is already typed rather than
+                letting the same digits quietly mean eight times as much. */}
+            {fields.estimate && (
+              // A div rather than a `Field`, which is a label: two controls
+              // under one label leaves the second one unnamed, so each carries
+              // its own instead.
+              <div className="flex flex-col gap-1.5">
+                <span className="field-label">Estimate</span>
+                <span className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.25"
+                    value={estimate}
+                    onChange={(e) => setEstimate(e.target.value)}
+                    className="input min-w-0 flex-1"
+                    placeholder="How long?"
+                    aria-label={`How long this takes, in ${
+                      estimateUnit === "DAYS" ? "days" : "hours"
+                    }`}
+                  />
+                  <select
+                    value={estimateUnit}
+                    onChange={(e) => changeUnit(e.target.value as EstimateUnit)}
+                    className="select w-28 shrink-0"
+                    aria-label="Hours or days"
+                  >
+                    {ESTIMATE_UNITS.map((u) => (
+                      <option key={u.value} value={u.value}>
+                        {u.label}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+                <span className="text-[0.6875rem] text-[var(--ink-muted)]">
+                  {estimateMinutes == null
+                    ? `Left empty, nobody has guessed. A day is ${HOURS_PER_DAY} hours.`
+                    : `= ${otherUnit(estimateMinutes, estimateUnit)}`}
+                </span>
               </div>
             )}
 

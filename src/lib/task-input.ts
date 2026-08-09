@@ -1,5 +1,10 @@
 import { TaskPriority, TaskStatus } from "@/lib/types";
 import { boundedText, LIMITS, safeHttpUrl } from "@/lib/sanitize";
+import {
+  EstimateUnit,
+  isEstimateUnit,
+  MAX_ESTIMATE_MINUTES,
+} from "@/lib/estimate";
 
 const STATUSES: TaskStatus[] = [
   "TODO",
@@ -20,6 +25,9 @@ export interface ParsedTask {
   /** Null is work nobody has placed in time yet, which is a real answer. */
   startDate?: Date | null;
   endDate?: Date | null;
+  /** How long it should take, in minutes. Null is nobody having guessed. */
+  estimateMinutes?: number | null;
+  estimateUnit?: EstimateUnit | null;
   order?: number;
 }
 
@@ -108,6 +116,34 @@ export function parseTask(
 
   if (data.startDate && data.endDate && data.endDate < data.startDate) {
     return { error: "A task can’t end before it starts" };
+  }
+
+  // The estimate arrives already converted: the form knows what unit somebody
+  // was typing in, and one quantity is what gets stored. The unit rides along
+  // only so the form can say it back the way it was written, which is why an
+  // unreadable one is dropped rather than refused — it changes nothing about
+  // the answer.
+  if (body.estimateMinutes !== undefined) {
+    if (body.estimateMinutes === null || body.estimateMinutes === "") {
+      data.estimateMinutes = null;
+      data.estimateUnit = null;
+    } else {
+      const minutes = Number(body.estimateMinutes);
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        return { error: "An estimate has to be a length of time" };
+      }
+      if (minutes > MAX_ESTIMATE_MINUTES) {
+        return { error: "That estimate is longer than a working year" };
+      }
+      data.estimateMinutes = Math.round(minutes);
+      data.estimateUnit = isEstimateUnit(body.estimateUnit)
+        ? body.estimateUnit
+        : "HOURS";
+    }
+  } else if (body.estimateUnit !== undefined && isEstimateUnit(body.estimateUnit)) {
+    // Somebody switched the picker without touching the number: the quantity
+    // is unchanged and only the way it reads back moves.
+    data.estimateUnit = body.estimateUnit;
   }
 
   if (body.order !== undefined) {
