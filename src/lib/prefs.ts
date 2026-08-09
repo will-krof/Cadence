@@ -138,9 +138,9 @@ export function useHiddenStatuses(): [
 }
 
 /** The tools somebody keeps out of the sidebar. A project card is never one. */
-export type HideableView = "timeline" | "tracker" | "wiki";
+export type HideableView = "timeline" | "tracker" | "wiki" | "reports";
 
-const ALL_VIEWS: HideableView[] = ["timeline", "tracker", "wiki"];
+const ALL_VIEWS: HideableView[] = ["timeline", "tracker", "wiki", "reports"];
 
 export function useHiddenViews(): [
   HideableView[],

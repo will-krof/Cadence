@@ -271,6 +271,8 @@ export interface Project {
   hasSprints: boolean;
   /** Whether the project is run through roles, or by one person. */
   hasRoles: boolean;
+  /** Whether it keeps a screen of its own numbers. */
+  hasReports: boolean;
   /**
    * When the project runs, said by hand. Null leaves the span to the work: the
    * earliest task to the latest, which is what a project on sprints wants.
@@ -379,7 +381,13 @@ export function taskFields(project: Project | null): TaskFields {
  * same way, and so a tool added to a project has one place to be described.
  */
 export const PROJECT_TOOL_TOGGLES: {
-  key: "hasTimeline" | "hasTracker" | "hasSprints" | "hasWiki" | "hasRoles";
+  key:
+    | "hasTimeline"
+    | "hasTracker"
+    | "hasSprints"
+    | "hasWiki"
+    | "hasRoles"
+    | "hasReports";
   label: string;
   hint: string;
 }[] = [
@@ -402,6 +410,11 @@ export const PROJECT_TOOL_TOGGLES: {
     key: "hasWiki",
     label: "Wiki",
     hint: "Pages the project writes down for itself",
+  },
+  {
+    key: "hasReports",
+    label: "Reports",
+    hint: "The project's own numbers: flow, throughput, cycle time, load",
   },
   {
     key: "hasRoles",

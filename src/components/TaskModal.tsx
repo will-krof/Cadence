@@ -33,6 +33,8 @@ import {
   TagPicker,
 } from "@/components/ui";
 import { MAX_ASSIGNEES } from "@/lib/assignees";
+// The cap, not the module that enforces it: `task-deps` opens the database.
+import { LIMITS } from "@/lib/sanitize";
 import { TaskHistory } from "@/components/TaskHistory";
 import { TaskComments } from "@/components/TaskComments";
 
@@ -120,15 +122,27 @@ export function TaskModal({
    */
   fields?: TaskFields;
   onClose: () => void;
-  onSubmit: (values: TaskFormValues) => void | Promise<void>;
+  /**
+   * Writes the task. Answering with a message means it wasn't written — the
+   * form stays open, holding everything that was typed, and says so. Closing
+   * on a refusal was how a rejected dependency came to look like nothing at
+   * all having happened.
+   */
+  onSubmit: (
+    values: TaskFormValues
+  ) => void | Promise<void> | Promise<string | null>;
   onDelete?: () => void;
-  /** Editing a task writes its steps as they are changed, not on save. */
-  onAddSubtask?: (step: NewStep) => Promise<void>;
+  /**
+   * Editing a task writes its steps as they are changed, not on save. Each of
+   * these answers the same way the save does — a message when it was refused —
+   * and the form shows it in the same place.
+   */
+  onAddSubtask?: (step: NewStep) => Promise<string | null | void>;
   onUpdateSubtask?: (
     id: string,
     patch: { status?: TaskStatus; title?: string; assigneeIds?: string[] }
-  ) => Promise<void>;
-  onDeleteSubtask?: (id: string) => Promise<void>;
+  ) => Promise<string | null | void>;
+  onDeleteSubtask?: (id: string) => Promise<string | null | void>;
 }) {
   const isEdit = Boolean(task);
 
@@ -158,6 +172,8 @@ export function TaskModal({
   );
   const [tagIds, setTagIds] = useState<string[]>(task?.tagIds ?? []);
   const [pending, setPending] = useState(false);
+  /** Why the last attempt to save didn't happen, when it didn't. */
+  const [problem, setProblem] = useState<string | null>(null);
 
   // How long the work should take. The unit is a way of saying it rather than
   // part of the answer, so the two are held apart: the number is whatever is in
@@ -268,15 +284,32 @@ export function TaskModal({
     if (!title) return;
     const step: NewStep = { title, assigneeIds: stepWho };
     setStepTitle("");
-    if (isEdit && onAddSubtask) await onAddSubtask(step);
-    else setStaged((prev) => [...prev, step]);
+    if (isEdit && onAddSubtask) {
+      // A step is written as it is typed rather than on save, so a refusal has
+      // to be said the moment it comes back — otherwise the row simply never
+      // appears and nobody is told why.
+      const refused = await onAddSubtask(step);
+      if (typeof refused === "string") {
+        setProblem(refused);
+        setStepTitle(title);
+      }
+    } else setStaged((prev) => [...prev, step]);
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
+
+    // Said here rather than left to the server to refuse, because the server's
+    // refusal would arrive after the dialog had closed.
+    if (blockedBy.length > LIMITS.blockers) {
+      setProblem(`A task can wait on ${LIMITS.blockers} others at most.`);
+      return;
+    }
+
+    setProblem(null);
     setPending(true);
-    await onSubmit({
+    const refused = await onSubmit({
       title: title.trim(),
       description: description.trim(),
       link: link.trim(),
@@ -297,6 +330,9 @@ export function TaskModal({
       subtasks: staged,
     });
     setPending(false);
+    // A string is the reason it wasn't saved. The dialog stays where it is,
+    // with everything still typed into it, and says what the server said.
+    if (typeof refused === "string") setProblem(refused);
   }
 
   return (
@@ -630,6 +666,18 @@ export function TaskModal({
           </div>
           )}
         </div>
+
+        {/* Where a refusal lands: beside the button that was pressed, in the
+            dialog that still holds the work, rather than as a note that flashes
+            up somewhere else after the form has already closed. */}
+        {problem && (
+          <p
+            role="alert"
+            className="rounded-[var(--radius)] border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-[0.75rem] leading-relaxed text-[var(--danger)]"
+          >
+            {problem} Nothing has been saved — the dialog is as you left it.
+          </p>
+        )}
 
         <div className="mt-1 flex items-center justify-end gap-2 border-t border-[var(--hairline)] pt-4">
           {isEdit && onDelete && (

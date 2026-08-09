@@ -27,6 +27,8 @@ export const LIMITS = {
   password: 200,
   /** Nobody holds hundreds of roles on one project. */
   roleIds: 50,
+  /** More things to wait on than this is a task that wanted to be a sprint. */
+  blockers: 25,
 } as const;
 
 /**

@@ -83,6 +83,7 @@ interface ProjectInput {
   hasWiki?: boolean;
   hasSprints?: boolean;
   hasRoles?: boolean;
+  hasReports?: boolean;
   /** Stated by hand, or empty to leave the span to the work. */
   startDate?: string | null;
   endDate?: string | null;
@@ -159,8 +160,14 @@ interface BoardContextValue {
     counts: Record<TaskStatus, number>;
     progress: number;
   };
-  createTask: (input: TaskInput) => Promise<void>;
-  updateTask: (id: string, data: Partial<TaskRow>) => Promise<void>;
+  /**
+   * Writes a task. Answers with what went wrong, or null when it went
+   * through — a caller holding a form has to know, because closing it on a
+   * refusal throws away what somebody typed and looks exactly like nothing
+   * having happened.
+   */
+  createTask: (input: TaskInput) => Promise<string | null>;
+  updateTask: (id: string, data: Partial<TaskRow>) => Promise<string | null>;
   /** Writes the order the rows were dragged into, for the whole list. */
   reorderTasks: (order: { id: string; order: number }[]) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
@@ -675,8 +682,8 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
   );
 
   const createTask = useCallback(
-    async (input: TaskInput) => {
-      if (!activeId) return;
+    async (input: TaskInput): Promise<string | null> => {
+      if (!activeId) return "No project is open.";
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -688,8 +695,9 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         }),
       });
       if (!res.ok) {
-        notify("error", await errorMessage(res, "Could not create the task."));
-        return;
+        const problem = await errorMessage(res, "Could not create the task.");
+        notify("error", problem);
+        return problem;
       }
       // A task and the steps it was made with come back together: the server
       // writes them in one go, so the board never shows a half-made task.
@@ -698,12 +706,13 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
 
       setTasks((prev) => [...prev, created, ...subtasks]);
       notify("success", `Task “${created.title}” created.`);
+      return null;
     },
     [activeId, setTasks, notify]
   );
 
   const updateTask = useCallback(
-    async (id: string, data: Partial<TaskRow>) => {
+    async (id: string, data: Partial<TaskRow>): Promise<string | null> => {
       const previous = rowsRef.current;
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...data } : t)));
 
@@ -713,13 +722,16 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify(data),
       });
       if (!res.ok) {
-        // Put the optimistic edit back the way it was.
+        // Put the optimistic edit back the way it was, and hand the reason
+        // back to whoever asked — a form has somewhere to put it.
         setTasks(previous);
-        notify("error", await errorMessage(res, "Could not save the task."));
-        return;
+        const problem = await errorMessage(res, "Could not save the task.");
+        notify("error", problem);
+        return problem;
       }
       const updated: TaskRow = await res.json();
       setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+      return null;
     },
     [setTasks, notify]
   );

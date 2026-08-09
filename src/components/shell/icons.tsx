@@ -87,11 +87,27 @@ export const WIKI_ICON = (
   </svg>
 );
 
+/** Reports: three columns of different heights, which is what a chart is. */
+export const REPORTS_ICON = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path
+      d="M2 13.6h12"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+    <rect x="2.6" y="8.2" width="2.8" height="3.6" rx="1" fill="currentColor" />
+    <rect x="6.6" y="4.4" width="2.8" height="7.4" rx="1" fill="currentColor" />
+    <rect x="10.6" y="6.4" width="2.8" height="5.4" rx="1" fill="currentColor" />
+  </svg>
+);
+
 /** What a tool is called, put away or on show. */
 export const VIEW_LABELS: Record<HideableView, string> = {
   timeline: "Timeline",
   tracker: "Tracker",
   wiki: "Wiki",
+  reports: "Reports",
 };
 
 /** And how it is drawn, so a list of tools is one list rather than three. */
@@ -99,10 +115,18 @@ export const VIEW_ICONS: Record<HideableView, ReactNode> = {
   timeline: TIMELINE_ICON,
   tracker: TRACKER_ICON,
   wiki: WIKI_ICON,
+  reports: REPORTS_ICON,
 };
 
 /**
  * The order they are always listed in: when the work runs, where it stands,
- * what the project wrote down about it. Sidebar and project card agree on it.
+ * what the project wrote down about it, and what it all adds up to. Reports
+ * come last because they are a reading of the rest. Sidebar and project card
+ * agree on it.
  */
-export const VIEW_ORDER: HideableView[] = ["timeline", "tracker", "wiki"];
+export const VIEW_ORDER: HideableView[] = [
+  "timeline",
+  "tracker",
+  "wiki",
+  "reports",
+];

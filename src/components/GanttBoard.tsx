@@ -229,6 +229,20 @@ export function GanttBoard({
     }
     return counts;
   }, [projectTasks]);
+
+  /**
+   * How many dependencies the project holds at all, against how many the chart
+   * can actually draw. A line needs two bars, and a bar needs two dates — so a
+   * link between work nobody has dated yet is kept, counted on both rows, and
+   * drawn nowhere. Saying that out loud is the point: a chart that answers a
+   * new dependency with no change at all reads as one that didn't keep it.
+   */
+  const undrawnLinks = useMemo(() => {
+    if (!fields.dependencies) return 0;
+    let held = 0;
+    for (const task of projectTasks) held += task.blockedBy.length;
+    return Math.max(0, held - network.links.length);
+  }, [projectTasks, network, fields.dependencies]);
   // The task on screen, and whether it was opened to be read or to be changed.
   // Clicking a task asks for the first; the pencil asks for the second, and is
   // only there for a role that may have it.
@@ -853,6 +867,19 @@ export function GanttBoard({
                 Critical path
               </label>
             </>
+          )}
+          {/* A link the chart has nowhere to put. Said here rather than left to
+              be discovered, because the alternative is a dependency that was
+              saved, is on both cards, and changes nothing anybody can see. */}
+          {undrawnLinks > 0 && (
+            <span
+              className="pb-2 text-xs text-[var(--ink-muted)]"
+              title="A line joins two bars, and a bar needs a start and an end. The dependency is kept either way — give both tasks dates and it appears."
+            >
+              {undrawnLinks === 1
+                ? "1 dependency isn’t drawn — the work has no dates"
+                : `${undrawnLinks} dependencies aren’t drawn — the work has no dates`}
+            </span>
           )}
         </div>
       </div>

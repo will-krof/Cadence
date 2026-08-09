@@ -79,9 +79,15 @@ export function TaskEditModal({
       tags={activeProject?.tags}
       fields={fields}
       onClose={onClose}
+      // Closed only when the write went through. A refusal — a dependency that
+      // would close a loop, a blocker somebody else has since deleted — comes
+      // back as a message, and the form keeps it and everything typed beside
+      // it rather than shutting and looking like nothing happened.
       onSubmit={async (values) => {
-        await updateTask(task.id, values);
+        const refused = await updateTask(task.id, values);
+        if (refused) return refused;
         onClose();
+        return null;
       }}
       onDelete={async () => {
         await deleteTask(task.id);

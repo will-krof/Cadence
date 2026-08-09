@@ -54,6 +54,7 @@ export function TrackerBoard({
   const {
     activeProject,
     tasks,
+    projectTasks,
     assignable: developers,
     sprints,
     sprint,
@@ -126,6 +127,42 @@ export function TrackerBoard({
     () => new Map(tasks.map((t) => [t.id, t.title])),
     [tasks]
   );
+
+  /**
+   * What each task waits on and what waits on it, as the card needs to say it.
+   *
+   * The tracker drew nothing at all about dependencies: a team using the board
+   * rather than the chart could link two tasks, save, and find every screen
+   * they were looking at unchanged — which reads as the link not having been
+   * kept. It is the tracker's business as much as the timeline's: a card that
+   * can't be started yet is the first thing a column should say.
+   *
+   * Read from the whole project, not the board on show — a task can wait on
+   * work planned into another sprint, and it is no less blocked for that.
+   */
+  const links = useMemo(() => {
+    const status = new Map(projectTasks.map((t) => [t.id, t.status]));
+    const blocks = new Map<string, number>();
+    for (const task of projectTasks) {
+      for (const blockerId of task.blockedBy) {
+        blocks.set(blockerId, (blocks.get(blockerId) ?? 0) + 1);
+      }
+    }
+    const of = new Map<string, TaskLinks>();
+    for (const task of projectTasks) {
+      const waitingOn = task.blockedBy.length;
+      const blocking = blocks.get(task.id) ?? 0;
+      if (waitingOn === 0 && blocking === 0) continue;
+      of.set(task.id, {
+        waitingOn,
+        blocking,
+        // Blocked means blocked *now*: something it waits on isn't finished.
+        // A task whose blockers are all done is simply ready.
+        held: task.blockedBy.filter((id) => status.get(id) !== "DONE").length,
+      });
+    }
+    return of;
+  }, [projectTasks]);
 
   // Dealt into columns in one pass. A filter per column read the whole board
   // once for each status, so a five-column board walked its tasks five times to
@@ -382,6 +419,7 @@ export function TrackerBoard({
                     key={task.id}
                     task={task}
                     steps={fields.subtasks ? stepCounts.get(task.id) : undefined}
+                    links={fields.dependencies ? links.get(task.id) : undefined}
                     hiddenStatuses={hidden}
                     canEdit={canEdit}
                     parentTitle={
@@ -477,9 +515,20 @@ function Column({
   );
 }
 
+/** What a card says about the work joined to this one, when anything is. */
+interface TaskLinks {
+  /** How many tasks it waits on, finished or not. */
+  waitingOn: number;
+  /** How many of those aren't done — which is what "blocked" means. */
+  held: number;
+  /** How many tasks are waiting on this one. */
+  blocking: number;
+}
+
 const TaskCard = memo(function TaskCard({
   task,
   steps,
+  links,
   parentTitle,
   hiddenStatuses,
   canEdit,
@@ -495,6 +544,8 @@ const TaskCard = memo(function TaskCard({
   task: Task;
   /** How many of this task's steps are done, when it has any. */
   steps?: { done: number; total: number };
+  /** What it waits on and what waits on it, when the project asks at all. */
+  links?: TaskLinks;
   /** The task this card is a step of, when it is one. */
   parentTitle?: string;
   /** Read once for the board and handed down, not read per card. */
@@ -678,6 +729,49 @@ const TaskCard = memo(function TaskCard({
       {fields.estimate && task.estimateMinutes != null && (
         <p className="mt-2 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
           Est. {formatEstimate(task.estimateMinutes)}
+        </p>
+      )}
+
+      {/* What it is waiting on, and what is waiting on it. Work that can't be
+          started yet is marked rather than merely counted: it is the one thing
+          about a column that changes what you pick up next. */}
+      {links && (
+        <p className="mt-2 flex flex-wrap items-center gap-1.5">
+          {links.waitingOn > 0 && (
+            <span
+              className="rounded-full px-1.5 py-0.5 text-[0.625rem] tabular-nums"
+              style={
+                links.held > 0
+                  ? {
+                      color: "var(--danger)",
+                      background:
+                        "color-mix(in srgb, var(--danger) 12%, transparent)",
+                    }
+                  : { color: "var(--ink-muted)" }
+              }
+              title={
+                links.held > 0
+                  ? `Blocked — ${links.held} of the ${links.waitingOn} it waits on ${
+                      links.held === 1 ? "isn’t" : "aren’t"
+                    } done`
+                  : `Everything it waited on is done`
+              }
+            >
+              {links.held > 0
+                ? `⇢ Blocked by ${links.held}`
+                : `⇢ Clear of ${links.waitingOn}`}
+            </span>
+          )}
+          {links.blocking > 0 && (
+            <span
+              className="rounded-full border border-[var(--hairline)] px-1.5 py-0.5 text-[0.625rem] tabular-nums text-[var(--ink-muted)]"
+              title={`${links.blocking} ${
+                links.blocking === 1 ? "task is" : "tasks are"
+              } waiting on this one`}
+            >
+              Blocks {links.blocking}
+            </span>
+          )}
         </p>
       )}
 

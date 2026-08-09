@@ -35,6 +35,7 @@ which of them it wants.
 | **🗂 Tracker** | The same tasks as cards in five columns. Drag between them, hide the columns nobody is watching, filter to one person. |
 | **👥 Team** | A roster with a profile per person — what they do, what they're on, what they're carrying, and what time it is where they are. Pay and contact details stay with the workspace owner. |
 | **📖 Wiki** | A per-project tree of pages for the things that aren't tasks. |
+| **📈 Reports** | The project's own numbers: cumulative flow, throughput a week, cycle time, velocity a sprint, and who is carrying what. Worked out from the tasks and their history, stored nowhere. |
 | **🗒 Notes** | A private pile per person, in whatever order they drag it into — right-click one to pin, copy or delete it. Nobody else in the workspace can read them. |
 | **🔑 Roles & invite links** | Every project has its own roles, and a role is a list of what it opens. Invite somebody with a link that expires in three days and is spent on one login. |
 | **🎚 Nothing you didn't ask for** | A project starts with everything switched off. Tick the tools it needs — and the fields a task should ask for — and the rest never appears. |
@@ -100,7 +101,8 @@ Workspace (one account)
     ├── Sprints ─────────── each one its own board
     ├── Tasks ───────────── shared by up to four people, with steps,
     │                       dependencies, tags, comments and history
-    └── Wiki ────────────── a tree of pages
+    ├── Wiki ────────────── a tree of pages
+    └── Reports ─────────── the project's own numbers, worked out from the rest
 ```
 
 A person is added to the **team** once and put on **projects** many times, with
@@ -157,7 +159,8 @@ description, and then drops you on its card with the settings open — because w
 a project is made of is a shorter question than what to take away from a project
 that arrived with everything.
 
-The Gantt chart, the tracker, sprints, the wiki and roles are each a checkbox,
+The Gantt chart, the tracker, sprints, the wiki, reports and roles are each a
+checkbox,
 and the team roster is not, because every project has people. Tick what this
 project needs; come back under **Project settings** whenever that changes.
 Switching a tool off later hides it — the sprints and roles already made are
@@ -167,6 +170,16 @@ With **sprints** off, the boards stop being one round's worth of work and show
 the project's whole plan at once. With **roles** off, the permissions table and
 the "viewing as" picker go — for a project one person runs, they are a screen of
 questions nobody has.
+
+**Reports** are a screen of the project's own numbers, switched on like any other
+tool. A cumulative flow diagram of every task by status day by day, how much is
+finished each week, how long a task takes from the day it is picked up, what each
+sprint got through, and who is carrying what — worked out on the server from the
+tasks and their history each time it is opened. Nothing is stored, so the numbers
+are always as true as the boards, and switching it off loses nothing. Every chart
+carries a legend and can be read as a table: the status colours are the boards'
+own, and two of them are close enough under red-green colour blindness that hue
+alone would not separate them.
 
 A project can also say **when it runs**, rather than leaving it to be worked out
 from the earliest and latest task. Set a start date, an end date, or just one of

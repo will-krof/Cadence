@@ -55,6 +55,11 @@ const NotesView = dynamic(
   () => import("@/components/NotesView").then((m) => m.NotesView),
   { loading }
 );
+/** Charts and the arithmetic behind them, fetched only when they are opened. */
+const ReportsView = dynamic(
+  () => import("@/components/ReportsView").then((m) => m.ReportsView),
+  { loading }
+);
 const TaskModal = dynamic(() =>
   import("@/components/TaskModal").then((m) => m.TaskModal)
 );
@@ -75,7 +80,7 @@ import {
 import { TaskStatus, taskFields } from "@/lib/types";
 
 /** The views a project carries. Team isn't one: it belongs to the workspace. */
-type View = "overview" | "timeline" | "tracker" | "wiki";
+type View = "overview" | "timeline" | "tracker" | "wiki" | "reports";
 
 const SIDEBAR_EVENT = "cadence:sidebarchange";
 
@@ -288,6 +293,15 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
           ? (["tracker"] as View[])
           : []),
         ...(sees(project.hasWiki, "canViewWiki") ? (["wiki"] as View[]) : []),
+        // Reports read the boards and say nothing the boards don't, so they
+        // are opened by whoever can open one of them rather than by a
+        // permission of their own — a switch nobody asked for is a switch to
+        // get wrong.
+        ...(project.hasReports &&
+        (sees(project.hasTimeline, "canViewTimeline") ||
+          sees(project.hasTracker, "canViewTracker"))
+          ? (["reports"] as View[])
+          : []),
       ];
     },
     [member, role, activeProject?.id]
@@ -853,7 +867,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                   }
                   visibleViews={[
                     ...shown.filter(
-                      (v): v is "timeline" | "tracker" | "wiki" =>
+                      (v): v is "timeline" | "tracker" | "wiki" | "reports" =>
                         v !== "overview"
                     ),
                     ...(canSeeTeam ? (["team"] as const) : []),
@@ -875,6 +889,8 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
                 />
               ) : activeView === "wiki" ? (
                 <WikiView project={activeProject} canEdit={may.wiki} />
+              ) : activeView === "reports" ? (
+                <ReportsView key={activeProject.id} project={activeProject} />
               ) : (
                 <TrackerBoard
                   canEdit={may.tracker}
@@ -897,8 +913,10 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
           fields={taskFields(activeProject)}
           onClose={() => setAddingTask(null)}
           onSubmit={async (values) => {
-            await createTask(values);
+            const refused = await createTask(values);
+            if (refused) return refused;
             setAddingTask(null);
+            return null;
           }}
         />
       )}

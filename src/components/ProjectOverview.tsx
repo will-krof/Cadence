@@ -15,7 +15,7 @@ import { Developer, STATUS_OPTIONS, TaskStatus } from "@/lib/types";
  * The project card: everything about one project in one place — its details,
  * who is on it, when it runs, and which sprint it is in.
  */
-type OpenableView = "timeline" | "tracker" | "wiki" | "team";
+type OpenableView = "timeline" | "tracker" | "wiki" | "reports" | "team";
 
 export function ProjectOverview({
   onOpenView,

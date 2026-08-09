@@ -28,6 +28,7 @@ export const PROJECT_FIELDS = {
   hasWiki: true,
   hasSprints: true,
   hasRoles: true,
+  hasReports: true,
   startDate: true,
   endDate: true,
   taskHasPriority: true,

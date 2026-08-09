@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { LIMITS } from "@/lib/sanitize";
 
 /**
  * What one task waits on. A dependency is finish-to-start: the blocker has to
@@ -12,8 +13,12 @@ import { prisma } from "@/lib/prisma";
  * task, and the critical path has nothing to say about one.
  */
 
-/** More things to wait on than this is a task that wanted to be a sprint. */
-export const MAX_BLOCKERS = 25;
+/**
+ * More things to wait on than this is a task that wanted to be a sprint. Held
+ * with the rest of the caps rather than here, because the form checks it too —
+ * this module talks to the database, and the form must not.
+ */
+export const MAX_BLOCKERS = LIMITS.blockers;
 
 /**
  * Reads the blocker list off a request body. Both fields absent means the

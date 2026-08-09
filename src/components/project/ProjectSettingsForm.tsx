@@ -19,6 +19,7 @@ export interface ProjectSettingsValues {
   hasWiki: boolean;
   hasSprints: boolean;
   hasRoles: boolean;
+  hasReports: boolean;
   startDate: string | null;
   endDate: string | null;
   taskHasPriority: boolean;
@@ -52,6 +53,7 @@ function draftOf(project: Project): Draft {
     hasWiki: project.hasWiki,
     hasSprints: project.hasSprints,
     hasRoles: project.hasRoles,
+    hasReports: project.hasReports,
     startDate: dateValue(project.startDate),
     endDate: dateValue(project.endDate),
     taskHasPriority: project.taskHasPriority,

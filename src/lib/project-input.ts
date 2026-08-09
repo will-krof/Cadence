@@ -12,6 +12,7 @@ const TOOLS = [
   "hasWiki",
   "hasSprints",
   "hasRoles",
+  "hasReports",
 ] as const;
 
 /** The optional halves of a task, each of which a project can put away. */

@@ -197,6 +197,11 @@ model Project {
   /// being offered or asked about — for a project one person runs, a table of
   /// permissions is a screen of questions nobody has.
   hasRoles    Boolean  @default(false)
+  /// Whether the project keeps a screen of its own numbers: where the work
+  /// stands, how it has moved, how long it takes and who is carrying it. A
+  /// reading of the boards rather than a place work is kept, so it holds
+  /// nothing of its own and switching it off loses nothing.
+  hasReports  Boolean  @default(false)
 
   /// When the project runs, said rather than worked out. A project that plans
   /// in sprints gets its span from them and leaves these null; one that doesn't
