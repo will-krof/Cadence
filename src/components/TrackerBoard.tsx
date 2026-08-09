@@ -127,17 +127,27 @@ export function TrackerBoard({
     [tasks]
   );
 
-  const columns = useMemo(
-    () =>
-      STATUS_OPTIONS.map((s) => ({
-        ...s,
-        items: visible.filter((t) => t.status === s.value),
-      })),
-    [visible]
-  );
+  // Dealt into columns in one pass. A filter per column read the whole board
+  // once for each status, so a five-column board walked its tasks five times to
+  // answer a question each task answers about itself.
+  const columns = useMemo(() => {
+    const items = new Map<TaskStatus, Task[]>(
+      STATUS_OPTIONS.map((s) => [s.value, []])
+    );
+    for (const task of visible) items.get(task.status)?.push(task);
+    return STATUS_OPTIONS.map((s) => ({ ...s, items: items.get(s.value)! }));
+  }, [visible]);
 
-  const shownColumns = columns.filter((c) => !hidden.includes(c.value));
-  const hiddenColumns = columns.filter((c) => hidden.includes(c.value));
+  // Split once rather than walked twice, and memoised on the stored choice so
+  // the arrays keep their identity between renders.
+  const [shownColumns, hiddenColumns] = useMemo(() => {
+    const shown: typeof columns = [];
+    const away: typeof columns = [];
+    for (const col of columns) {
+      (hidden.includes(col.value) ? away : shown).push(col);
+    }
+    return [shown, away];
+  }, [columns, hidden]);
 
   /** Column under the given viewport point, if any. */
   function statusAtPoint(x: number, y: number): TaskStatus | null {

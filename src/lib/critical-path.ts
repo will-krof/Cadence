@@ -77,11 +77,18 @@ export function analyseNetwork(tasks: Planned[]): Network {
   const after = new Map<string, string[]>();
   const before = new Map<string, string[]>();
   const indegree = new Map<string, number>();
+  // Appended in place rather than rebuilt per edge: a plan where thirty tasks
+  // wait on the same one shouldn't cost thirty copies of a growing list.
+  const append = (into: Map<string, string[]>, key: string, value: string) => {
+    const at = into.get(key);
+    if (at) at.push(value);
+    else into.set(key, [value]);
+  };
   for (const edge of edges) {
     linked.add(edge.from);
     linked.add(edge.to);
-    after.set(edge.from, [...(after.get(edge.from) ?? []), edge.to]);
-    before.set(edge.to, [...(before.get(edge.to) ?? []), edge.from]);
+    append(after, edge.from, edge.to);
+    append(before, edge.to, edge.from);
   }
   for (const id of linked) indegree.set(id, (before.get(id) ?? []).length);
 

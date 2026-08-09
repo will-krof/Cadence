@@ -70,12 +70,14 @@ export async function blockerProblem(
     where: { blocked: { projectId } },
     select: { blockerId: true, blockedId: true },
   });
+  // Appended to in place. Rebuilding the list on every edge — `[...old, next]`
+  // — copies the whole run of them each time, which turns one popular blocker
+  // into quadratic work for an answer that is a walk of the graph.
   const waitingOn = new Map<string, string[]>();
   for (const link of links) {
-    waitingOn.set(link.blockerId, [
-      ...(waitingOn.get(link.blockerId) ?? []),
-      link.blockedId,
-    ]);
+    const waiting = waitingOn.get(link.blockerId);
+    if (waiting) waiting.push(link.blockedId);
+    else waitingOn.set(link.blockerId, [link.blockedId]);
   }
 
   const downstream = new Set<string>();
@@ -94,24 +96,43 @@ export async function blockerProblem(
 }
 
 /**
- * Writes a task's blockers as the set given, in one transaction: what is no
- * longer listed goes, what is new arrives, and what was already there is left
- * where it is rather than deleted and remade.
+ * Writes a task's blockers as the set given: what is no longer listed goes,
+ * what is new arrives, and what was already there is left where it is rather
+ * than deleted and remade — a link keeps the day it was made on.
+ *
+ * Three statements at most, and none at all when the set hasn't moved. It used
+ * to be a delete plus an upsert per blocker, so a task waiting on a dozen
+ * others cost a dozen round trips — and every ordinary save of a task paid for
+ * them again, because saving the form sends the dependencies back whether or
+ * not anybody touched them. Reading what is there first is one query that
+ * usually ends the work.
  */
 export async function setBlockers(taskId: string, blockers: string[]) {
+  const existing = await prisma.taskDependency.findMany({
+    where: { blockedId: taskId },
+    select: { blockerId: true },
+  });
+
+  const have = new Set(existing.map((link) => link.blockerId));
+  const wanted = new Set(blockers);
+  const gone = [...have].filter((id) => !wanted.has(id));
+  const fresh = blockers.filter((id) => !have.has(id));
+  if (gone.length === 0 && fresh.length === 0) return;
+
   await prisma.$transaction([
-    prisma.taskDependency.deleteMany({
-      where:
-        blockers.length === 0
-          ? { blockedId: taskId }
-          : { blockedId: taskId, blockerId: { notIn: blockers } },
-    }),
-    ...blockers.map((blockerId) =>
-      prisma.taskDependency.upsert({
-        where: { blockerId_blockedId: { blockerId, blockedId: taskId } },
-        create: { blockerId, blockedId: taskId },
-        update: {},
-      })
-    ),
+    ...(gone.length > 0
+      ? [
+          prisma.taskDependency.deleteMany({
+            where: { blockedId: taskId, blockerId: { in: gone } },
+          }),
+        ]
+      : []),
+    ...(fresh.length > 0
+      ? [
+          prisma.taskDependency.createMany({
+            data: fresh.map((blockerId) => ({ blockerId, blockedId: taskId })),
+          }),
+        ]
+      : []),
   ]);
 }

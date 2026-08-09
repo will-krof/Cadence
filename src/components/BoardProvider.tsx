@@ -295,7 +295,11 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     const steps = new Map<string, TaskRow[]>();
     for (const row of mine) {
       if (!row.parentId || !parents.has(row.parentId)) continue;
-      steps.set(row.parentId, [...(steps.get(row.parentId) ?? []), row]);
+      // Pushed rather than rebuilt: a task with twenty steps shouldn't cost
+      // twenty copies of a growing list on every render of the board.
+      const under = steps.get(row.parentId);
+      if (under) under.push(row);
+      else steps.set(row.parentId, [row]);
     }
     if (steps.size === 0) return mine;
 
@@ -313,23 +317,6 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     [activeProject]
   );
 
-  // The server sends an assignee id; boards want the person. Joining here means
-  // one pass when either side changes, instead of a copy of every profile
-  // travelling inside every task.
-  const tasks = useMemo(() => {
-    if (boardRows.length === 0) return EMPTY_TASKS;
-    const byId = new Map(developers.map((d) => [d.id, d]));
-    return boardRows.map((row) => ({
-      ...row,
-      assignees: row.assigneeIds
-        .map((id) => byId.get(id))
-        .filter((d): d is Developer => d != null),
-      tags: row.tagIds
-        .map((id) => tagById.get(id))
-        .filter((t): t is ProjectTag => t != null),
-    }));
-  }, [boardRows, developers, tagById]);
-
   /**
    * Who is left to hand work to. An archived person is off the team — their
    * tasks were handed back when they were filed away — so they are not somebody
@@ -340,9 +327,21 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     [developers]
   );
 
-  /** Every task in the project, for the card's project-wide numbers. */
+  /**
+   * Every task in the project, with whoever is on it and whatever it is
+   * labelled joined in from the lists the client already holds. The server
+   * sends ids, so this is where they become people and tags — one pass when
+   * either side changes, instead of a copy of every profile travelling inside
+   * every task.
+   *
+   * This is now the *only* join. The board's own list used to do the same work
+   * over again on the rows it shows, so opening a project joined most of its
+   * tasks twice and held two objects for each of them — which also meant the
+   * task a board handed a dialog was never the same object as the one the same
+   * task had in the project-wide list.
+   */
   const projectTasks = useMemo(() => {
-    if (rows === EMPTY_ROWS) return EMPTY_TASKS;
+    if (rows === EMPTY_ROWS || rows.length === 0) return EMPTY_TASKS;
     const byId = new Map(developers.map((d) => [d.id, d]));
     return rows.map((row) => ({
       ...row,
@@ -354,6 +353,20 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
         .filter((t): t is ProjectTag => t != null),
     }));
   }, [rows, developers, tagById]);
+
+  /**
+   * What the boards show: the same tasks, in the board's own order. Looked up
+   * from the joined list rather than joined again — the ordering and folding is
+   * `boardRows`' answer, and this only has to put the joined task in each
+   * place it decided on.
+   */
+  const tasks = useMemo(() => {
+    if (boardRows.length === 0) return EMPTY_TASKS;
+    const joined = new Map(projectTasks.map((task) => [task.id, task]));
+    return boardRows
+      .map((row) => joined.get(row.id))
+      .filter((task): task is Task => task != null);
+  }, [boardRows, projectTasks]);
 
   // Rollback needs the rows as they are now, but reading them from state would
   // give every task edit a new callback identity — and re-render every board.

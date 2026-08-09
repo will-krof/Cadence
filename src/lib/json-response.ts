@@ -31,7 +31,16 @@ export async function jsonResponse(request: NextRequest, data: unknown) {
   const accepted = request.headers.get("accept-encoding") ?? "";
 
   if (body.length < MIN_BYTES || !accepted.includes("gzip")) {
-    return NextResponse.json(data, { headers: { "cache-control": PRIVATE } });
+    // The body it was already given, rather than `NextResponse.json(data)` —
+    // which would walk the whole answer and build the same string a second
+    // time, on exactly the responses too small to be worth compressing but
+    // numerous enough to be worth not doing twice.
+    return new NextResponse(body, {
+      headers: {
+        "content-type": "application/json",
+        "cache-control": PRIVATE,
+      },
+    });
   }
 
   const packed = await gzip(body);
