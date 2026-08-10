@@ -89,6 +89,27 @@ function clampIdx(i: number, length: number) {
 /** Which part of a bar the pointer grabbed. */
 type BarMode = "move" | "start" | "end";
 
+/**
+ * A bar being drawn on empty chart, rather than one being moved.
+ *
+ * Work arrives on the board undated far more often than it arrives planned —
+ * which is the one thing the timeline can say nothing about, since a bar needs
+ * two dates. So the empty run of a row is a surface you can draw on: drag
+ * across the days the job should run and it is given exactly those, start and
+ * end, without opening anything.
+ *
+ * `taskId` null is the same gesture over the strip below the last row, where
+ * there is no task yet — that one draws the dates and then asks for the rest.
+ */
+interface Draw {
+  taskId: string | null;
+  pointerId: number;
+  /** The column the drag started in; the range grows either side of it. */
+  anchorIdx: number;
+  fromIdx: number;
+  toIdx: number;
+}
+
 interface BarDrag {
   taskId: string;
   mode: BarMode;
@@ -122,8 +143,11 @@ export function GanttBoard({
   onNewTask,
 }: {
   canEdit?: boolean;
-  /** Writing a task from the board it will appear on. */
-  onNewTask?: () => void;
+  /**
+   * Writing a task from the board it will appear on. Drawn on the chart, it
+   * comes with the days it was drawn over already filled in.
+   */
+  onNewTask?: (dates?: { startDate: string; endDate: string }) => void;
 }) {
   const {
     activeProject,
@@ -255,6 +279,11 @@ export function GanttBoard({
     null
   );
   const barDragRef = useRef<BarDrag | null>(null);
+  // A range being drawn on empty chart. Held in state as well as a ref because
+  // the preview is a rectangle that doesn't exist yet — there is no element to
+  // write to, the way a bar being dragged has one.
+  const [draw, setDraw] = useState<Draw | null>(null);
+  const drawRef = useRef<Draw | null>(null);
   // Bars and their tooltips are addressed directly while dragging.
   const barRefs = useRef(new Map<string, HTMLDivElement>());
   const tipRefs = useRef(new Map<string, HTMLSpanElement>());
@@ -761,6 +790,99 @@ export function GanttBoard({
     window.addEventListener("pointercancel", onCancel);
   }
 
+  /** Whether a range can be drawn at all: the right, and a project that dates. */
+  const canDraw = canEdit && fields.dates && days.length > 0;
+
+  /**
+   * Drawing a bar where there isn't one. The gesture is the plainest reading of
+   * a chart: press on the day the work starts, drag to the day it ends, let go.
+   * What that writes is the two dates, and only those — a task keeps everything
+   * else it had, and a task drawn from nothing goes on to ask for a title.
+   *
+   * A press that never travels leaves the row as it was, so the empty chart is
+   * still safe to click on.
+   */
+  function beginDraw(e: React.PointerEvent, taskId: string | null) {
+    if (!canDraw) return;
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    // A finger on an empty row is scrolling the chart, near enough always — so
+    // the row is left to scroll, and drawing is a mouse or a pen. The dates are
+    // still there to be typed on the task itself.
+    if (e.pointerType === "touch") return;
+    if (barDragRef.current || drawRef.current) return;
+
+    const box = e.currentTarget.getBoundingClientRect();
+    const columnAt = (clientX: number) =>
+      clampIdx(Math.floor((clientX - box.left) / dayWidth), days.length);
+
+    const anchorIdx = columnAt(e.clientX);
+    const start: Draw = {
+      taskId,
+      pointerId: e.pointerId,
+      anchorIdx,
+      fromIdx: anchorIdx,
+      toIdx: anchorIdx,
+    };
+    drawRef.current = start;
+    // Nothing is shown until the pointer has actually travelled: a single click
+    // on empty chart should read as a click, not as a one-day job.
+    let moved = false;
+
+    function onMove(ev: PointerEvent) {
+      const d = drawRef.current;
+      if (!d || ev.pointerId !== d.pointerId) return;
+      ev.preventDefault();
+      const at = columnAt(ev.clientX);
+      const next: Draw = {
+        ...d,
+        fromIdx: Math.min(d.anchorIdx, at),
+        toIdx: Math.max(d.anchorIdx, at),
+      };
+      moved = moved || next.fromIdx !== next.toIdx;
+      drawRef.current = next;
+      if (moved) setDraw(next);
+    }
+
+    function finish() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey);
+      drawRef.current = null;
+      setDraw(null);
+    }
+
+    function onUp(ev: PointerEvent) {
+      const d = drawRef.current;
+      finish();
+      if (!d || ev.pointerId !== d.pointerId || !moved) return;
+
+      const startDate = dayKeys[d.fromIdx];
+      const endDate = dayKeys[d.toIdx];
+      if (!startDate || !endDate) return;
+      if (d.taskId) updateTask(d.taskId, { startDate, endDate });
+      else onNewTask?.({ startDate, endDate });
+    }
+
+    function onCancel() {
+      finish();
+    }
+
+    /** Escape abandons the range, the way it abandons any other half-gesture. */
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === "Escape") {
+        moved = false;
+        finish();
+      }
+    }
+
+    e.preventDefault();
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("keydown", onKey);
+  }
+
   const openedTask = tasks.find((t) => t.id === opened?.id) ?? null;
 
   const gridTemplateColumns = `${colWidths.task}px ${colWidths.status}px ${colWidths.developer}px`;
@@ -926,7 +1048,10 @@ export function GanttBoard({
                     of the app that belongs to no board in particular. */}
                 {key === "task" && canEdit && onNewTask && (
                   <button
-                    onClick={onNewTask}
+                    // Called with nothing rather than handed the click: the
+                    // dates are the drawn gesture's business, and a task
+                    // written from here is undated as it always was.
+                    onClick={() => onNewTask()}
                     className="shrink-0 rounded p-0.5 text-[var(--ink-muted)] transition hover:bg-[var(--plane)] hover:text-[var(--accent)]"
                     aria-label="New task"
                     title="New task"
@@ -966,6 +1091,19 @@ export function GanttBoard({
             />
           ))}
           <div style={{ height: rowWindow.after }} />
+
+          {/* The other half of the draw strip opposite. It says what the empty
+              row on the right is for, and — just as much to the point — keeps
+              the two panels the same height, which is what scrolling them
+              together depends on. */}
+          {canDraw && onNewTask && (
+            <div
+              className="flex items-center border-b border-dashed border-[var(--hairline)] px-3 text-[0.6875rem] text-[var(--ink-muted)]"
+              style={{ height: ROW_HEIGHT }}
+            >
+              <span className="truncate">Draw a task on the chart →</span>
+            </div>
+          )}
 
           {tasks.length === 0 && (
             <div className="px-3 py-6 text-[0.8125rem] text-[var(--ink-muted)]">
@@ -1114,16 +1252,38 @@ export function GanttBoard({
               // the rest are.
               const color = task.assignees[0]?.color ?? statusMeta(task.status).color;
               const critical = showCritical && network.critical.has(task.id);
+              // Empty chart on a row is somewhere to draw: the task is on the
+              // board but nobody has said when it runs, and dragging across the
+              // days it runs is the shortest way to say so.
+              const drawable = canDraw && !bar;
               return (
                 <div
                   key={task.id}
-                  className="relative border-b border-[var(--hairline)]"
+                  onPointerDown={
+                    drawable ? (e) => beginDraw(e, task.id) : undefined
+                  }
+                  title={
+                    drawable
+                      ? `${task.title} — drag across the days it runs to date it`
+                      : undefined
+                  }
+                  className={`relative border-b border-[var(--hairline)] ${
+                    drawable ? "cursor-crosshair" : ""
+                  }`}
                   style={{
                     height: rowHeight(task),
                     backgroundImage: `linear-gradient(to right, var(--hairline) 0 1px, transparent 1px ${dayWidth}px)`,
                     backgroundSize: `${dayWidth}px 100%`,
                   }}
                 >
+                  {draw?.taskId === task.id && (
+                    <DraftBar
+                      draw={draw}
+                      dayWidth={dayWidth}
+                      dayKeys={dayKeys}
+                      label={task.title}
+                    />
+                  )}
                   {bar && (
                     <div
                       ref={(el) => {
@@ -1214,6 +1374,32 @@ export function GanttBoard({
               );
             })}
             <div style={{ height: rowWindow.after }} />
+
+            {/* A row that isn't a task yet. Drawing here is how a plan gets its
+                next job without leaving the chart: the days are taken from the
+                drag, and the form opens holding them, asking only for the
+                things a chart can't be drawn to say. */}
+            {canDraw && onNewTask && (
+              <div
+                onPointerDown={(e) => beginDraw(e, null)}
+                title="Drag across the days a new task runs to write it"
+                className="relative cursor-crosshair border-b border-dashed border-[var(--hairline)]"
+                style={{
+                  height: ROW_HEIGHT,
+                  backgroundImage: `linear-gradient(to right, var(--hairline) 0 1px, transparent 1px ${dayWidth}px)`,
+                  backgroundSize: `${dayWidth}px 100%`,
+                }}
+              >
+                {draw?.taskId === null && (
+                  <DraftBar
+                    draw={draw}
+                    dayWidth={dayWidth}
+                    dayKeys={dayKeys}
+                    label="New task"
+                  />
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1480,6 +1666,42 @@ const TableRow = memo(function TableRow({
     </div>
   );
 });
+
+/**
+ * The bar as it is being drawn — an outline rather than a bar, because it isn't
+ * one yet, with the two days it currently covers said above it. Nothing here is
+ * saved until the pointer is let go.
+ */
+function DraftBar({
+  draw,
+  dayWidth,
+  dayKeys,
+  label,
+}: {
+  draw: Draw;
+  dayWidth: number;
+  dayKeys: string[];
+  /** What is being drawn, for the row's own sake: a title, or "New task". */
+  label: string;
+}) {
+  const from = dayKeys[draw.fromIdx];
+  const to = dayKeys[draw.toIdx];
+  const days = draw.toIdx - draw.fromIdx + 1;
+  return (
+    <div
+      className="pointer-events-none absolute top-2 bottom-2 z-10 flex items-center rounded-md border-2 border-dashed border-[var(--accent)] bg-[var(--accent-wash)] px-2 text-[0.6875rem] font-medium leading-none text-[var(--ink)]"
+      style={{
+        left: draw.fromIdx * dayWidth + 2,
+        width: (draw.toIdx - draw.fromIdx + 1) * dayWidth - 4,
+      }}
+    >
+      <span className="truncate">{label}</span>
+      <span className="absolute -top-6 left-0 whitespace-nowrap rounded bg-[var(--ink)] px-1.5 py-1 text-[0.625rem] font-medium text-[var(--surface)] shadow">
+        {from} → {to} · {days === 1 ? "1 day" : `${days} days`}
+      </span>
+    </div>
+  );
+}
 
 function GripIcon() {
   return (

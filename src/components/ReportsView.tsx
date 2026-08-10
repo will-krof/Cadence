@@ -175,7 +175,11 @@ export function ReportsView({ project }: { project: Project }) {
   const runs = report.velocity.filter((s) => s.total > 0);
 
   return (
-    <div className="flex flex-col gap-4 p-4 sm:p-6">
+    // The report is taller than any viewport it will ever be read in, so it
+    // carries its own scroller: the shell hands each view a fixed-height box
+    // and expects the view to say what overflows. Without this the panels below
+    // the fold simply had nowhere to go.
+    <div className="thin-scroll flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 sm:p-6">
       <header>
         <h2 className="text-[0.9375rem] font-semibold tracking-tight">
           {project.name} — reports

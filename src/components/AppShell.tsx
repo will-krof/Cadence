@@ -168,8 +168,12 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   // The task being written, if one is — and which column of the tracker asked
   // for it, so a task written under "In test" arrives in test rather than
   // needing to be moved there straight afterwards. Null is nobody writing one.
+  // A task drawn on the timeline arrives with the days it was drawn over, so
+  // the form opens already knowing when the work runs.
   const [addingTask, setAddingTask] = useState<{
     status?: TaskStatus;
+    startDate?: string;
+    endDate?: string;
   } | null>(null);
   const [showNewProject, setShowNewProject] = useState(false);
   // The project just made, if the card hasn't been told what it is made of yet.
@@ -885,7 +889,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
               ) : activeView === "timeline" ? (
                 <GanttBoard
                   canEdit={may.timeline}
-                  onNewTask={() => setAddingTask({})}
+                  onNewTask={(dates) => setAddingTask({ ...dates })}
                 />
               ) : activeView === "wiki" ? (
                 <WikiView project={activeProject} canEdit={may.wiki} />
@@ -905,6 +909,8 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
       {addingTask && activeProject && (
         <TaskModal
           initialStatus={addingTask.status}
+          initialStartDate={addingTask.startDate}
+          initialEndDate={addingTask.endDate}
           developers={assignable}
           // A task can be written already waiting on something, so the form
           // needs the plan it is being written into.

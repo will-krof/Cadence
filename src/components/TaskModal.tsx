@@ -86,6 +86,8 @@ const NO_TAGS: ProjectTag[] = [];
 export function TaskModal({
   task,
   initialStatus,
+  initialStartDate,
+  initialEndDate,
   subtasks = [],
   projectTasks = NO_TASKS,
   developers,
@@ -105,6 +107,14 @@ export function TaskModal({
    * shouldn't arrive as To Do and need moving straight afterwards.
    */
   initialStatus?: TaskStatus;
+  /**
+   * When a new task already runs somewhere. Drawing a bar on the timeline is
+   * the one way of writing a task that answers this before it answers the
+   * title, so the form opens with the days it was drawn over in place — still
+   * editable, like anything else typed into it.
+   */
+  initialStartDate?: string;
+  initialEndDate?: string;
   /** The steps this task already has, when there is a task to have them. */
   subtasks?: Task[];
   /**
@@ -153,10 +163,10 @@ export function TaskModal({
   // at both ends, which put a bar on the timeline for work nobody had placed —
   // so the fields start empty and a task without them is simply unplanned.
   const [startDate, setStartDate] = useState(
-    task?.startDate ? toISODate(new Date(task.startDate)) : ""
+    task?.startDate ? toISODate(new Date(task.startDate)) : initialStartDate ?? ""
   );
   const [endDate, setEndDate] = useState(
-    task?.endDate ? toISODate(new Date(task.endDate)) : ""
+    task?.endDate ? toISODate(new Date(task.endDate)) : initialEndDate ?? ""
   );
   // A task written from a tracker column starts in that column. Nothing else
   // asks, so everywhere else this is To Do, as it was.
