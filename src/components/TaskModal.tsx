@@ -366,7 +366,7 @@ export function TaskModal({
   }
 
   return (
-    <Modal wide onClose={onClose} title={isEdit ? "Edit task" : "New task"}>
+    <Modal size="work" onClose={onClose} title={isEdit ? "Edit task" : "New task"}>
       <form className="flex flex-col gap-5" onSubmit={submit}>
         {/* Two columns while there is something to put in the second. A
             project that asks for neither steps nor dependencies, and keeps

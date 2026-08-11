@@ -897,21 +897,33 @@ export function CloseIcon({ size = 12 }: { size?: number }) {
   );
 }
 
+/**
+ * How much room a dialog is given.
+ *
+ * `ask` is a question with an answer or two. `read` is something to read across
+ * two columns — wide enough for that and no wider, because a card with a
+ * paragraph in it stretched over a whole desk reads as mostly empty. `work` is
+ * the one dialog that is a workspace: editing a task, where dates, people,
+ * steps, dependencies and history are all on offer at once.
+ */
+const MODAL_WIDTHS = {
+  ask: "max-h-[90vh] sm:max-w-md",
+  read: "max-h-[92vh] sm:max-w-3xl",
+  work: "max-h-[94vh] sm:max-w-5xl",
+} as const;
+
 export function Modal({
   title,
   onClose,
-  wide = false,
+  size = "ask",
+  /** Draw the heading strip, or leave the dialog to head itself. */
+  heading = true,
   children,
 }: {
   title: string;
   onClose: () => void;
-  /**
-   * A dialog that is a workspace rather than a question. Editing a task is the
-   * one place everything about it is on offer at once — dates, people, steps,
-   * what it waits on, what happened to it — and a phone-width column made that
-   * a scroll through a queue instead of a form you can see.
-   */
-  wide?: boolean;
+  size?: keyof typeof MODAL_WIDTHS;
+  heading?: boolean;
   children: React.ReactNode;
 }) {
   useEffect(() => {
@@ -929,28 +941,72 @@ export function Modal({
     >
       <div
         className={`thin-scroll w-full overflow-y-auto rounded-t-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--surface-raised)] p-5 shadow-xl sm:rounded-[var(--radius-lg)] ${
-          wide
-            ? "max-h-[94vh] sm:max-w-5xl sm:p-6"
-            : "max-h-[90vh] sm:max-w-md"
-        }`}
+          size === "ask" ? "" : "sm:p-6"
+        } ${MODAL_WIDTHS[size]}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
+        {heading ? (
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
+            <button
+              onClick={onClose}
+              className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[var(--ink)]"
+              aria-label="Close"
+            >
+              <CloseIcon size={14} />
+            </button>
+          </div>
+        ) : (
+          // The dialog heads itself: the close button still has to be somewhere,
+          // and it belongs in the same corner it always is.
           <button
             onClick={onClose}
-            className="rounded p-1 text-[var(--ink-muted)] transition hover:text-[var(--ink)]"
+            className="float-right -mr-1 -mt-1 rounded p-1 text-[var(--ink-muted)] transition hover:text-[var(--ink)]"
             aria-label="Close"
           >
             <CloseIcon size={14} />
           </button>
-        </div>
+        )}
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * One labelled thing a card has to say. The heading is a small label rather
+ * than a rule across the card: a column of short sections is read as a group,
+ * and five full-width rules is a card that looks like a form.
+ */
+export function Section({
+  title,
+  count,
+  meter,
+  children,
+}: {
+  title: string;
+  /** A number the heading carries — how many, or how far along. */
+  count?: string | number;
+  /** A small mark the heading carries beside the count, like a progress bar. */
+  meter?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="flex min-w-0 flex-col gap-1.5">
+      <h3 className="flex items-center gap-1.5">
+        <span className="field-label">{title}</span>
+        {count != null && (
+          <span className="text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
+            {count}
+          </span>
+        )}
+        {meter}
+      </h3>
+      {children}
+    </section>
   );
 }
 
