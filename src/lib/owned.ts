@@ -37,6 +37,17 @@ export function ownedTag(userId: string, projectId: string, tagId: string) {
   });
 }
 
+export function ownedColumn(
+  userId: string,
+  projectId: string,
+  columnId: string
+) {
+  return prisma.projectColumn.findFirst({
+    where: { id: columnId, projectId, project: { userId } },
+    select: { id: true, name: true, order: true, isDone: true },
+  });
+}
+
 export function ownedWikiPage(userId: string, pageId: string) {
   return prisma.wikiPage.findFirst({
     where: { id: pageId, project: { userId } },

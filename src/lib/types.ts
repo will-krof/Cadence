@@ -1,23 +1,109 @@
-export type TaskStatus = "TODO" | "IN_PROGRESS" | "IN_TEST" | "ON_HOLD" | "DONE";
+/**
+ * One column of a project's tracker: a state its work stands in, in the words
+ * and the colour the team picked.
+ *
+ * There is no list of statuses in this app any more. What a board is made of
+ * belongs to the project that uses it, so a column is a row the project owns —
+ * created, renamed, recoloured, reordered and deleted like anything else it
+ * keeps.
+ *
+ * The colour is a dot beside the name, never the name itself: state is written
+ * out in words everywhere it is drawn, and colour only ever agrees with it.
+ */
+export interface ProjectColumn {
+  id: string;
+  projectId: string;
+  name: string;
+  /** A hex colour, checked on the way in. */
+  color: string;
+  /** Where it sits on the board, left to right. */
+  order: number;
+  /**
+   * Whether work standing here is finished. Progress, velocity, cycle time and
+   * "is this blocker cleared" all read this — nothing reads the name, because
+   * a column called Shipped, Live or Готово means the same thing and this app
+   * has no business guessing which words count.
+   */
+  isDone: boolean;
+  createdAt: string;
+}
 
 /**
- * Status hues double as the dot colour on each pill. The label text always
- * renders alongside, so state is never carried by colour alone.
+ * The colours a column is offered: the same eight a tag is drawn from, which
+ * are validated to tell each other apart on both themes. A free colour wheel is
+ * how a board ends up with four blues nobody can tell apart at a glance.
  */
-export const STATUS_OPTIONS: {
-  value: TaskStatus;
-  label: string;
-  color: string;
-}[] = [
-  { value: "TODO", label: "To Do", color: "#898781" },
-  { value: "IN_PROGRESS", label: "In progress", color: "#fab219" },
-  { value: "IN_TEST", label: "In test", color: "#2a78d6" },
-  { value: "ON_HOLD", label: "On hold", color: "#ec835a" },
-  { value: "DONE", label: "Done", color: "#0ca30c" },
-];
+export const COLUMN_COLORS = [
+  "#898781",
+  "#2a78d6",
+  "#fab219",
+  "#0ca30c",
+  "#ec835a",
+  "#7b6cd9",
+  "#3aa8a0",
+  "#e34948",
+] as const;
 
-export function statusMeta(status: TaskStatus) {
-  return STATUS_OPTIONS.find((s) => s.value === status) ?? STATUS_OPTIONS[0];
+/** What a column is drawn in when nobody has picked. */
+export const DEFAULT_COLUMN_COLOR = "#898781";
+
+/** A column is a word or two on a board header, not a sentence. */
+export const MAX_COLUMN_NAME = 24;
+
+/**
+ * A board to start from, for a team that would rather not invent one. Offered
+ * on an empty tracker beside the "write your own" field — it is a suggestion
+ * with a button, not a default: every one of these can be renamed, recoloured
+ * or deleted the moment it lands.
+ */
+export const COLUMN_PRESETS: { name: string; color: string; isDone?: boolean }[] =
+  [
+    { name: "To Do", color: "#898781" },
+    { name: "In progress", color: "#fab219" },
+    { name: "In test", color: "#2a78d6" },
+    { name: "On hold", color: "#ec835a" },
+    { name: "Done", color: "#0ca30c", isDone: true },
+  ];
+
+/**
+ * Work nobody has sorted: a task whose column was deleted, or one written
+ * before the board had any. Not a column — it is never stored on a task, and
+ * the board only draws it while something is standing in it.
+ */
+export const UNSORTED = "__unsorted__";
+
+/** What the board calls that pile, and the grey it is drawn in. */
+export const UNSORTED_LABEL = "Unsorted";
+export const UNSORTED_COLOR = "#8a8f98";
+
+/** The column a task stands in, or null where it stands in none. */
+export function columnMeta(
+  columns: ProjectColumn[],
+  columnId: string | null
+): ProjectColumn | null {
+  if (!columnId) return null;
+  return columns.find((c) => c.id === columnId) ?? null;
+}
+
+/** Whether a task is finished: what its column says, and nothing else. */
+export function isDoneIn(
+  columns: ProjectColumn[],
+  columnId: string | null
+): boolean {
+  return columnMeta(columns, columnId)?.isDone ?? false;
+}
+
+/** The ids of every column that counts as finished. */
+export function doneColumnIds(columns: ProjectColumn[]): Set<string> {
+  return new Set(columns.filter((c) => c.isDone).map((c) => c.id));
+}
+
+/**
+ * Where a new task lands when nobody said: the first column of the board, or
+ * nowhere at all when the board has none yet.
+ */
+export function firstColumnId(columns: ProjectColumn[]): string | null {
+  return columns[0]?.id ?? null;
 }
 
 /**
@@ -215,7 +301,7 @@ export const ROLE_TOOLS: {
     view: "canViewTracker",
     edit: "canEditTracker",
     tool: "hasTracker",
-    hint: "move tasks between statuses",
+    hint: "move tasks between columns",
   },
   {
     label: "Wiki",
@@ -294,6 +380,11 @@ export interface Project {
   roles: ProjectRole[];
   /** What this project calls its work: its own labels, in its own colours. */
   tags: ProjectTag[];
+  /**
+   * The states its work moves through, left to right. Empty on a new project:
+   * a tracker starts blank and is built by whoever is going to work in it.
+   */
+  columns: ProjectColumn[];
   createdAt: string;
 }
 
@@ -399,7 +490,7 @@ export const PROJECT_TOOL_TOGGLES: {
   {
     key: "hasTracker",
     label: "Task tracker",
-    hint: "A board of columns, one per status",
+    hint: "Columns you name and colour yourself",
   },
   {
     key: "hasSprints",
@@ -452,7 +543,7 @@ export const TASK_FIELD_TOGGLES: {
   {
     key: "taskHasHistory",
     label: "History",
-    hint: "Every status a task was moved to, and by whom",
+    hint: "Every column a task was moved to, and by whom",
   },
   {
     key: "taskHasComments",
@@ -488,7 +579,12 @@ export interface TaskRow {
   projectId: string;
   description: string | null;
   link: string | null;
-  status: TaskStatus;
+  /**
+   * The tracker column it stands in, or null for work nobody has sorted — a
+   * task written before the board had columns, or one whose column was
+   * deleted. The board draws those together rather than losing them.
+   */
+  columnId: string | null;
   /** What it is worth doing first. Ordinary work unless somebody says so. */
   priority: TaskPriority;
   /**
@@ -534,8 +630,12 @@ export interface TaskRow {
  */
 export interface TaskEvent {
   id: string;
-  status: TaskStatus;
-  from: TaskStatus | null;
+  /** The column it was moved to, or null once that column was deleted. */
+  columnId: string | null;
+  /** What that column was called at the time — the line reads either way. */
+  columnName: string;
+  fromId: string | null;
+  fromName: string | null;
   by: string | null;
   at: string;
 }
@@ -584,7 +684,12 @@ export const UNPLANNED = "__unplanned__";
 export interface DeveloperTask {
   id: string;
   title: string;
-  status: TaskStatus;
+  /**
+   * The column it stands in, carried whole rather than as an id: this list
+   * spans projects, and no two of them have the same columns to look an id up
+   * in. Null is work standing in none.
+   */
+  column: { name: string; color: string; isDone: boolean } | null;
   /** Null where the work hasn't been given dates. */
   endDate: string | null;
   project: { id: string; name: string };

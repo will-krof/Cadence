@@ -4,7 +4,17 @@ import { useMemo } from "react";
 import { formatRange } from "@/lib/dates";
 import { isHttpUrl } from "@/lib/sanitize";
 import { formatEstimate, inUnit, isEstimateUnit } from "@/lib/estimate";
-import { ALL_TASK_FIELDS, Task, TaskFields, priorityMeta, statusMeta } from "@/lib/types";
+import {
+  ALL_TASK_FIELDS,
+  ProjectColumn,
+  Task,
+  TaskFields,
+  UNSORTED_COLOR,
+  UNSORTED_LABEL,
+  columnMeta,
+  doneColumnIds,
+  priorityMeta,
+} from "@/lib/types";
 import { AvatarStack, Modal, PriorityMark, TagChip } from "@/components/ui";
 import { TaskHistory } from "@/components/TaskHistory";
 import { TaskComments } from "@/components/TaskComments";
@@ -22,10 +32,14 @@ import { TaskComments } from "@/components/TaskComments";
  * a task is not changing it: the card is where reading happens, so it is where
  * the conversation belongs, whatever the reader's role lets them do next.
  */
+/** A stable empty board, so a default can't churn the memos below. */
+const NO_COLUMNS: ProjectColumn[] = [];
+
 export function TaskView({
   task,
   subtasks,
   projectTasks,
+  columns = NO_COLUMNS,
   canEdit,
   fields = ALL_TASK_FIELDS,
   onEdit,
@@ -38,6 +52,8 @@ export function TaskView({
   projectTasks: Task[];
   /** Whether this viewer's role lets them change the work at all. */
   canEdit: boolean;
+  /** The board's columns, for saying which one the task stands in. */
+  columns?: ProjectColumn[];
   /** Which of a task's fields this project asks about — the rest aren't drawn. */
   fields?: TaskFields;
   onEdit: () => void;
@@ -52,10 +68,17 @@ export function TaskView({
     [projectTasks, task.id]
   );
 
-  const status = statusMeta(task.status);
+  // Where the work stands, in the project's own words. A task whose column was
+  // deleted says so rather than claiming a state it isn't in.
+  const column = columnMeta(columns, task.columnId);
+  const columnName = column?.name ?? UNSORTED_LABEL;
+  const columnColor = column?.color ?? UNSORTED_COLOR;
   const priority = priorityMeta(task.priority);
   const link = isHttpUrl(task.link) ? task.link : null;
-  const done = subtasks.filter((s) => s.status === "DONE").length;
+  const doneIds = useMemo(() => doneColumnIds(columns), [columns]);
+  const done = subtasks.filter(
+    (s) => s.columnId != null && doneIds.has(s.columnId)
+  ).length;
   /** Whether anything at all belongs beside the task, as on the form. */
   const aside =
     fields.dependencies ||
@@ -91,15 +114,15 @@ export function TaskView({
                 <span
                   className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] px-2 py-0.5"
                   style={{
-                    background: `color-mix(in srgb, ${status.color} 12%, var(--surface-raised))`,
+                    background: `color-mix(in srgb, ${columnColor} 12%, var(--surface-raised))`,
                   }}
                 >
                   <span
                     className="h-1.5 w-1.5 rounded-full"
-                    style={{ background: status.color }}
+                    style={{ background: columnColor }}
                     aria-hidden="true"
                   />
-                  {status.label}
+                  {columnName}
                 </span>
                 {fields.priority && (
                   <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[var(--ink-secondary)]">
@@ -226,11 +249,13 @@ export function TaskView({
                         className="shrink-0 text-[var(--ink-muted)]"
                         aria-hidden="true"
                       >
-                        {step.status === "DONE" ? "☑" : "☐"}
+                        {step.columnId != null && doneIds.has(step.columnId)
+                          ? "☑"
+                          : "☐"}
                       </span>
                       <span
                         className={`min-w-0 flex-1 truncate ${
-                          step.status === "DONE"
+                          step.columnId != null && doneIds.has(step.columnId)
                             ? "text-[var(--ink-muted)] line-through"
                             : ""
                         }`}

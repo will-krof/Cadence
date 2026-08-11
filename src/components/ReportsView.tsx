@@ -3,13 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
 import { useFeedback } from "@/components/Feedback";
-import {
-  PRIORITY_OPTIONS,
-  Project,
-  STATUS_OPTIONS,
-  statusMeta,
-  TaskStatus,
-} from "@/lib/types";
+import { PRIORITY_OPTIONS, Project } from "@/lib/types";
 import { formatEstimate, HOURS_PER_DAY } from "@/lib/estimate";
 import type { ProjectReport } from "@/lib/reports";
 import {
@@ -104,11 +98,13 @@ export function ReportsView({ project }: { project: Project }) {
   const donePercent = Math.round((totals.done / totals.tasks) * 100);
   const open = totals.tasks - totals.done;
 
-  const statusSlices = report.byStatus.map((row) => ({
-    key: row.status,
-    label: statusMeta(row.status as TaskStatus).label,
+  // The board's own columns, named and coloured by whoever built it — the
+  // report carries all three, so nothing here has to know what a status was.
+  const columnSlices = report.byColumn.map((row) => ({
+    key: row.columnId,
+    label: row.name,
     value: row.count,
-    color: statusMeta(row.status as TaskStatus).color,
+    color: row.color,
   }));
 
   const prioritySlices = report.byPriority
@@ -125,10 +121,10 @@ export function ReportsView({ project }: { project: Project }) {
     })
     .filter((s) => s.value > 0);
 
-  const flowSeries = report.byStatus.map((row) => ({
-    key: row.status,
-    label: statusMeta(row.status as TaskStatus).label,
-    color: statusMeta(row.status as TaskStatus).color,
+  const flowSeries = report.byColumn.map((row) => ({
+    key: row.columnId,
+    label: row.name,
+    color: row.color,
   }));
 
   const weeks = report.throughput.map((w) => ({
@@ -206,9 +202,9 @@ export function ReportsView({ project }: { project: Project }) {
           tone={donePercent === 100 ? "good" : "plain"}
         />
         <StatTile
-          label="In progress"
-          value={formatCount(totals.inProgress)}
-          hint="Work under way now"
+          label="Open"
+          value={formatCount(totals.open)}
+          hint="Not yet in a column that means finished"
         />
         <StatTile
           label="Blocked"
@@ -241,11 +237,11 @@ export function ReportsView({ project }: { project: Project }) {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <Panel
           title="How the work has flowed"
-          hint={`Every task by status, day by day, over the last ${report.windowDays} days. The top edge is everything the project holds — it rising is scope arriving. A band that widens instead of travelling is where work is piling up.`}
+          hint={`Every task by column, day by day, over the last ${report.windowDays} days. The top edge is everything the project holds — it rising is scope arriving. A band that widens instead of travelling is where work is piling up.`}
         >
           <FlowChart days={report.flow} series={flowSeries} />
           <TableView
-            caption="Tasks by status, by day"
+            caption="Tasks by column, by day"
             columns={["Day", ...flowSeries.map((s) => s.label), "Total"]}
             rows={report.flow
               .slice()
@@ -261,13 +257,13 @@ export function ReportsView({ project }: { project: Project }) {
         <div className="flex min-w-0 flex-col gap-4">
           <Panel
             title="Where it stands"
-            hint="The same statuses the boards use, in the same colours."
+            hint="The tracker's own columns, in its own order and colours."
           >
-            <CompositionBar slices={statusSlices} />
+            <CompositionBar slices={columnSlices} />
             <TableView
-              caption="Tasks by status"
-              columns={["Status", "Tasks", "Share"]}
-              rows={statusSlices.map((s) => [
+              caption="Tasks by column"
+              columns={["Column", "Tasks", "Share"]}
+              rows={columnSlices.map((s) => [
                 s.label,
                 s.value,
                 `${Math.round((s.value / totals.tasks) * 100)}%`,
@@ -491,5 +487,4 @@ function Gap({
   );
 }
 
-/** The statuses, as the charts stack them, for anything that needs the order. */
-export const REPORT_STATUS_ORDER = STATUS_OPTIONS.map((s) => s.value);
+

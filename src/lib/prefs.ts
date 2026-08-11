@@ -1,17 +1,22 @@
 "use client";
 
 import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { STATUS_OPTIONS, TaskStatus } from "@/lib/types";
 
 /**
  * The small choices somebody makes about their own view of the workspace —
- * which tracker columns they have put away, which boards they keep in the
- * sidebar. They belong to the browser rather than the workspace: nobody else's
- * board should rearrange itself because of what one person hid.
+ * which boards they keep in the sidebar, how wide they dragged a column, what
+ * they have folded away. They belong to the browser rather than the workspace:
+ * nobody else's screen should rearrange itself because of what one person put
+ * away.
+ *
+ * Tracker columns used to be among these, hidden per browser. They aren't any
+ * more: a column is a row the project owns, and a board it doesn't want is
+ * deleted rather than hidden from one person while everybody else still works
+ * in it.
  *
  * Stored as a comma-separated list under one key each, and read through
- * `useSyncExternalStore` so every component that cares — the tracker, the
- * timeline, a status pill in either — agrees within the same render.
+ * `useSyncExternalStore` so every component that cares agrees within the same
+ * render.
  */
 const EVENT = "cadence:prefschange";
 
@@ -107,35 +112,7 @@ function useStoredFlag(
   return [fallback, set];
 }
 
-const STATUS_KEY = "hidden-statuses";
 const VIEW_KEY = "hidden-views";
-
-const ALL_STATUSES = STATUS_OPTIONS.map((s) => s.value);
-
-/**
- * Statuses somebody has put away. Hiding a tracker column hides that state of
- * the work everywhere it is offered — the timeline's tally, and the pickers
- * that would otherwise let it back in through the side door — until it is
- * brought back.
- */
-export function useHiddenStatuses(): [
-  TaskStatus[],
-  { hide: (s: TaskStatus) => void; show: (s: TaskStatus) => void; showAll: () => void },
-] {
-  const [hidden, set] = useStoredSet<TaskStatus>(STATUS_KEY, ALL_STATUSES);
-  const hide = useCallback(
-    (status: TaskStatus) => {
-      if (!hidden.includes(status)) set([...hidden, status]);
-    },
-    [hidden, set]
-  );
-  const show = useCallback(
-    (status: TaskStatus) => set(hidden.filter((s) => s !== status)),
-    [hidden, set]
-  );
-  const showAll = useCallback(() => set([]), [set]);
-  return [hidden, { hide, show, showAll }];
-}
 
 /** The tools somebody keeps out of the sidebar. A project card is never one. */
 export type HideableView = "timeline" | "tracker" | "wiki" | "reports";
@@ -287,14 +264,3 @@ export function useColumnWidths(): [
 }
 
 const COLUMN_KEY = "column-widths";
-
-/**
- * The statuses on offer, given what is hidden. The one already on a task is
- * always among them: a hidden column is somewhere nobody is looking, not
- * somewhere the work stops existing.
- */
-export function offeredStatuses(hidden: TaskStatus[], current?: TaskStatus) {
-  return STATUS_OPTIONS.filter(
-    (s) => !hidden.includes(s.value) || s.value === current
-  );
-}

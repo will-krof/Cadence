@@ -77,7 +77,7 @@ import {
   useShowNotes,
   useShowTeam,
 } from "@/lib/prefs";
-import { TaskStatus, taskFields } from "@/lib/types";
+import { taskFields } from "@/lib/types";
 
 /** The views a project carries. Team isn't one: it belongs to the workspace. */
 type View = "overview" | "timeline" | "tracker" | "wiki" | "reports";
@@ -171,7 +171,7 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
   // A task drawn on the timeline arrives with the days it was drawn over, so
   // the form opens already knowing when the work runs.
   const [addingTask, setAddingTask] = useState<{
-    status?: TaskStatus;
+    columnId?: string | null;
     startDate?: string;
     endDate?: string;
   } | null>(null);
@@ -898,7 +898,11 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
               ) : (
                 <TrackerBoard
                   canEdit={may.tracker}
-                  onNewTask={(status) => setAddingTask({ status })}
+                  // What the board is made of is the project's own settings,
+                  // like its tags and its roles: the workspace's owner decides,
+                  // and a member works in whatever they decided.
+                  canManageColumns={isAdmin && may.tracker}
+                  onNewTask={(columnId) => setAddingTask({ columnId })}
                 />
               )}
             </>
@@ -908,7 +912,8 @@ function Shell({ user, member }: { user?: ShellUser; member?: ShellMember }) {
 
       {addingTask && activeProject && (
         <TaskModal
-          initialStatus={addingTask.status}
+          initialColumnId={addingTask.columnId}
+          columns={activeProject.columns}
           initialStartDate={addingTask.startDate}
           initialEndDate={addingTask.endDate}
           developers={assignable}

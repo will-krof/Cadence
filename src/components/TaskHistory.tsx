@@ -1,16 +1,28 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { statusMeta, TaskEvent } from "@/lib/types";
+import {
+  ProjectColumn,
+  TaskEvent,
+  UNSORTED_COLOR,
+  columnMeta,
+} from "@/lib/types";
+import { useBoard } from "@/components/BoardProvider";
 
 /**
  * What has happened to a task, oldest first: when it was written down, and
- * every status it was moved to since, by whom.
+ * every column it was moved to since, by whom.
+ *
+ * Each line carries the name the column had at the time, so a history keeps
+ * reading after a column is renamed or deleted — the same bargain it already
+ * makes with who moved it. The colour is looked up from the board where the
+ * column still exists, and is a plain grey where it doesn't.
  *
  * It is fetched when the task is opened rather than carried on the board: a
  * board draws hundreds of tasks and reads the history of none of them.
  */
 export function TaskHistory({ taskId }: { taskId: string }) {
+  const { columns } = useBoard();
   const [events, setEvents] = useState<TaskEvent[] | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -41,7 +53,7 @@ export function TaskHistory({ taskId }: { taskId: string }) {
       ) : (
         <ol className="flex flex-col gap-1.5">
           {events.map((event) => {
-            const to = statusMeta(event.status);
+            const color = colorOf(columns, event.columnId);
             return (
               <li
                 key={event.id}
@@ -49,16 +61,16 @@ export function TaskHistory({ taskId }: { taskId: string }) {
               >
                 <span
                   className="h-1.5 w-1.5 shrink-0 self-center rounded-full"
-                  style={{ background: to.color }}
+                  style={{ background: color }}
                   aria-hidden="true"
                 />
                 <span className="font-medium">
-                  {event.from ? (
+                  {event.fromName ? (
                     <>
-                      {statusMeta(event.from).label} → {to.label}
+                      {event.fromName} → {event.columnName}
                     </>
                   ) : (
-                    <>Created as {to.label}</>
+                    <>Created in {event.columnName}</>
                   )}
                 </span>
                 <span className="tabular-nums text-[var(--ink-muted)]">
@@ -74,6 +86,11 @@ export function TaskHistory({ taskId }: { taskId: string }) {
       )}
     </section>
   );
+}
+
+/** The column's colour where it still exists, and a plain grey where it doesn't. */
+function colorOf(columns: ProjectColumn[], columnId: string | null) {
+  return columnMeta(columns, columnId)?.color ?? UNSORTED_COLOR;
 }
 
 /** A day and a time, because two moves in one day is the usual case. */

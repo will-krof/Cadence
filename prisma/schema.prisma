@@ -20,14 +20,6 @@ enum UserRole {
   SUPERADMIN
 }
 
-enum TaskStatus {
-  TODO
-  IN_PROGRESS
-  IN_TEST
-  ON_HOLD
-  DONE
-}
-
 /// How much a task wants doing before the others. Kept apart from status: one
 /// says where the work is, this says which of two waiting tasks is picked up
 /// first. Everything written without an answer is ordinary work.
@@ -243,8 +235,50 @@ model Project {
   members     ProjectMember[]
   wikiPages   WikiPage[]
   tags        ProjectTag[]
+  /// The states this project's work moves through, in its own words. Rows
+  /// rather than a fixed list — see `ProjectColumn`.
+  columns     ProjectColumn[]
 
   @@index([userId])
+}
+
+/// One column of a project's tracker: a state the work stands in, named and
+/// coloured by the team that uses it.
+///
+/// These were five fixed statuses once — To Do through Done, the same on every
+/// board in every workspace — which is a guess about how other people work.
+/// Some teams review, some don't; some have three states and some have nine.
+/// So a column is a row now: a project says what its own states are called and
+/// what colour each one is, and a tracker starts with none at all.
+///
+/// Deleting one deletes it. There is no hiding: a column somebody put away was
+/// still a state work could be in, still counted, still offered by every picker
+/// that hadn't been told — a column that is gone is gone, and the work that
+/// stood in it comes back unsorted rather than disappearing with it.
+model ProjectColumn {
+  id     String @id @default(cuid())
+  name   String
+  /// A hex colour, checked before it is stored — it ends up in a style.
+  color  String @default("#898781")
+  /// Where it sits on the board, left to right.
+  order  Int    @default(0)
+  /// Whether work standing here is finished. What the rest of the app used to
+  /// read off the name `DONE`: progress, velocity, cycle time and "is this
+  /// blocker cleared" all ask this rather than guessing from a label somebody
+  /// is free to call anything.
+  isDone Boolean @default(false)
+
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  tasks    Task[]
+  movedTo   TaskEvent[] @relation("MovedTo")
+  movedFrom TaskEvent[] @relation("MovedFrom")
+
+  /// Two columns with one name is two of the same column.
+  @@unique([projectId, name])
+  @@index([projectId, order])
 }
 
 /// A label a project puts on its work, in its own words and its own colour.
@@ -382,7 +416,12 @@ model Task {
   title       String
   description String?
   link        String?
-  status      TaskStatus @default(TODO)
+  /// Which column of its project's tracker it stands in. Null is work nobody
+  /// has sorted yet — a task written before the board had columns, or one whose
+  /// column was deleted out from under it. The board shows those together in an
+  /// Unsorted column rather than losing them.
+  columnId    String?
+  column      ProjectColumn? @relation(fields: [columnId], references: [id], onDelete: SetNull)
   /// What it is worth doing first. Ordinary work until somebody says otherwise.
   priority    TaskPriority @default(MEDIUM)
   /// When the task runs, if anybody has said. A project that doesn't ask about
@@ -444,6 +483,8 @@ model Task {
   @@index([sprintId, order])
   // The parts of one task, read together with it.
   @@index([parentId])
+  // A column's own tasks, which is what a tracker column is.
+  @@index([columnId])
 }
 
 /// One person on one task. The row is the whole fact — there is no lead
@@ -464,7 +505,7 @@ model TaskAssignee {
 
 /// A project runs a series of these. Each one is its own board: a task belongs
 /// to a sprint, so a sprint created ahead of time starts empty.
-/// One thing that happened to a task: it was moved to a status, on a day, by
+/// One thing that happened to a task: it was moved to a column, on a day, by
 /// somebody. The row is the record — a task's own history, kept as it was
 /// written rather than worked out afterwards from the state it ended in.
 model TaskEvent {
@@ -472,10 +513,18 @@ model TaskEvent {
   taskId String
   task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
-  status TaskStatus
+  /// Where it was moved to. Null once that column has been deleted — the link
+  /// goes, the record doesn't.
+  columnId String?
+  column   ProjectColumn? @relation("MovedTo", fields: [columnId], references: [id], onDelete: SetNull)
+  /// What the column was called at the time, kept the same way `by` is: a
+  /// history is what happened, and renaming a column doesn't rewrite it.
+  columnName String
   /// What it was before, so a line reads as a move rather than a state. Null on
   /// the first event, which is the task being written.
-  from   TaskStatus?
+  fromId   String?
+  fromColumn ProjectColumn? @relation("MovedFrom", fields: [fromId], references: [id], onDelete: SetNull)
+  fromName String?
   /// Who moved it, as they were called at the time. A name rather than a link:
   /// this is a record of what happened, and it shouldn't change when a profile
   /// is renamed or deleted.
@@ -483,6 +532,10 @@ model TaskEvent {
   at     DateTime   @default(now())
 
   @@index([taskId, at])
+  // Read by column when a report replays the board day by day, and walked when
+  // a deleted column has to let go of the lines that name it.
+  @@index([columnId])
+  @@index([fromId])
 }
 
 /// Something somebody said about a task. Sits beside its history rather than in

@@ -1,4 +1,4 @@
-import { TaskPriority, TaskStatus } from "@/lib/types";
+import { TaskPriority } from "@/lib/types";
 import { boundedText, LIMITS, safeHttpUrl } from "@/lib/sanitize";
 import {
   EstimateUnit,
@@ -6,21 +6,18 @@ import {
   MAX_ESTIMATE_MINUTES,
 } from "@/lib/estimate";
 
-const STATUSES: TaskStatus[] = [
-  "TODO",
-  "IN_PROGRESS",
-  "IN_TEST",
-  "ON_HOLD",
-  "DONE",
-];
-
 const PRIORITIES: TaskPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 
 export interface ParsedTask {
   title?: string;
   description?: string | null;
   link?: string | null;
-  status?: TaskStatus;
+  /**
+   * Which tracker column it stands in. Null is unsorted, which is a real
+   * answer — the route checks the id belongs to this task's project, because
+   * only the project knows what its columns are.
+   */
+  columnId?: string | null;
   priority?: TaskPriority;
   /** Null is work nobody has placed in time yet, which is a real answer. */
   startDate?: Date | null;
@@ -80,10 +77,17 @@ export function parseTask(
     }
   }
 
-  if (body.status !== undefined) {
-    const status = body.status as TaskStatus;
-    if (!STATUSES.includes(status)) return { error: "Unknown status" };
-    data.status = status;
+  // Only the shape is checked here. Whether the column is one of this
+  // project's own is a question about the database, and the routes ask it —
+  // an id from somebody else's board would otherwise file work under it.
+  if (body.columnId !== undefined) {
+    if (!body.columnId) {
+      data.columnId = null;
+    } else if (typeof body.columnId !== "string") {
+      return { error: "Unknown column" };
+    } else {
+      data.columnId = body.columnId;
+    }
   }
 
   if (body.priority !== undefined) {

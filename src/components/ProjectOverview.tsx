@@ -9,7 +9,13 @@ import { RolesSection } from "@/components/project/RolesSection";
 import { TagsSection } from "@/components/project/TagsSection";
 import { SprintsSection } from "@/components/project/SprintsSection";
 import { diffDays, formatDay } from "@/lib/dates";
-import { Developer, STATUS_OPTIONS, TaskStatus } from "@/lib/types";
+import {
+  Developer,
+  UNSORTED,
+  UNSORTED_COLOR,
+  UNSORTED_LABEL,
+  doneColumnIds,
+} from "@/lib/types";
 
 /**
  * The project card: everything about one project in one place — its details,
@@ -141,23 +147,47 @@ export function ProjectOverview({
     return [...roster, ...strays];
   }, [activeProject, memberships, developers, tasks]);
 
-  // Project-wide, whichever sprint the boards happen to be showing.
+  // Project-wide, whichever sprint the boards happen to be showing. Counted
+  // per column, in the project's own words: what "finished" means is whichever
+  // of its columns says so, and a project that hasn't said has no progress to
+  // report rather than a made-up one.
   const stats = useMemo(() => {
-    const counts: Record<TaskStatus, number> = {
-      TODO: 0,
-      IN_PROGRESS: 0,
-      IN_TEST: 0,
-      ON_HOLD: 0,
-      DONE: 0,
-    };
-    for (const task of tasks) counts[task.status]++;
+    const columns = activeProject?.columns ?? [];
+    const done = doneColumnIds(columns);
+    const counts = new Map<string, number>();
+    let finished = 0;
+    for (const task of tasks) {
+      const key = task.columnId ?? UNSORTED;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (task.columnId && done.has(task.columnId)) finished++;
+    }
     const total = tasks.length;
+    // The board as the strip draws it: the project's columns in their own
+    // order, and the unsorted pile only while there is something in it.
+    const bars = [
+      ...columns.map((c) => ({
+        key: c.id,
+        label: c.name,
+        color: c.color,
+        count: counts.get(c.id) ?? 0,
+      })),
+      ...((counts.get(UNSORTED) ?? 0) > 0
+        ? [
+            {
+              key: UNSORTED,
+              label: UNSORTED_LABEL,
+              color: UNSORTED_COLOR,
+              count: counts.get(UNSORTED) ?? 0,
+            },
+          ]
+        : []),
+    ];
     return {
       total,
-      counts,
-      progress: total === 0 ? 0 : (counts.DONE / total) * 100,
+      bars,
+      progress: total === 0 ? 0 : (finished / total) * 100,
     };
-  }, [tasks]);
+  }, [tasks, activeProject]);
 
   if (!activeProject) return null;
 
@@ -302,9 +332,9 @@ export function ProjectOverview({
           />
         </section>
 
-        {!projectLoading && stats.total > 0 && (
+        {!projectLoading && stats.total > 0 && stats.bars.length > 0 && (
           <section>
-            <h3 className="field-label mb-2">Task status</h3>
+            <h3 className="field-label mb-2">Where the work stands</h3>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--gridline)]">
               <div
                 className="h-full rounded-full bg-[#0ca30c] transition-[width] duration-300"
@@ -312,18 +342,18 @@ export function ProjectOverview({
               />
             </div>
             <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
-              {STATUS_OPTIONS.map((s) => (
+              {stats.bars.map((bar) => (
                 <span
-                  key={s.value}
+                  key={bar.key}
                   className="flex items-center gap-1.5 text-[0.6875rem] text-[var(--ink-secondary)]"
                 >
                   <span
                     className="h-1.5 w-1.5 shrink-0 rounded-full"
-                    style={{ background: s.color }}
+                    style={{ background: bar.color }}
                   />
-                  {s.label}
+                  {bar.label}
                   <span className="font-semibold tabular-nums text-[var(--ink)]">
-                    {stats.counts[s.value]}
+                    {bar.count}
                   </span>
                 </span>
               ))}
@@ -348,6 +378,9 @@ export function ProjectOverview({
           developers={developers}
           memberships={memberships}
           tasks={tasks}
+          // What counts as finished is the project's own answer, so the load
+          // beside each name is counted against its columns.
+          doneColumnIds={doneColumnIds(activeProject.columns)}
           loading={projectLoading}
           canEdit={canEdit}
           onAdd={addMember}

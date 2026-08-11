@@ -2,25 +2,32 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/components/BoardProvider";
+import { useFeedback } from "@/components/Feedback";
 import {
   AssigneePicker,
   AvatarStack,
+  ColumnPill,
   TagChip,
   CloseIcon,
+  Popover,
   PriorityMark,
   SprintPicker,
-  StatusPill,
 } from "@/components/ui";
 import { TaskEditModal } from "@/components/TaskEditModal";
 import {
+  COLUMN_COLORS,
+  COLUMN_PRESETS,
   Developer,
-  STATUS_OPTIONS,
+  MAX_COLUMN_NAME,
+  ProjectColumn,
   Task,
   TaskFields,
-  TaskStatus,
+  UNSORTED,
+  UNSORTED_COLOR,
+  UNSORTED_LABEL,
+  doneColumnIds,
   taskFields,
 } from "@/lib/types";
-import { useHiddenStatuses } from "@/lib/prefs";
 import { formatDay, formatDayShort } from "@/lib/dates";
 import { isHttpUrl } from "@/lib/sanitize";
 import { formatEstimate } from "@/lib/estimate";
@@ -43,16 +50,41 @@ interface DragState {
   active: boolean;
 }
 
+/**
+ * A column as the board draws it: one of the project's own, or the unsorted
+ * pile, which is not a column and is only ever drawn while work is standing in
+ * it.
+ */
+interface BoardColumn {
+  /** The column's id, or `UNSORTED` for the pile. */
+  key: string;
+  name: string;
+  color: string;
+  isDone: boolean;
+  /** The project's column, or null for the unsorted pile. */
+  column: ProjectColumn | null;
+  items: Task[];
+}
+
 export function TrackerBoard({
   canEdit = true,
+  canManageColumns = false,
   onNewTask,
 }: {
   canEdit?: boolean;
-  /** Writing a task into a particular column, which sets what it starts as. */
-  onNewTask?: (status: TaskStatus) => void;
+  /**
+   * Whether this viewer may make, rename, recolour, reorder and delete the
+   * board's columns. What a project's states are called is the project's own
+   * settings — the same standing as its tags and its roles — so working in a
+   * tracker and deciding what it is made of are two different rights.
+   */
+  canManageColumns?: boolean;
+  /** Writing a task into a particular column, which sets where it starts. */
+  onNewTask?: (columnId: string | null) => void;
 }) {
   const {
     activeProject,
+    columns,
     tasks,
     projectTasks,
     assignable: developers,
@@ -62,6 +94,10 @@ export function TrackerBoard({
     hasUnplanned,
     selectSprint,
     updateTask,
+    createColumn,
+    updateColumn,
+    deleteColumn,
+    reorderColumns,
   } = useBoard();
   const [assignee, setAssignee] = useState("");
   // Which of a task's fields this project asks about, read once for the board.
@@ -80,7 +116,7 @@ export function TrackerBoard({
   const [opened, setOpened] = useState<{ id: string; editing: boolean } | null>(
     null
   );
-  const [dropTarget, setDropTarget] = useState<TaskStatus | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const tasksRef = useRef(tasks);
@@ -96,19 +132,12 @@ export function TrackerBoard({
     [tasks, assignee]
   );
 
-  // Columns somebody has put away. A board with five statuses is wider than a
-  // laptop; hiding the two nobody is looking at is cheaper than scrolling past
-  // them. Nothing is filtered out of the data — a hidden column's tasks are
-  // still there, still countable, and still a drop away once it is back.
-  //
-  // The choice is remembered, and it is the same choice the timeline reads: a
-  // status put away here stops being one of the states work is counted in.
-  const [hidden, { hide: hideColumn, show: showColumn, showAll }] =
-    useHiddenStatuses();
+  /** Which columns mean the work is finished, for everything a card counts. */
+  const done = useMemo(() => doneColumnIds(columns), [columns]);
 
   /**
    * What a card says about the steps around it: how far a task's own steps
-   * have got, and which task a step belongs to — a column sorts by status, so
+   * have got, and which task a step belongs to — a column sorts by state, so
    * a step can sit a long way from its parent.
    */
   const stepCounts = useMemo(() => {
@@ -117,11 +146,11 @@ export function TrackerBoard({
       if (!task.parentId) continue;
       const at = counts.get(task.parentId) ?? { done: 0, total: 0 };
       at.total++;
-      if (task.status === "DONE") at.done++;
+      if (task.columnId && done.has(task.columnId)) at.done++;
       counts.set(task.parentId, at);
     }
     return counts;
-  }, [tasks]);
+  }, [tasks, done]);
 
   const titles = useMemo(
     () => new Map(tasks.map((t) => [t.id, t.title])),
@@ -131,17 +160,13 @@ export function TrackerBoard({
   /**
    * What each task waits on and what waits on it, as the card needs to say it.
    *
-   * The tracker drew nothing at all about dependencies: a team using the board
-   * rather than the chart could link two tasks, save, and find every screen
-   * they were looking at unchanged — which reads as the link not having been
-   * kept. It is the tracker's business as much as the timeline's: a card that
-   * can't be started yet is the first thing a column should say.
-   *
    * Read from the whole project, not the board on show — a task can wait on
    * work planned into another sprint, and it is no less blocked for that.
    */
   const links = useMemo(() => {
-    const status = new Map(projectTasks.map((t) => [t.id, t.status]));
+    const finished = new Map(
+      projectTasks.map((t) => [t.id, t.columnId != null && done.has(t.columnId)])
+    );
     const blocks = new Map<string, number>();
     for (const task of projectTasks) {
       for (const blockerId of task.blockedBy) {
@@ -158,40 +183,56 @@ export function TrackerBoard({
         blocking,
         // Blocked means blocked *now*: something it waits on isn't finished.
         // A task whose blockers are all done is simply ready.
-        held: task.blockedBy.filter((id) => status.get(id) !== "DONE").length,
+        held: task.blockedBy.filter((id) => finished.get(id) !== true).length,
       });
     }
     return of;
-  }, [projectTasks]);
+  }, [projectTasks, done]);
 
   // Dealt into columns in one pass. A filter per column read the whole board
-  // once for each status, so a five-column board walked its tasks five times to
+  // once for each column, so a five-column board walked its tasks five times to
   // answer a question each task answers about itself.
-  const columns = useMemo(() => {
-    const items = new Map<TaskStatus, Task[]>(
-      STATUS_OPTIONS.map((s) => [s.value, []])
-    );
-    for (const task of visible) items.get(task.status)?.push(task);
-    return STATUS_OPTIONS.map((s) => ({ ...s, items: items.get(s.value)! }));
-  }, [visible]);
-
-  // Split once rather than walked twice, and memoised on the stored choice so
-  // the arrays keep their identity between renders.
-  const [shownColumns, hiddenColumns] = useMemo(() => {
-    const shown: typeof columns = [];
-    const away: typeof columns = [];
-    for (const col of columns) {
-      (hidden.includes(col.value) ? away : shown).push(col);
+  //
+  // Work standing in no column — a task whose column was deleted, or one
+  // written before the board had any — is dealt into a pile of its own at the
+  // front, and only shown while something is in it. It is never quietly
+  // dropped: a card that stopped being drawn is a job somebody loses.
+  const board = useMemo(() => {
+    const items = new Map<string, Task[]>(columns.map((c) => [c.id, []]));
+    const unsorted: Task[] = [];
+    for (const task of visible) {
+      const into = task.columnId ? items.get(task.columnId) : undefined;
+      if (into) into.push(task);
+      else unsorted.push(task);
     }
-    return [shown, away];
-  }, [columns, hidden]);
+    const drawn: BoardColumn[] = columns.map((column) => ({
+      key: column.id,
+      name: column.name,
+      color: column.color,
+      isDone: column.isDone,
+      column,
+      items: items.get(column.id)!,
+    }));
+    if (unsorted.length === 0) return drawn;
+    return [
+      {
+        key: UNSORTED,
+        name: UNSORTED_LABEL,
+        color: UNSORTED_COLOR,
+        isDone: false,
+        column: null,
+        items: unsorted,
+      },
+      ...drawn,
+    ];
+  }, [visible, columns]);
 
   /** Column under the given viewport point, if any. */
-  function statusAtPoint(x: number, y: number): TaskStatus | null {
+  function columnAtPoint(x: number, y: number): string | null {
     const el = document
       .elementFromPoint(x, y)
-      ?.closest<HTMLElement>("[data-status]");
-    return (el?.dataset.status as TaskStatus | undefined) ?? null;
+      ?.closest<HTMLElement>("[data-column]");
+    return el?.dataset.column ?? null;
   }
 
   /**
@@ -237,7 +278,7 @@ export function TrackerBoard({
         d.x = e.clientX;
         d.y = e.clientY;
         place(e.clientX, e.clientY);
-        setDropTarget(statusAtPoint(e.clientX, e.clientY));
+        setDropTarget(columnAtPoint(e.clientX, e.clientY));
       }
 
       function finish() {
@@ -255,11 +296,14 @@ export function TrackerBoard({
         finish();
         if (!d || e.pointerId !== d.pointerId || !wasActive) return;
 
-        const status = statusAtPoint(e.clientX, e.clientY);
-        if (!status) return;
+        const dropped = columnAtPoint(e.clientX, e.clientY);
+        if (!dropped) return;
+        // Dragging *into* the unsorted pile is not a move anybody means: it is
+        // where work lands when its column goes, not a column to file into.
+        if (dropped === UNSORTED) return;
         const task = tasksRef.current.find((t) => t.id === d.taskId);
-        if (!task || task.status === status) return;
-        updateTask(d.taskId, { status });
+        if (!task || task.columnId === dropped) return;
+        updateTask(d.taskId, { columnId: dropped });
       }
 
       function onCancel() {
@@ -275,8 +319,8 @@ export function TrackerBoard({
 
   // Stable per-board handlers, so a card only re-renders when its own task
   // changes — not whenever the drop target moves.
-  const handleStatus = useCallback(
-    (id: string, status: TaskStatus) => updateTask(id, { status }),
+  const handleColumn = useCallback(
+    (id: string, columnId: string | null) => updateTask(id, { columnId }),
     [updateTask]
   );
   const handleAssign = useCallback(
@@ -297,6 +341,22 @@ export function TrackerBoard({
     : null;
 
   const openedTask = tasks.find((t) => t.id === opened?.id) ?? null;
+
+  const projectId = activeProject?.id ?? null;
+
+  /** Somewhere to move a column to, in the order the board is drawn. */
+  const move = useCallback(
+    (columnId: string, by: -1 | 1) => {
+      if (!projectId) return;
+      const ids = columns.map((c) => c.id);
+      const from = ids.indexOf(columnId);
+      const to = from + by;
+      if (from < 0 || to < 0 || to >= ids.length) return;
+      ids.splice(to, 0, ...ids.splice(from, 1));
+      reorderColumns(projectId, ids);
+    },
+    [projectId, columns, reorderColumns]
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -327,119 +387,105 @@ export function TrackerBoard({
           </select>
         </label>
         <span className="pb-2 text-[0.6875rem] text-[var(--ink-muted)]">
-          {visible.length} {visible.length === 1 ? "task" : "tasks"} · drag cards
-          between columns
+          {visible.length} {visible.length === 1 ? "task" : "tasks"}
+          {columns.length > 0 && " · drag cards between columns"}
         </span>
+      </div>
 
-        {/* Bringing a column back, and saying what is hidden while it is. */}
-        {hiddenColumns.length > 0 && (
-          <span className="flex flex-wrap items-center gap-1.5 pb-1.5">
-            <span className="field-label">Hidden</span>
-            {hiddenColumns.map((col) => (
-              <button
-                key={col.value}
-                onClick={() => showColumn(col.value)}
-                className="flex items-center gap-1.5 rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[0.6875rem] text-[var(--ink-secondary)] transition hover:border-[var(--baseline)] hover:text-[var(--ink)]"
-                title={`Show the ${col.label} column`}
+      {/* A tracker starts empty. Nothing is assumed about how a team works —
+          not five columns, not three — so the first thing a board says is that
+          it is waiting to be told what its states are called. */}
+      {board.length === 0 ? (
+        <EmptyBoard
+          canManageColumns={canManageColumns}
+          onCreate={(input) =>
+            projectId ? createColumn(projectId, input) : Promise.resolve(null)
+          }
+        />
+      ) : (
+        <div className="thin-scroll flex flex-1 gap-3 overflow-x-auto p-4 sm:gap-4 sm:p-6">
+          {board.map((col, index) => {
+            const isTarget = dropTarget === col.key;
+            return (
+              <section
+                key={col.key}
+                data-column={col.key}
+                className={`flex w-[17rem] shrink-0 flex-col rounded-[var(--radius-lg)] border transition-colors ${
+                  isTarget && col.column
+                    ? "border-[var(--accent)] bg-[var(--accent-wash)]"
+                    : "border-[var(--hairline)] bg-[var(--plane)]"
+                }`}
               >
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ background: col.color }}
+                <ColumnHeader
+                  column={col}
+                  count={col.items.length}
+                  canEdit={canEdit}
+                  canManage={canManageColumns}
+                  // Where it sits among the project's own columns, which is
+                  // what "move left" and "move right" run out of.
+                  first={col.column != null && index === (board.length - columns.length)}
+                  last={col.column != null && index === board.length - 1}
+                  onNewTask={onNewTask}
+                  onRename={(name) =>
+                    projectId && col.column
+                      ? updateColumn(projectId, col.column.id, { name })
+                      : undefined
+                  }
+                  onRecolor={(color) =>
+                    projectId && col.column
+                      ? updateColumn(projectId, col.column.id, { color })
+                      : undefined
+                  }
+                  onSetDone={(isDone) =>
+                    projectId && col.column
+                      ? updateColumn(projectId, col.column.id, { isDone })
+                      : undefined
+                  }
+                  onMove={(by) => col.column && move(col.column.id, by)}
+                  onDelete={() =>
+                    projectId && col.column
+                      ? deleteColumn(projectId, col.column.id)
+                      : undefined
+                  }
                 />
-                {col.label}
-                <span className="tabular-nums text-[var(--ink-muted)]">
-                  {col.items.length}
-                </span>
-              </button>
-            ))}
-            <button
-              onClick={showAll}
-              className="text-[0.6875rem] text-[var(--accent)] hover:underline"
-            >
-              Show all
-            </button>
-          </span>
-        )}
-      </div>
 
-      <div className="thin-scroll flex flex-1 gap-3 overflow-x-auto p-4 sm:gap-4 sm:p-6">
-        {shownColumns.map((col) => {
-          const isTarget = dropTarget === col.value;
-          return (
-            <section
-              key={col.value}
-              data-status={col.value}
-              className={`flex w-[17rem] shrink-0 flex-col rounded-[var(--radius-lg)] border transition-colors ${
-                isTarget
-                  ? "border-[var(--accent)] bg-[var(--accent-wash)]"
-                  : "border-[var(--hairline)] bg-[var(--plane)]"
-              }`}
-            >
-              <header className="flex items-center gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ background: col.color }}
-                />
-                <h3 className="text-[0.75rem] font-semibold tracking-tight">
-                  {col.label}
-                </h3>
-                <span className="ml-auto rounded-full bg-[var(--surface-raised)] px-2 py-0.5 text-[0.6875rem] tabular-nums text-[var(--ink-secondary)]">
-                  {col.items.length}
-                </span>
-                {/* A task is written into a column rather than into the board:
-                    the one you press decides what the task starts as, which is
-                    the whole of what "new task, in test" ever meant. */}
-                {canEdit && onNewTask && (
-                  <button
-                    onClick={() => onNewTask(col.value)}
-                    className="rounded p-0.5 text-[var(--ink-muted)] transition hover:text-[var(--accent)]"
-                    aria-label={`New task in ${col.label}`}
-                    title={`New task in ${col.label}`}
-                  >
-                    <PlusMark />
-                  </button>
-                )}
-                {/* The last column standing keeps its cards reachable: there is
-                    nowhere to drag to on an empty board. */}
-                {shownColumns.length > 1 && (
-                  <button
-                    onClick={() => hideColumn(col.value)}
-                    className="rounded p-0.5 text-[var(--ink-muted)] transition hover:text-[var(--ink)]"
-                    aria-label={`Hide the ${col.label} column`}
-                    title="Hide this column"
-                  >
-                    <CloseIcon size={11} />
-                  </button>
-                )}
-              </header>
+                <Column count={col.items.length} isTarget={isTarget}>
+                  {col.items.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      steps={fields.subtasks ? stepCounts.get(task.id) : undefined}
+                      links={fields.dependencies ? links.get(task.id) : undefined}
+                      columns={columns}
+                      canEdit={canEdit}
+                      parentTitle={
+                        task.parentId ? titles.get(task.parentId) : undefined
+                      }
+                      dragging={dragging?.taskId === task.id}
+                      onDragStart={beginDrag}
+                      onColumnChange={handleColumn}
+                      onAssign={handleAssign}
+                      fields={fields}
+                      onOpen={handleOpen}
+                      onEdit={handleEdit}
+                      developers={developers}
+                    />
+                  ))}
+                </Column>
+              </section>
+            );
+          })}
 
-              <Column count={col.items.length} isTarget={isTarget}>
-                {col.items.map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    steps={fields.subtasks ? stepCounts.get(task.id) : undefined}
-                    links={fields.dependencies ? links.get(task.id) : undefined}
-                    hiddenStatuses={hidden}
-                    canEdit={canEdit}
-                    parentTitle={
-                      task.parentId ? titles.get(task.parentId) : undefined
-                    }
-                    dragging={dragging?.taskId === task.id}
-                    onDragStart={beginDrag}
-                    onStatusChange={handleStatus}
-                    onAssign={handleAssign}
-                    fields={fields}
-                    onOpen={handleOpen}
-                    onEdit={handleEdit}
-                    developers={developers}
-                  />
-                ))}
-              </Column>
-            </section>
-          );
-        })}
-      </div>
+          {/* Another state, written at the end of the board where it lands. */}
+          {canManageColumns && (
+            <AddColumn
+              onCreate={(input) =>
+                projectId ? createColumn(projectId, input) : Promise.resolve(null)
+              }
+            />
+          )}
+        </div>
+      )}
 
       {/* Drag preview follows the pointer and must not intercept hit-testing. */}
       {draggedTask && dragging && (
@@ -471,6 +517,419 @@ export function TrackerBoard({
           onClose={() => setOpened(null)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * The head of one column: what it is called, how much is in it, and — for
+ * whoever may decide what the board is made of — the panel that renames it,
+ * recolours it, says whether work here is finished, moves it along the board
+ * and deletes it.
+ */
+function ColumnHeader({
+  column: col,
+  count,
+  canEdit,
+  canManage,
+  first,
+  last,
+  onNewTask,
+  onRename,
+  onRecolor,
+  onSetDone,
+  onMove,
+  onDelete,
+}: {
+  column: BoardColumn;
+  count: number;
+  canEdit: boolean;
+  canManage: boolean;
+  first: boolean;
+  last: boolean;
+  onNewTask?: (columnId: string | null) => void;
+  onRename: (name: string) => void;
+  onRecolor: (color: string) => void;
+  onSetDone: (isDone: boolean) => void;
+  onMove: (by: -1 | 1) => void;
+  onDelete: () => void;
+}) {
+  const { confirm } = useFeedback();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(col.name);
+  const button = useRef<HTMLButtonElement>(null);
+
+  function commitName() {
+    const next = name.trim();
+    if (!next || next === col.name) {
+      setName(col.name);
+      return;
+    }
+    onRename(next);
+  }
+
+  async function remove() {
+    const ok = await confirm({
+      title: `Delete the “${col.name}” column?`,
+      body:
+        count === 0
+          ? "The column goes for good. This cannot be undone."
+          : `The column goes for good. The ${count} ${
+              count === 1 ? "task" : "tasks"
+            } standing in it are not deleted — they come back on this board as unsorted, ready to be dragged somewhere that still exists.`,
+      confirmLabel: "Delete column",
+      destructive: true,
+    });
+    if (!ok) return;
+    setOpen(false);
+    onDelete();
+  }
+
+  return (
+    <header className="flex items-center gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
+      <span
+        className="h-2 w-2 shrink-0 rounded-full"
+        style={{ background: col.color }}
+      />
+      <h3 className="truncate text-[0.75rem] font-semibold tracking-tight">
+        {col.name}
+      </h3>
+      {/* Which column means the work is finished, said in a word rather than
+          left to the colour or to whatever the column happens to be called. */}
+      {col.isDone && (
+        <span
+          className="shrink-0 text-[0.625rem] text-[var(--ink-muted)]"
+          title="Work standing here counts as finished"
+        >
+          ✓
+        </span>
+      )}
+      <span className="ml-auto rounded-full bg-[var(--surface-raised)] px-2 py-0.5 text-[0.6875rem] tabular-nums text-[var(--ink-secondary)]">
+        {count}
+      </span>
+      {/* A task is written into a column rather than into the board: the one
+          you press decides where the task starts. Never into the unsorted
+          pile — that is where work lands, not somewhere to file it. */}
+      {canEdit && onNewTask && col.column && (
+        <button
+          onClick={() => onNewTask(col.column!.id)}
+          className="rounded p-0.5 text-[var(--ink-muted)] transition hover:text-[var(--accent)]"
+          aria-label={`New task in ${col.name}`}
+          title={`New task in ${col.name}`}
+        >
+          <PlusMark />
+        </button>
+      )}
+      {canManage && col.column && (
+        <button
+          ref={button}
+          // The field is filled from the column as the panel opens rather
+          // than kept in step with it: a rename from another tab, or a save
+          // that was refused, shouldn't leave stale text behind next time.
+          onClick={() => {
+            setName(col.name);
+            setOpen((was) => !was);
+          }}
+          className="rounded p-0.5 text-[var(--ink-muted)] transition hover:text-[var(--ink)]"
+          aria-label={`Edit the ${col.name} column`}
+          aria-expanded={open}
+          title="Edit this column"
+        >
+          <MoreMark />
+        </button>
+      )}
+
+      {open && col.column && (
+        <Popover anchor={button} onClose={() => setOpen(false)}>
+          <div className="flex flex-col gap-2 p-1.5">
+            <label className="flex flex-col gap-1">
+              <span className="field-label">Name</span>
+              <input
+                value={name}
+                maxLength={MAX_COLUMN_NAME}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={commitName}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitName();
+                    setOpen(false);
+                  }
+                }}
+                className="input"
+                aria-label="Column name"
+              />
+            </label>
+
+            <div className="flex flex-col gap-1">
+              <span className="field-label">Colour</span>
+              <div className="flex flex-wrap gap-1.5">
+                {COLUMN_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => onRecolor(color)}
+                    className={`h-5 w-5 rounded-full border transition ${
+                      col.color.toLowerCase() === color.toLowerCase()
+                        ? "border-[var(--ink)]"
+                        : "border-transparent hover:border-[var(--baseline)]"
+                    }`}
+                    style={{ background: color }}
+                    aria-label={`Colour this column ${color}`}
+                    aria-pressed={col.color.toLowerCase() === color.toLowerCase()}
+                    title={color}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <label className="flex items-start gap-2 text-[0.75rem]">
+              <input
+                type="checkbox"
+                checked={col.isDone}
+                onChange={(e) => onSetDone(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Work here is finished
+                <span className="block text-[0.6875rem] text-[var(--ink-muted)]">
+                  What progress, velocity and “still blocked” are counted from
+                </span>
+              </span>
+            </label>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => onMove(-1)}
+                disabled={first}
+                className="btn-secondary flex-1 disabled:opacity-40"
+                title="Move this column left"
+              >
+                ← Left
+              </button>
+              <button
+                onClick={() => onMove(1)}
+                disabled={last}
+                className="btn-secondary flex-1 disabled:opacity-40"
+                title="Move this column right"
+              >
+                Right →
+              </button>
+            </div>
+
+            <button
+              onClick={remove}
+              className="btn-secondary text-[var(--danger)]"
+            >
+              Delete column
+            </button>
+          </div>
+        </Popover>
+      )}
+    </header>
+  );
+}
+
+/** The form both the empty board and the end of a full one are built from. */
+function ColumnForm({
+  onCreate,
+  autoFocus = false,
+  onDone,
+}: {
+  onCreate: (input: {
+    name: string;
+    color?: string;
+    isDone?: boolean;
+  }) => Promise<unknown>;
+  autoFocus?: boolean;
+  onDone?: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [color, setColor] = useState<string>(COLUMN_COLORS[0]);
+  const [isDone, setIsDone] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed || saving) return;
+    setSaving(true);
+    const created = await onCreate({ name: trimmed, color, isDone });
+    setSaving(false);
+    if (!created) return;
+    // Ready for the next one: a board is usually written a few columns at a
+    // time, and being handed an empty field back is what that wants.
+    setName("");
+    setIsDone(false);
+    onDone?.();
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-2">
+      <input
+        value={name}
+        autoFocus={autoFocus}
+        maxLength={MAX_COLUMN_NAME}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Column name"
+        aria-label="Column name"
+        className="input"
+      />
+      <div className="flex flex-wrap gap-1.5">
+        {COLUMN_COLORS.map((swatch) => (
+          <button
+            key={swatch}
+            type="button"
+            onClick={() => setColor(swatch)}
+            className={`h-5 w-5 rounded-full border transition ${
+              color === swatch
+                ? "border-[var(--ink)]"
+                : "border-transparent hover:border-[var(--baseline)]"
+            }`}
+            style={{ background: swatch }}
+            aria-label={`Colour it ${swatch}`}
+            aria-pressed={color === swatch}
+          />
+        ))}
+      </div>
+      <label className="flex items-center gap-2 text-[0.75rem] text-[var(--ink-secondary)]">
+        <input
+          type="checkbox"
+          checked={isDone}
+          onChange={(e) => setIsDone(e.target.checked)}
+        />
+        Work here is finished
+      </label>
+      <button
+        type="submit"
+        disabled={!name.trim() || saving}
+        className="btn-primary disabled:opacity-40"
+      >
+        {saving ? "Adding…" : "Add column"}
+      </button>
+    </form>
+  );
+}
+
+/** The ghost column at the end of the board: another state, written here. */
+function AddColumn({
+  onCreate,
+}: {
+  onCreate: (input: {
+    name: string;
+    color?: string;
+    isDone?: boolean;
+  }) => Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex w-[13rem] shrink-0 flex-col items-center justify-center gap-1.5 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline)] p-4 text-[0.75rem] text-[var(--ink-muted)] transition hover:border-[var(--baseline)] hover:text-[var(--ink)]"
+      >
+        <PlusMark />
+        Add column
+      </button>
+    );
+  }
+
+  return (
+    <section className="flex w-[17rem] shrink-0 flex-col rounded-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--plane)]">
+      <header className="flex items-center gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
+        <h3 className="text-[0.75rem] font-semibold tracking-tight">
+          New column
+        </h3>
+        <button
+          onClick={() => setOpen(false)}
+          className="ml-auto rounded p-0.5 text-[var(--ink-muted)] transition hover:text-[var(--ink)]"
+          aria-label="Stop adding a column"
+        >
+          <CloseIcon size={11} />
+        </button>
+      </header>
+      <div className="p-3">
+        <ColumnForm onCreate={onCreate} autoFocus />
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A tracker with nothing on it yet.
+ *
+ * Not an error and not a loading state: it is what every new project's board
+ * looks like, because this app has stopped guessing what a team's states are
+ * called. Two ways out of it — write your own column, or take the familiar set
+ * and change it — and the second is a button rather than a default, so nobody
+ * ends up with five columns they never asked for.
+ */
+function EmptyBoard({
+  canManageColumns,
+  onCreate,
+}: {
+  canManageColumns: boolean;
+  onCreate: (input: {
+    name: string;
+    color?: string;
+    isDone?: boolean;
+  }) => Promise<unknown>;
+}) {
+  const [filling, setFilling] = useState(false);
+
+  async function usePresets() {
+    setFilling(true);
+    // One after another rather than all at once: they land on the right-hand
+    // end of the board in turn, which is the order they are listed in.
+    for (const preset of COLUMN_PRESETS) await onCreate(preset);
+    setFilling(false);
+  }
+
+  return (
+    <div className="thin-scroll flex flex-1 items-start justify-center overflow-y-auto p-6">
+      <div className="flex w-full max-w-md flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline)] bg-[var(--plane)] p-5">
+        <div>
+          <h2 className="text-[0.9375rem] font-semibold tracking-tight">
+            This tracker has no columns yet
+          </h2>
+          <p className="mt-1 text-[0.75rem] leading-relaxed text-[var(--ink-secondary)]">
+            {canManageColumns
+              ? "A board is made of the states your work actually moves through — name them yourself, and pick the colour each one is drawn in. Nothing here is fixed: rename, recolour, reorder or delete any of them later."
+              : "Nobody has set this board up yet. Whoever owns the project decides what its columns are called."}
+          </p>
+        </div>
+
+        {canManageColumns && (
+          <>
+            <ColumnForm onCreate={onCreate} />
+            <div className="flex items-center gap-2 text-[0.6875rem] text-[var(--ink-muted)]">
+              <span className="h-px flex-1 bg-[var(--hairline)]" />
+              or
+              <span className="h-px flex-1 bg-[var(--hairline)]" />
+            </div>
+            <div>
+              <button
+                onClick={usePresets}
+                disabled={filling}
+                className="btn-secondary w-full disabled:opacity-40"
+              >
+                {filling ? "Adding…" : "Start from a familiar set"}
+              </button>
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-[var(--ink-muted)]">
+                {COLUMN_PRESETS.map((preset) => (
+                  <span key={preset.name} className="flex items-center gap-1">
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ background: preset.color }}
+                    />
+                    {preset.name}
+                  </span>
+                ))}
+              </p>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -530,13 +989,13 @@ const TaskCard = memo(function TaskCard({
   steps,
   links,
   parentTitle,
-  hiddenStatuses,
+  columns,
   canEdit,
   developers,
   fields,
   dragging,
   onDragStart,
-  onStatusChange,
+  onColumnChange,
   onAssign,
   onOpen,
   onEdit,
@@ -548,8 +1007,8 @@ const TaskCard = memo(function TaskCard({
   links?: TaskLinks;
   /** The task this card is a step of, when it is one. */
   parentTitle?: string;
-  /** Read once for the board and handed down, not read per card. */
-  hiddenStatuses: TaskStatus[];
+  /** The board's columns, read once for the board and handed down. */
+  columns: ProjectColumn[];
   /** Whether this viewer may change the work, or only read it. */
   canEdit: boolean;
   developers: Developer[];
@@ -557,7 +1016,7 @@ const TaskCard = memo(function TaskCard({
   fields: TaskFields;
   dragging: boolean;
   onDragStart: (state: DragState) => void;
-  onStatusChange: (id: string, status: TaskStatus) => void;
+  onColumnChange: (id: string, columnId: string | null) => void;
   onAssign: (id: string, assigneeIds: string[]) => void;
   /** Reading the task: what a click on the card asks for. */
   onOpen: (id: string) => void;
@@ -777,11 +1236,11 @@ const TaskCard = memo(function TaskCard({
 
       <div className="mt-2.5 flex items-center gap-1.5">
         <div className="min-w-0 flex-1">
-          <StatusPill
-            status={task.status}
-            hidden={hiddenStatuses}
+          <ColumnPill
+            columnId={task.columnId}
+            columns={columns}
             disabled={!canEdit}
-            onChange={(status) => onStatusChange(task.id, status)}
+            onChange={(columnId) => onColumnChange(task.id, columnId)}
           />
         </div>
         <AssigneePicker
@@ -807,6 +1266,17 @@ function PlusMark() {
         strokeWidth="1.7"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+/** And the mark on every "there is more here" button: three dots. */
+function MoreMark() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <circle cx="2.5" cy="6" r="1" fill="currentColor" />
+      <circle cx="6" cy="6" r="1" fill="currentColor" />
+      <circle cx="9.5" cy="6" r="1" fill="currentColor" />
     </svg>
   );
 }

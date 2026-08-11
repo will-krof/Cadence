@@ -16,6 +16,16 @@ const TAG_ORDER: Prisma.ProjectTagOrderByWithRelationInput[] = [
 ];
 
 /**
+ * Tracker columns read left to right, which is what `order` is. Made-at is the
+ * tie-break, so two columns added in the same breath keep the order they were
+ * written in rather than swapping between requests.
+ */
+const COLUMN_ORDER: Prisma.ProjectColumnOrderByWithRelationInput[] = [
+  { order: "asc" },
+  { createdAt: "asc" },
+];
+
+/**
  * What a project looks like on the wire. Named rather than "everything the row
  * has", so the account that owns it isn't part of what a member downloads.
  */
@@ -46,4 +56,7 @@ export const PROJECT_FIELDS = {
   // In the order they were made, so a rename or a recolour never reshuffles
   // the row of chips under the cursor.
   tags: { orderBy: TAG_ORDER },
+  // The tracker's own columns, left to right. A project that has never been
+  // given any sends an empty list, which is what an empty tracker is.
+  columns: { orderBy: COLUMN_ORDER },
 } as const;

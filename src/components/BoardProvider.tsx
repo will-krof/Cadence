@@ -14,14 +14,16 @@ import {
   DeveloperInput,
   Membership,
   Project,
+  ProjectColumn,
   ProjectRole,
   ProjectTag,
   Sprint,
   Task,
   TaskPriority,
   TaskRow,
-  TaskStatus,
   UNPLANNED,
+  UNSORTED,
+  doneColumnIds,
 } from "@/lib/types";
 import { startOfDay } from "@/lib/dates";
 import { useFeedback } from "@/components/Feedback";
@@ -33,7 +35,8 @@ interface TaskInput {
   /** Empty where the work hasn't been placed in time — both ends or neither. */
   startDate: string | null;
   endDate: string | null;
-  status?: TaskStatus;
+  /** Which tracker column it lands in. Unsaid is the first one on the board. */
+  columnId?: string | null;
   /** What it is worth doing first. Ordinary work when nobody says otherwise. */
   priority?: TaskPriority;
   /** Who is on it, by id: up to four, in the order they were picked. */
@@ -62,6 +65,16 @@ interface RolePatch {
 interface TagPatch {
   name?: string;
   color?: string;
+}
+
+/**
+ * What can be changed about a tracker column: its name, its colour, and
+ * whether work standing in it counts as finished.
+ */
+interface ColumnPatch {
+  name?: string;
+  color?: string;
+  isDone?: boolean;
 }
 
 interface SprintPatch {
@@ -134,6 +147,28 @@ interface BoardContextValue {
     name: string,
     color: string
   ) => Promise<ProjectTag | null>;
+  /**
+   * The tracker's columns, in board order. Read from the open project rather
+   * than fetched: they arrive with it, and every screen that draws a column
+   * has to agree with every other one within the same render.
+   */
+  columns: ProjectColumn[];
+  createColumn: (
+    projectId: string,
+    input: { name: string; color?: string; isDone?: boolean }
+  ) => Promise<ProjectColumn | null>;
+  updateColumn: (
+    projectId: string,
+    columnId: string,
+    patch: ColumnPatch
+  ) => Promise<void>;
+  /**
+   * Deletes a column outright. The work standing in it is not deleted with
+   * it — it comes back unsorted, here as in the database.
+   */
+  deleteColumn: (projectId: string, columnId: string) => Promise<void>;
+  /** Writes the left-to-right order of the whole board in one go. */
+  reorderColumns: (projectId: string, ids: string[]) => Promise<void>;
   updateTag: (
     projectId: string,
     tagId: string,
@@ -157,7 +192,9 @@ interface BoardContextValue {
   projectLoading: boolean;
   stats: {
     total: number;
-    counts: Record<TaskStatus, number>;
+    /** How many tasks stand in each column, by id. */
+    counts: Map<string, number>;
+    /** How much of the board is standing in a column that means finished. */
     progress: number;
   };
   /**
@@ -196,6 +233,7 @@ export function useBoard() {
 const EMPTY_ROWS: TaskRow[] = [];
 const EMPTY_TASKS: Task[] = [];
 const EMPTY_SPRINTS: Sprint[] = [];
+const EMPTY_COLUMNS: ProjectColumn[] = [];
 
 /** Pulls the server's error message out of a failed response, if there is one. */
 async function errorMessage(res: Response, fallback: string) {
@@ -681,6 +719,151 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     [patchTags, setTasks, notify]
   );
 
+  /**
+   * The tracker's columns live on the project, and change the way tags and
+   * roles do — the list the server hands back is what the board draws.
+   */
+  const patchColumns = useCallback(
+    (projectId: string, update: (columns: ProjectColumn[]) => ProjectColumn[]) => {
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === projectId ? { ...p, columns: update(p.columns) } : p
+        )
+      );
+    },
+    []
+  );
+
+  const createColumn = useCallback(
+    async (
+      projectId: string,
+      input: { name: string; color?: string; isDone?: boolean }
+    ) => {
+      const res = await fetch(`/api/projects/${projectId}/columns`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not add this column."));
+        return null;
+      }
+      const created: ProjectColumn = await res.json();
+      patchColumns(projectId, (columns) => [...columns, created]);
+      return created;
+    },
+    [patchColumns, notify]
+  );
+
+  const updateColumn = useCallback(
+    async (projectId: string, columnId: string, patch: ColumnPatch) => {
+      // The header changes under the cursor and is put back if the save fails:
+      // renaming a column that waits for the network feels broken.
+      const previous = projects
+        .find((p) => p.id === projectId)
+        ?.columns.find((c) => c.id === columnId);
+      patchColumns(projectId, (columns) =>
+        columns.map((c) => (c.id === columnId ? { ...c, ...patch } : c))
+      );
+
+      const res = await fetch(
+        `/api/projects/${projectId}/columns/${columnId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        }
+      );
+      if (!res.ok) {
+        if (previous) {
+          patchColumns(projectId, (columns) =>
+            columns.map((c) => (c.id === columnId ? previous : c))
+          );
+        }
+        notify("error", await errorMessage(res, "Could not save this column."));
+        return;
+      }
+      const updated: ProjectColumn = await res.json();
+      patchColumns(projectId, (columns) =>
+        columns.map((c) => (c.id === columnId ? updated : c))
+      );
+    },
+    [projects, patchColumns, notify]
+  );
+
+  /**
+   * Deleting a column deletes the column. The work that stood in it is let go
+   * of rather than deleted — the server nulls the tasks' column, and the board
+   * has to say the same thing in the same breath or a card sits in a column
+   * that no longer exists until the next reload.
+   */
+  const deleteColumn = useCallback(
+    async (projectId: string, columnId: string) => {
+      const name =
+        projects
+          .find((p) => p.id === projectId)
+          ?.columns.find((c) => c.id === columnId)?.name ?? "Column";
+
+      const res = await fetch(
+        `/api/projects/${projectId}/columns/${columnId}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        notify("error", await errorMessage(res, "Could not delete this column."));
+        return;
+      }
+      const { unsorted = 0 }: { unsorted?: number } = await res
+        .json()
+        .catch(() => ({}));
+
+      patchColumns(projectId, (columns) =>
+        columns.filter((c) => c.id !== columnId)
+      );
+      setTasks((prev) =>
+        prev.map((t) => (t.columnId === columnId ? { ...t, columnId: null } : t))
+      );
+      notify(
+        "success",
+        unsorted === 0
+          ? `“${name}” deleted.`
+          : `“${name}” deleted — ${unsorted} ${
+              unsorted === 1 ? "task is" : "tasks are"
+            } now unsorted.`
+      );
+    },
+    [projects, patchColumns, setTasks, notify]
+  );
+
+  /** The board's own left-to-right order, written whole. */
+  const reorderColumns = useCallback(
+    async (projectId: string, ids: string[]) => {
+      const previous = projects.find((p) => p.id === projectId)?.columns;
+      // The board moves under the hand and is put back if the write is refused.
+      patchColumns(projectId, (columns) => {
+        const byId = new Map(columns.map((c) => [c.id, c]));
+        const next = ids
+          .map((id) => byId.get(id))
+          .filter((c): c is ProjectColumn => c != null);
+        const rest = columns.filter((c) => !ids.includes(c.id));
+        return [...next, ...rest].map((c, order) => ({ ...c, order }));
+      });
+
+      const res = await fetch(`/api/projects/${projectId}/columns`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order: ids }),
+      });
+      if (!res.ok) {
+        if (previous) patchColumns(projectId, () => previous);
+        notify("error", await errorMessage(res, "Could not reorder the board."));
+        return;
+      }
+      const saved: ProjectColumn[] = await res.json();
+      patchColumns(projectId, () => saved);
+    },
+    [projects, patchColumns, notify]
+  );
+
   const createTask = useCallback(
     async (input: TaskInput): Promise<string | null> => {
       if (!activeId) return "No project is open.";
@@ -1084,20 +1267,25 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     [notify]
   );
 
+  /** The open project's columns, in board order. Empty is an empty tracker. */
+  const columns = activeProject?.columns ?? EMPTY_COLUMNS;
+
   // The boards show one sprint, so their tally counts that sprint's work.
+  // Counted per column rather than per status: what the states are is the
+  // project's answer now, and "finished" is whichever of them says so.
   const stats = useMemo(() => {
     const total = boardRows.length;
-    const counts: Record<TaskStatus, number> = {
-      TODO: 0,
-      IN_PROGRESS: 0,
-      IN_TEST: 0,
-      ON_HOLD: 0,
-      DONE: 0,
-    };
-    for (const t of boardRows) counts[t.status]++;
-    const progress = total === 0 ? 0 : (counts.DONE / total) * 100;
+    const counts = new Map<string, number>();
+    const done = doneColumnIds(columns);
+    let finished = 0;
+    for (const t of boardRows) {
+      const key = t.columnId ?? UNSORTED;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (t.columnId && done.has(t.columnId)) finished++;
+    }
+    const progress = total === 0 ? 0 : (finished / total) * 100;
     return { total, counts, progress };
-  }, [boardRows]);
+  }, [boardRows, columns]);
 
   // Memoised: without it every provider render hands consumers a new object and
   // re-renders every board, however little actually changed.
@@ -1121,6 +1309,11 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
     createTag,
     updateTag,
     deleteTag,
+    columns,
+    createColumn,
+    updateColumn,
+    deleteColumn,
+    reorderColumns,
     tasks,
     projectTasks,
     developers,
@@ -1162,6 +1355,11 @@ export function BoardProvider({ children }: { children: React.ReactNode }) {
       createTag,
       updateTag,
       deleteTag,
+      columns,
+      createColumn,
+      updateColumn,
+      deleteColumn,
+      reorderColumns,
       updateRole,
       deleteRole,
       tasks,

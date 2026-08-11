@@ -5,14 +5,17 @@ import { formatDay, toISODate } from "@/lib/dates";
 import {
   ALL_TASK_FIELDS,
   Developer,
+  ProjectColumn,
   ProjectTag,
   Task,
   TaskFields,
   TaskPriority,
-  TaskStatus,
+  UNSORTED,
+  UNSORTED_LABEL,
+  doneColumnIds,
+  firstColumnId,
   priorityMeta,
 } from "@/lib/types";
-import { offeredStatuses, useHiddenStatuses } from "@/lib/prefs";
 import {
   amountFor,
   ESTIMATE_UNITS,
@@ -45,7 +48,8 @@ export interface TaskFormValues {
   /** Empty where the work hasn't been placed in time. */
   startDate: string | null;
   endDate: string | null;
-  status: TaskStatus;
+  /** Which tracker column it stands in; null is work standing in none. */
+  columnId: string | null;
   priority: TaskPriority;
   /** Who is on it, by id: up to four, in the order they were picked. */
   assigneeIds: string[];
@@ -72,6 +76,8 @@ const NO_TASKS: Task[] = [];
 
 /** A project with no labels of its own. */
 const NO_TAGS: ProjectTag[] = [];
+/** And the board a form has when nobody handed it one. */
+const NO_COLUMNS: ProjectColumn[] = [];
 
 /**
  * One form for both creating and editing. Passing a task switches it to edit
@@ -85,7 +91,8 @@ const NO_TAGS: ProjectTag[] = [];
  */
 export function TaskModal({
   task,
-  initialStatus,
+  columns = NO_COLUMNS,
+  initialColumnId,
   initialStartDate,
   initialEndDate,
   subtasks = [],
@@ -102,11 +109,18 @@ export function TaskModal({
 }: {
   task?: Task;
   /**
-   * What a new task starts as. The tracker writes tasks into a column, and the
-   * column it was written from is the answer — a task written under "In test"
-   * shouldn't arrive as To Do and need moving straight afterwards.
+   * The board's own columns: what this project calls the states its work moves
+   * through. Empty where the tracker has none yet, and the form then simply
+   * doesn't ask — a task can be written before the board is built.
    */
-  initialStatus?: TaskStatus;
+  columns?: ProjectColumn[];
+  /**
+   * Which column a new task starts in. The tracker writes tasks into a column,
+   * and the one it was written from is the answer — a task written under "In
+   * test" shouldn't arrive at the front of the board and need moving straight
+   * afterwards. Unsaid is the first column of the board.
+   */
+  initialColumnId?: string | null;
   /**
    * When a new task already runs somewhere. Drawing a bar on the timeline is
    * the one way of writing a task that answers this before it answers the
@@ -150,7 +164,7 @@ export function TaskModal({
   onAddSubtask?: (step: NewStep) => Promise<string | null | void>;
   onUpdateSubtask?: (
     id: string,
-    patch: { status?: TaskStatus; title?: string; assigneeIds?: string[] }
+    patch: { columnId?: string | null; title?: string; assigneeIds?: string[] }
   ) => Promise<string | null | void>;
   onDeleteSubtask?: (id: string) => Promise<string | null | void>;
 }) {
@@ -168,15 +182,21 @@ export function TaskModal({
   const [endDate, setEndDate] = useState(
     task?.endDate ? toISODate(new Date(task.endDate)) : initialEndDate ?? ""
   );
-  // A task written from a tracker column starts in that column. Nothing else
-  // asks, so everywhere else this is To Do, as it was.
-  const [status, setStatus] = useState<TaskStatus>(
-    task?.status ?? initialStatus ?? "TODO"
+  // A task written from a tracker column starts in that column; anywhere else
+  // it starts at the front of the board, and on a board with no columns yet it
+  // starts in none of them.
+  const [columnId, setColumnId] = useState<string | null>(
+    task?.columnId ?? initialColumnId ?? firstColumnId(columns)
   );
   const [priority, setPriority] = useState<TaskPriority>(
     task?.priority ?? "MEDIUM"
   );
-  const [hiddenStatuses] = useHiddenStatuses();
+  /** Which columns mean finished, for the tick beside each step. */
+  const doneIds = useMemo(() => doneColumnIds(columns), [columns]);
+  const doneColumn = useMemo(() => columns.find((c) => c.isDone) ?? null, [columns]);
+  const backlogColumn = useMemo(() => columns[0] ?? null, [columns]);
+  const stepIsDone = (step: Task) =>
+    step.columnId != null && doneIds.has(step.columnId);
   const [assigneeIds, setAssigneeIds] = useState<string[]>(
     task?.assigneeIds ?? []
   );
@@ -330,7 +350,7 @@ export function TaskModal({
       endDate: endDate && startDate && endDate < startDate
         ? startDate
         : endDate || null,
-      status,
+      columnId,
       priority,
       assigneeIds,
       tagIds,
@@ -469,20 +489,34 @@ export function TaskModal({
             )}
 
             <div className="flex flex-col gap-3.5 sm:flex-row">
-              <Field label="Status" className="flex-1">
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                  className="select"
-                >
-                  {offeredStatuses(hiddenStatuses, status).map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              {/* Not a kind of status: one says where the work is, this says
+              {/* Only where there is a board to stand in. A project whose
+                  tracker has no columns yet doesn't ask the question, and the
+                  task is written unsorted until it does. */}
+              {columns.length > 0 && (
+                <Field label="Column" className="flex-1">
+                  <select
+                    value={columnId ?? UNSORTED}
+                    onChange={(e) =>
+                      setColumnId(
+                        e.target.value === UNSORTED ? null : e.target.value
+                      )
+                    }
+                    className="select"
+                  >
+                    {/* Offered only to a task already standing in none: it is
+                        where work lands when its column goes, not a column. */}
+                    {columnId == null && (
+                      <option value={UNSORTED}>{UNSORTED_LABEL}</option>
+                    )}
+                    {columns.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              {/* Not a kind of column: one says where the work is, this says
                   which of two waiting tasks is picked up first. */}
               {fields.priority && (
                 <Field label="Priority" className="flex-1">
@@ -525,7 +559,7 @@ export function TaskModal({
                   Subtasks
                   {(subtasks.length > 0 || staged.length > 0) && (
                     <span className="ml-1.5 text-[var(--ink-muted)]">
-                      {subtasks.filter((s) => s.status === "DONE").length +
+                      {subtasks.filter(stepIsDone).length +
                         "/" +
                         (subtasks.length + staged.length)}
                     </span>
@@ -536,14 +570,26 @@ export function TaskModal({
                   <div key={step.id} className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      checked={step.status === "DONE"}
+                      checked={stepIsDone(step)}
+                      // Ticking a step moves it to whichever column this
+                      // project says means finished, and unticking it puts it
+                      // back at the front of the board. A board with no column
+                      // for either can't answer, so the tick is not offered.
+                      disabled={!doneColumn || !backlogColumn}
                       onChange={(e) =>
                         onUpdateSubtask?.(step.id, {
-                          status: e.target.checked ? "DONE" : "TODO",
+                          columnId: e.target.checked
+                            ? doneColumn?.id ?? null
+                            : backlogColumn?.id ?? null,
                         })
                       }
-                      className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-[var(--accent)]"
+                      className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-[var(--accent)] disabled:cursor-not-allowed"
                       aria-label={`${step.title} is done`}
+                      title={
+                        doneColumn && backlogColumn
+                          ? `${step.title} is done`
+                          : "This board has no column marked as finished yet"
+                      }
                     />
                     <input
                       defaultValue={step.title}
@@ -556,7 +602,7 @@ export function TaskModal({
                         }
                       }}
                       className={`input min-w-0 flex-1 ${
-                        step.status === "DONE"
+                        stepIsDone(step)
                           ? "text-[var(--ink-muted)] line-through"
                           : ""
                       }`}

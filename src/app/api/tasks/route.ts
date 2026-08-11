@@ -14,6 +14,7 @@ import { ownedProject } from "@/lib/owned";
 import { assigneeRows, parseAssignees } from "@/lib/assignees";
 import { parseTagIds } from "@/lib/task-tags";
 import { badRequest, forbidden, notFound } from "@/lib/responses";
+import { UNSORTED_LABEL } from "@/lib/types";
 import { jsonResponse } from "@/lib/json-response";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -105,6 +106,25 @@ export async function POST(request: NextRequest) {
     if (known !== tagIds.length) return notFound("Tag");
   }
 
+  // Which column it stands in. A tracker's columns are its project's own, so
+  // an id from another board is refused rather than filed under a stranger's
+  // state. Nothing said lands the task in the first column of the board — or
+  // in none at all, which is what a project whose tracker is still empty has.
+  let column: { id: string; name: string } | null = null;
+  if (parsed.data.columnId) {
+    column = await prisma.projectColumn.findFirst({
+      where: { id: parsed.data.columnId, projectId },
+      select: { id: true, name: true },
+    });
+    if (!column) return notFound("That column is not on this project —");
+  } else if (parsed.data.columnId === undefined) {
+    column = await prisma.projectColumn.findFirst({
+      where: { projectId },
+      select: { id: true, name: true },
+      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+    });
+  }
+
   // A task belongs to a sprint of its own project. Without this, an id from
   // somewhere else would file the work under a stranger's sprint.
   if (body.sprintId) {
@@ -190,7 +210,7 @@ export async function POST(request: NextRequest) {
       ...parsed.data,
       ...common,
       title,
-      status: parsed.data.status ?? "TODO",
+      columnId: column?.id ?? null,
       assignees: { create: assigneeRows(assignees) },
       tags: { create: tagIds.map((tagId) => ({ tagId })) },
       parentId,
@@ -198,10 +218,13 @@ export async function POST(request: NextRequest) {
       // What it waits on, written with it: a task that arrives already blocked
       // should never be drawn for a moment as though it weren't.
       blockedBy: { create: blockers.map((blockerId) => ({ blockerId })) },
-      // The first line of its history is being written down at all.
+      // The first line of its history is being written down at all. The
+      // column's name is written beside its id, so the line still reads once
+      // the column has been renamed or deleted.
       events: {
         create: {
-          status: parsed.data.status ?? "TODO",
+          columnId: column?.id ?? null,
+          columnName: column?.name ?? UNSORTED_LABEL,
           by: viewerName(viewer),
         },
       },
@@ -223,7 +246,16 @@ export async function POST(request: NextRequest) {
           title: step.title,
           parentId: task.id,
           order: from + i + 1,
-          events: { create: { status: "TODO", by: viewerName(viewer) } },
+          // A step starts where its task started: the same column, so a job
+          // and its parts open on the same part of the board.
+          columnId: column?.id ?? null,
+          events: {
+            create: {
+              columnId: column?.id ?? null,
+              columnName: column?.name ?? UNSORTED_LABEL,
+              by: viewerName(viewer),
+            },
+          },
         },
         select: { id: true },
       })

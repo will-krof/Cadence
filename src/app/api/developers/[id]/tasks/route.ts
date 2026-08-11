@@ -29,14 +29,16 @@ export async function GET(
   });
   if (!reachable) return notFound("Developer");
 
-  // The card lists a title, a status, a due date and the project — nothing else
-  // needs to travel.
+  // The card lists a title, the column it stands in, a due date and the
+  // project — nothing else needs to travel. The column comes whole rather than
+  // as an id: this list spans projects, and each one names its own columns, so
+  // there is no single board to look an id up in.
   const tasks = await prisma.task.findMany({
     where: { assignees: { some: { developerId: id } }, ...teamFilter(viewer) },
     select: {
       id: true,
       title: true,
-      status: true,
+      column: { select: { name: true, color: true, isDone: true } },
       endDate: true,
       project: { select: { id: true, name: true } },
     },

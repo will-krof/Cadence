@@ -8,7 +8,8 @@ import {
   DeveloperTask,
   EMPLOYMENT_TYPES,
   languageList,
-  statusMeta,
+  UNSORTED_COLOR,
+  UNSORTED_LABEL,
   workLocationLabel,
   workStatusMeta,
 } from "@/lib/types";
@@ -88,7 +89,10 @@ export function ProfileResume({
   /** Anything that belongs after the résumé, like archiving or deleting. */
   footer?: React.ReactNode;
 }) {
-  const openCount = tasks?.filter((t) => t.status !== "DONE").length ?? 0;
+  // Open work is work not standing in a column its own project calls
+  // finished. Which columns those are is each project's answer, so the task
+  // arrives carrying it rather than being matched against a list here.
+  const openCount = tasks?.filter((t) => t.column?.isDone !== true).length ?? 0;
 
   const spoken = languageList(person.languages);
 
@@ -282,7 +286,8 @@ export function ProfileResume({
         {tasks && tasks.length > 0 && (
           <ul className="thin-scroll -mx-1 max-h-72 overflow-y-auto px-1">
             {tasks.map((task) => {
-              const meta = statusMeta(task.status);
+              const column = task.column;
+              const color = column?.color ?? UNSORTED_COLOR;
               return (
                 <li
                   key={task.id}
@@ -297,14 +302,14 @@ export function ProfileResume({
                   <span
                     className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium"
                     style={{
-                      background: `color-mix(in srgb, ${meta.color} 14%, var(--surface-raised))`,
+                      background: `color-mix(in srgb, ${color} 14%, var(--surface-raised))`,
                     }}
                   >
                     <span
                       className="h-1.5 w-1.5 rounded-full"
-                      style={{ background: meta.color }}
+                      style={{ background: color }}
                     />
-                    {meta.label}
+                    {column?.name ?? UNSORTED_LABEL}
                   </span>
                   <span className="shrink-0 text-[0.6875rem] tabular-nums text-[var(--ink-muted)]">
                     {task.endDate ? formatDay(task.endDate) : "No dates"}

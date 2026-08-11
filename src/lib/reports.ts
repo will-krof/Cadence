@@ -1,4 +1,4 @@
-import { TaskStatus } from "@/lib/types";
+import { UNSORTED, UNSORTED_COLOR, UNSORTED_LABEL } from "@/lib/types";
 
 /**
  * What a project's numbers are worked out from, and what they come to.
@@ -13,14 +13,37 @@ import { TaskStatus } from "@/lib/types";
  * nothing.
  */
 
-/** The statuses, in the order every chart stacks them. */
-export const FLOW_ORDER: TaskStatus[] = [
-  "TODO",
-  "ON_HOLD",
-  "IN_PROGRESS",
-  "IN_TEST",
-  "DONE",
-];
+/**
+ * A tracker column, as the arithmetic needs it: where it sits on the board,
+ * and whether standing in it means finished.
+ *
+ * Nothing here reads a column's name. A team calls its last column Done,
+ * Shipped, Live or Готово, and every one of them means the same thing — which
+ * is what `isDone` is for.
+ */
+export interface ReportColumn {
+  id: string;
+  name: string;
+  color: string;
+  order: number;
+  isDone: boolean;
+}
+
+/**
+ * The buckets every chart stacks, left to right: the project's own columns in
+ * board order, with unsorted work at the front when there is any. Work standing
+ * in no column is still work, and a chart that quietly dropped it would be a
+ * chart that disagrees with the board.
+ */
+export function flowOrder(columns: ReportColumn[], hasUnsorted: boolean) {
+  const ids = columns.map((c) => c.id);
+  return hasUnsorted ? [UNSORTED, ...ids] : ids;
+}
+
+/** The bucket a task falls in: its column, or the unsorted pile. */
+function bucketOf(columnId: string | null) {
+  return columnId ?? UNSORTED;
+}
 
 /** How far back the day-by-day charts look, unless the work is younger. */
 export const WINDOW_DAYS = 84;
@@ -29,7 +52,7 @@ const DAY = 24 * 60 * 60 * 1000;
 
 export interface ReportTask {
   id: string;
-  status: TaskStatus;
+  columnId: string | null;
   priority: string;
   createdAt: Date;
   startDate: Date | null;
@@ -44,7 +67,7 @@ export interface ReportTask {
 
 export interface ReportEvent {
   taskId: string;
-  status: TaskStatus;
+  columnId: string | null;
   at: Date;
 }
 
@@ -77,25 +100,26 @@ function startOfWeek(at: Date) {
 
 /**
  * The state of the whole board on each of the last so-many days: how many tasks
- * stood in each status at the end of that day.
+ * stood in each column at the end of that day.
  *
  * This is the cumulative flow diagram, and it is the one chart that says more
  * than the boards do — the band that widens is where work is piling up, and the
  * gap between the top edge and the bottom band is everything not finished yet.
  *
- * Worked out by replaying the history rather than by asking the tasks: a task's
- * status today says nothing about where it stood three weeks ago. Events are
+ * Worked out by replaying the history rather than by asking the tasks: where a
+ * task stands today says nothing about where it stood three weeks ago. Events are
  * walked once in order, carrying each task's current state forward, and the
  * counts are snapshotted at each day boundary — so the cost is the events plus
  * the days, not one query per day.
  *
  * A task with no history at all — written before the app kept any — joins the
- * board on the day it was created, in the status it holds now. That is the only
+ * board on the day it was created, in the column it stands in now. That is the only
  * honest reading available, and it is noted rather than hidden.
  */
 export function cumulativeFlow(
   tasks: ReportTask[],
   events: ReportEvent[],
+  buckets: string[],
   today: Date,
   windowDays = WINDOW_DAYS
 ) {
@@ -111,7 +135,7 @@ export function cumulativeFlow(
   const seen = new Set(moves.map((e) => e.taskId));
   for (const task of tasks) {
     if (seen.has(task.id)) continue;
-    moves.push({ taskId: task.id, status: task.status, at: task.createdAt });
+    moves.push({ taskId: task.id, columnId: task.columnId, at: task.createdAt });
   }
   moves.sort((a, b) => a.at.getTime() - b.at.getTime());
   if (moves.length === 0) return [];
@@ -121,8 +145,11 @@ export function cumulativeFlow(
   const wanted = new Date(last.getTime() - (windowDays - 1) * DAY);
   const first = earliest > wanted ? earliest : wanted;
 
-  const at = new Map<string, TaskStatus>();
-  const counts = new Map<TaskStatus, number>(FLOW_ORDER.map((s) => [s, 0]));
+  // A column deleted since a move was recorded leaves the line pointing at
+  // nothing, and the task falls into the unsorted band — which is where the
+  // board puts it too.
+  const at = new Map<string, string>();
+  const counts = new Map<string, number>(buckets.map((b) => [b, 0]));
   let cursor = 0;
 
   const out: { day: string; total: number; counts: Record<string, number> }[] = [];
@@ -132,13 +159,14 @@ export function cumulativeFlow(
       const move = moves[cursor++];
       const before = at.get(move.taskId);
       if (before) counts.set(before, (counts.get(before) ?? 1) - 1);
-      at.set(move.taskId, move.status);
-      counts.set(move.status, (counts.get(move.status) ?? 0) + 1);
+      const bucket = bucketOf(move.columnId);
+      at.set(move.taskId, bucket);
+      counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
     }
     out.push({
       day: dayKey(day),
       total: at.size,
-      counts: Object.fromEntries(FLOW_ORDER.map((s) => [s, counts.get(s) ?? 0])),
+      counts: Object.fromEntries(buckets.map((b) => [b, counts.get(b) ?? 0])),
     });
   }
   return out;
@@ -149,11 +177,14 @@ export function cumulativeFlow(
  * to Done again was finished when it was finished the last time — anything else
  * counts one job twice.
  */
-function finishedAt(events: ReportEvent[]) {
+function finishedAt(events: ReportEvent[], doneIds: Set<string>) {
   const done = new Map<string, Date>();
   for (const event of events) {
-    if (event.status === "DONE") done.set(event.taskId, event.at);
-    else done.delete(event.taskId);
+    if (event.columnId && doneIds.has(event.columnId)) {
+      done.set(event.taskId, event.at);
+    } else {
+      done.delete(event.taskId);
+    }
   }
   return done;
 }
@@ -165,11 +196,12 @@ function finishedAt(events: ReportEvent[]) {
 export function throughput(
   tasks: ReportTask[],
   events: ReportEvent[],
+  doneIds: Set<string>,
   today: Date,
   weeks = 12
 ) {
   const known = new Set(tasks.map((t) => t.id));
-  const done = finishedAt(events.filter((e) => known.has(e.taskId)));
+  const done = finishedAt(events.filter((e) => known.has(e.taskId)), doneIds);
 
   const firstWeek = startOfWeek(new Date(today.getTime() - (weeks - 1) * 7 * DAY));
   const buckets = new Map<string, number>();
@@ -196,14 +228,24 @@ export function throughput(
  * The median is the headline, not the average — one job that took six months
  * drags a mean somewhere no real task has ever been.
  */
-export function cycleTimes(tasks: ReportTask[], events: ReportEvent[]) {
+export function cycleTimes(
+  tasks: ReportTask[],
+  events: ReportEvent[],
+  columns: ReportColumn[],
+  doneIds: Set<string>
+) {
   const known = new Set(tasks.map((t) => t.id));
   const mine = events.filter((e) => known.has(e.taskId));
-  const done = finishedAt(mine);
+  const done = finishedAt(mine, doneIds);
 
+  // "Picked up" is leaving the first column of the board — whatever the team
+  // calls it. A board with no columns at all has no such moment, and every
+  // task is then counted from when it was written.
+  const backlogId = columns[0]?.id ?? null;
   const started = new Map<string, Date>();
   for (const event of mine) {
-    if (event.status === "TODO" || started.has(event.taskId)) continue;
+    if (started.has(event.taskId)) continue;
+    if (backlogId != null && (event.columnId ?? null) === backlogId) continue;
     started.set(event.taskId, event.at);
   }
   const written = new Map(tasks.map((t) => [t.id, t.createdAt]));
@@ -243,13 +285,17 @@ export function cycleTimes(tasks: ReportTask[], events: ReportEvent[]) {
 }
 
 /** What each sprint finished — the run of them is what velocity means. */
-export function velocity(tasks: ReportTask[], sprints: ReportSprint[]) {
+export function velocity(
+  tasks: ReportTask[],
+  sprints: ReportSprint[],
+  doneIds: Set<string>
+) {
   return sprints
     .slice()
     .sort((a, b) => a.number - b.number)
     .map((sprint) => {
       const mine = tasks.filter((t) => t.sprintId === sprint.id);
-      const done = mine.filter((t) => t.status === "DONE");
+      const done = mine.filter((t) => t.columnId && doneIds.has(t.columnId));
       return {
         id: sprint.id,
         number: sprint.number,
@@ -272,17 +318,29 @@ export function buildReport({
   tasks,
   events,
   sprints,
+  columns,
   today = new Date(),
 }: {
   tasks: ReportTask[];
   events: ReportEvent[];
   sprints: ReportSprint[];
+  /** The project's own columns, in board order. */
+  columns: ReportColumn[];
   today?: Date;
 }) {
   const midnight = startOfDay(today);
-  const blockers = new Map(tasks.map((t) => [t.id, t.status]));
+  const doneIds = new Set(columns.filter((c) => c.isDone).map((c) => c.id));
+  const isDone = (columnId: string | null) =>
+    columnId != null && doneIds.has(columnId);
+  const finished = new Map(tasks.map((t) => [t.id, isDone(t.columnId)]));
 
-  const counts = new Map<TaskStatus, number>(FLOW_ORDER.map((s) => [s, 0]));
+  // Work standing in no column at all gets a bucket of its own, and only when
+  // there is some: a board where everything is sorted shouldn't grow an empty
+  // band on every chart.
+  const hasUnsorted = tasks.some((t) => t.columnId == null);
+  const buckets = flowOrder(columns, hasUnsorted);
+
+  const counts = new Map<string, number>(buckets.map((b) => [b, 0]));
   const priorities = new Map<string, number>();
   const byTag = new Map<string, number>();
   const byPerson = new Map<
@@ -295,12 +353,16 @@ export function buildReport({
   let unassigned = 0;
   let undated = 0;
   let sized = 0;
+  let done = 0;
   let estimateMinutes = 0;
   let estimateDone = 0;
 
   for (const task of tasks) {
-    counts.set(task.status, (counts.get(task.status) ?? 0) + 1);
+    const bucket = bucketOf(task.columnId);
+    counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
     priorities.set(task.priority, (priorities.get(task.priority) ?? 0) + 1);
+    const taskDone = isDone(task.columnId);
+    if (taskDone) done++;
     for (const tag of task.tags) {
       byTag.set(tag.tagId, (byTag.get(tag.tagId) ?? 0) + 1);
     }
@@ -311,7 +373,7 @@ export function buildReport({
         estimateMinutes: 0,
       };
       load.total++;
-      if (task.status === "DONE") load.done++;
+      if (taskDone) load.done++;
       load.estimateMinutes += task.estimateMinutes ?? 0;
       byPerson.set(on.developerId, load);
     }
@@ -321,19 +383,19 @@ export function buildReport({
     if (task.estimateMinutes != null) {
       sized++;
       estimateMinutes += task.estimateMinutes;
-      if (task.status === "DONE") estimateDone += task.estimateMinutes;
+      if (taskDone) estimateDone += task.estimateMinutes;
     }
     // Blocked is blocked *now*: waiting on something that isn't finished. Work
     // whose blockers are all done is simply ready, and counting it as held up
     // would be the report disagreeing with the board.
     if (
-      task.status !== "DONE" &&
-      task.blockedBy.some((link) => blockers.get(link.blockerId) !== "DONE")
+      !taskDone &&
+      task.blockedBy.some((link) => finished.get(link.blockerId) !== true)
     ) {
       blocked++;
     }
     if (
-      task.status !== "DONE" &&
+      !taskDone &&
       task.endDate != null &&
       startOfDay(task.endDate) < midnight
     ) {
@@ -342,7 +404,19 @@ export function buildReport({
   }
 
   const total = tasks.length;
-  const done = counts.get("DONE") ?? 0;
+
+  // Every bucket a chart draws, with what it is called and what colour it is —
+  // so nothing downstream has to hold a list of statuses to look names up in.
+  const byColumn = buckets.map((bucket) => {
+    const column = columns.find((c) => c.id === bucket);
+    return {
+      columnId: bucket,
+      name: column?.name ?? UNSORTED_LABEL,
+      color: column?.color ?? UNSORTED_COLOR,
+      isDone: column?.isDone ?? false,
+      count: counts.get(bucket) ?? 0,
+    };
+  });
 
   return {
     generatedAt: today.toISOString(),
@@ -351,10 +425,10 @@ export function buildReport({
     totals: {
       tasks: total,
       done,
-      inProgress: counts.get("IN_PROGRESS") ?? 0,
-      inTest: counts.get("IN_TEST") ?? 0,
-      onHold: counts.get("ON_HOLD") ?? 0,
-      todo: counts.get("TODO") ?? 0,
+      /** Everything not standing in a column that counts as finished. */
+      open: total - done,
+      /** Work standing in no column at all, which the board says too. */
+      unsorted: counts.get(UNSORTED) ?? 0,
       blocked,
       overdue,
       unassigned,
@@ -363,10 +437,7 @@ export function buildReport({
       estimateMinutes,
       estimateDoneMinutes: estimateDone,
     },
-    byStatus: FLOW_ORDER.map((status) => ({
-      status,
-      count: counts.get(status) ?? 0,
-    })),
+    byColumn,
     byPriority: ["URGENT", "HIGH", "MEDIUM", "LOW"].map((priority) => ({
       priority,
       count: priorities.get(priority) ?? 0,
@@ -377,10 +448,10 @@ export function buildReport({
     byPerson: [...byPerson]
       .map(([developerId, load]) => ({ developerId, ...load }))
       .sort((a, b) => b.total - a.total),
-    flow: cumulativeFlow(tasks, events, today),
-    throughput: throughput(tasks, events, today),
-    cycleTime: cycleTimes(tasks, events),
-    velocity: velocity(tasks, sprints),
+    flow: cumulativeFlow(tasks, events, buckets, today),
+    throughput: throughput(tasks, events, doneIds, today),
+    cycleTime: cycleTimes(tasks, events, columns, doneIds),
+    velocity: velocity(tasks, sprints, doneIds),
   };
 }
 

@@ -23,6 +23,7 @@ export function PeopleSection({
   developers,
   memberships,
   tasks,
+  doneColumnIds: done,
   loading,
   canEdit,
   onAdd,
@@ -36,7 +37,9 @@ export function PeopleSection({
   people: Developer[];
   developers: Developer[];
   memberships: Membership[];
-  tasks: { assigneeIds: string[]; status: string }[];
+  tasks: { assigneeIds: string[]; columnId: string | null }[];
+  /** Which of the project's columns mean the work is finished. */
+  doneColumnIds: Set<string>;
   loading: boolean;
   canEdit: boolean;
   onAdd: (projectId: string, developerId: string) => Promise<void>;
@@ -66,7 +69,7 @@ export function PeopleSection({
   const openCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const task of tasks) {
-      if (task.status === "DONE") continue;
+      if (task.columnId != null && done.has(task.columnId)) continue;
       // A shared task counts once for everybody on it: what the number means
       // is "how much is on their plate", and it is on all of theirs.
       for (const id of task.assigneeIds) {
@@ -74,7 +77,7 @@ export function PeopleSection({
       }
     }
     return counts;
-  }, [tasks]);
+  }, [tasks, done]);
 
   // Who can be added is a question about the membership list, not about who is
   // drawn below it: somebody carrying a task is listed here without being on

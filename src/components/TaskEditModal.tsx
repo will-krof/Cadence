@@ -34,6 +34,7 @@ export function TaskEditModal({
 }) {
   const {
     activeProject,
+    columns,
     projectTasks,
     assignable,
     createTask,
@@ -57,6 +58,7 @@ export function TaskEditModal({
     return (
       <TaskView
         task={task}
+        columns={columns}
         subtasks={subtasks}
         projectTasks={projectTasks}
         canEdit={canEdit}
@@ -76,6 +78,7 @@ export function TaskEditModal({
       // one row.
       projectTasks={projectTasks}
       developers={assignable}
+      columns={columns}
       tags={activeProject?.tags}
       fields={fields}
       onClose={onClose}
@@ -103,6 +106,8 @@ export function TaskEditModal({
           startDate: task.startDate,
           endDate: task.endDate,
           assigneeIds: step.assigneeIds,
+          // A step starts in the same column as the task it is part of.
+          columnId: task.columnId,
           parentId: task.id,
         })
       }

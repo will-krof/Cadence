@@ -12,11 +12,11 @@ import { useId, useState } from "react";
  *
  *  · **Colour never carries meaning alone.** Every series is labelled, every
  *    chart has a legend when it has more than one, and each one can be read as
- *    a table instead. The statuses are drawn in the same colours the boards use
- *    — a report that recoloured them would be a second opinion about what "in
- *    progress" looks like — and those colours are a status palette rather than
- *    a categorical one: Done and On hold sit close enough under red-green
- *    colour blindness that hue alone would not separate them. Labels do.
+ *    a table instead. Tracker columns are drawn in the colours the team chose
+ *    for them — a report that recoloured them would be a second opinion about
+ *    what the board says — and those are colours somebody picked rather than a
+ *    palette validated for separation, so two of them can easily sit close
+ *    together under red-green colour blindness. Labels are what separate them.
  *  · **Text wears ink, marks wear colour.** No number is ever painted in its
  *    series' colour.
  *  · **A 2px gap of the surface between neighbouring fills**, so two bands of
@@ -357,7 +357,7 @@ export interface FlowDay {
 }
 
 /**
- * The cumulative flow diagram: how much work stood in each status, day by day.
+ * The cumulative flow diagram: how much work stood in each column, day by day.
  *
  * The one chart here that says more than the boards do. The top edge is
  * everything the project has ever held, so it rising is scope arriving; the
@@ -428,7 +428,7 @@ export function FlowChart({
           style={{ height }}
           preserveAspectRatio="none"
           role="img"
-          aria-label={`Work by status over the last ${days.length} days, ${days[0].day} to ${
+          aria-label={`Work by column over the last ${days.length} days, ${days[0].day} to ${
             days[days.length - 1].day
           }`}
           onMouseLeave={() => setAt(null)}
@@ -539,9 +539,10 @@ export function FlowChart({
 /* ------------------------------------------------------------ table view */
 
 /**
- * The same numbers as rows. Required rather than a nicety: three of the status
- * colours sit below 3:1 against the light surface, and the rule for that is
- * that the reading must also be available without colour at all.
+ * The same numbers as rows. Required rather than a nicety: a column's colour is
+ * whatever the team picked, some of which sit below 3:1 against the light
+ * surface, and the rule for that is that the reading must also be available
+ * without colour at all.
  */
 export function TableView({
   caption,

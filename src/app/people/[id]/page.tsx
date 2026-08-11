@@ -82,7 +82,9 @@ export default async function ProfilePage({
             select: {
               id: true,
               title: true,
-              status: true,
+              // The column it stands in, carried whole: this list spans
+              // projects, and each one names its own columns.
+              column: { select: { name: true, color: true, isDone: true } },
               endDate: true,
               project: { select: { id: true, name: true } },
             },

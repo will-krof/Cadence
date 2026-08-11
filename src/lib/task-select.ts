@@ -8,7 +8,9 @@ export const TASK_FIELDS = {
   title: true,
   description: true,
   link: true,
-  status: true,
+  // Which column of its project's tracker it stands in, by id. Null is work
+  // nobody has sorted — the board draws that pile on its own.
+  columnId: true,
   priority: true,
   startDate: true,
   endDate: true,

@@ -11,20 +11,19 @@ import { MAX_ASSIGNEES } from "@/lib/assignees";
 import {
   Developer,
   PRIORITY_OPTIONS,
+  ProjectColumn,
   ProjectTag,
   Sprint,
   TaskPriority,
-  TaskStatus,
   UNPLANNED,
+  UNSORTED,
+  UNSORTED_COLOR,
+  UNSORTED_LABEL,
+  columnMeta,
   priorityMeta,
-  statusMeta,
 } from "@/lib/types";
 import { formatRange } from "@/lib/dates";
 import { safeColor } from "@/lib/sanitize";
-import { offeredStatuses } from "@/lib/prefs";
-
-/** Nothing put away: a stable empty list, so a default can't churn a memo. */
-const NONE_HIDDEN: TaskStatus[] = [];
 
 /**
  * A `<select>` that only holds its options once someone reaches for them.
@@ -593,7 +592,7 @@ export function AssigneeField({
  * the row that opened it: a board row lives inside two scrolling boxes, and
  * anything drawn inside one of those is cut off at its edge.
  */
-function Popover({
+export function Popover({
   anchor,
   onClose,
   children,
@@ -687,46 +686,67 @@ export function Stat({
   );
 }
 
-export function StatusPill({
-  status,
-  hidden = NONE_HIDDEN,
+export function ColumnPill({
+  columnId,
+  columns,
   onChange,
   disabled,
 }: {
-  status: TaskStatus;
+  /** Which column the task stands in; null is work nobody has sorted. */
+  columnId: string | null;
   /**
-   * The statuses put away in the tracker, passed down rather than read here: a
-   * board draws hundreds of these, and each one subscribing to the same
-   * preference on its own is hundreds of listeners for one answer.
+   * The board's columns, passed down rather than read here: a board draws
+   * hundreds of these, and each one reaching for the open project on its own
+   * is hundreds of subscriptions to one answer.
    */
-  hidden?: TaskStatus[];
-  onChange: (status: TaskStatus) => void;
+  columns: ProjectColumn[];
+  onChange: (columnId: string | null) => void;
   disabled?: boolean;
 }) {
-  const meta = statusMeta(status);
-  // A column put away is a state nobody is working in, so it is not offered
-  // here either — except to a task already in it, which has to keep being able
-  // to say what it is.
+  const meta = columnMeta(columns, columnId);
+  const color = meta?.color ?? UNSORTED_COLOR;
+  // Unsorted is offered only to a task that is unsorted. It is where work ends
+  // up when its column is deleted, not somewhere anybody files work on purpose
+  // — but a task standing there has to be able to say so.
+  const options = [
+    ...(meta ? [] : [{ value: UNSORTED, label: UNSORTED_LABEL }]),
+    ...columns.map((c) => ({ value: c.id, label: c.name })),
+  ];
+
+  // A tracker with no columns has nowhere to move a task to, so the pill says
+  // where the task stands and stops there.
+  if (columns.length === 0) {
+    return (
+      <span
+        className="flex items-center gap-1.5 truncate rounded-[var(--radius)] border border-[var(--hairline)] px-2 py-1 text-[0.75rem] font-medium text-[var(--ink-secondary)]"
+        title="This tracker has no columns yet"
+      >
+        <span
+          className="h-1.5 w-1.5 shrink-0 rounded-full"
+          style={{ background: color }}
+        />
+        {meta?.name ?? UNSORTED_LABEL}
+      </span>
+    );
+  }
+
   return (
     <div className="relative flex items-center">
       <span
         className="pointer-events-none absolute left-2 h-1.5 w-1.5 shrink-0 rounded-full"
-        style={{ background: meta.color }}
+        style={{ background: color }}
       />
       <LazySelect
-        value={status}
-        onChange={(next) => onChange(next as TaskStatus)}
-        options={offeredStatuses(hidden, status).map((s) => ({
-          value: s.value,
-          label: s.label,
-        }))}
+        value={columnId ?? UNSORTED}
+        onChange={(next) => onChange(next === UNSORTED ? null : next)}
+        options={options}
         disabled={disabled}
         className="select truncate pl-[1.375rem] font-medium"
         style={{
-          background: `color-mix(in srgb, ${meta.color} 12%, var(--surface-raised))`,
-          borderColor: `color-mix(in srgb, ${meta.color} 28%, transparent)`,
+          background: `color-mix(in srgb, ${color} 12%, var(--surface-raised))`,
+          borderColor: `color-mix(in srgb, ${color} 28%, transparent)`,
         }}
-        ariaLabel="Task status"
+        ariaLabel="Tracker column"
       />
     </div>
   );

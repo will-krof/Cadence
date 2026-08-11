@@ -7,6 +7,7 @@ import { blockerProblem, parseBlockers, setBlockers } from "@/lib/task-deps";
 import { assigneeRows, parseAssignees } from "@/lib/assignees";
 import { parseTagIds } from "@/lib/task-tags";
 import { badRequest, done, forbidden, notFound } from "@/lib/responses";
+import { UNSORTED_LABEL } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function PATCH(
@@ -31,9 +32,29 @@ export async function PATCH(
 
   const reachable = await prisma.task.findFirst({
     where: { id, ...boardWriteFilter(viewer) },
-    select: { id: true, projectId: true, parentId: true, status: true },
+    select: {
+      id: true,
+      projectId: true,
+      parentId: true,
+      columnId: true,
+      // What it is standing in now, so a move can be written into the history
+      // as the move it is rather than as a state.
+      column: { select: { id: true, name: true } },
+    },
   });
   if (!reachable) return notFound("Task");
+
+  // Moving it between columns, which stays inside its own project's board.
+  // Null is a real answer: work can be taken out of every column and left
+  // unsorted, which is where the tasks of a deleted column end up too.
+  let moved: { id: string; name: string } | null = null;
+  if (parsed.data.columnId) {
+    moved = await prisma.projectColumn.findFirst({
+      where: { id: parsed.data.columnId, projectId: reachable.projectId },
+      select: { id: true, name: true },
+    });
+    if (!moved) return notFound("That column is not on this project —");
+  }
 
   // Making a task a step of another, or lifting it back out. A task can't be
   // its own parent, can't be filed under one of its own steps, and can't be
@@ -125,14 +146,21 @@ export async function PATCH(
   });
   const task = taskPayload(updated);
 
-  // A task's history is written as it happens: this is the only place a status
-  // moves, so it is the only place that has to remember it.
-  if (parsed.data.status && parsed.data.status !== reachable.status) {
+  // A task's history is written as it happens: this is the only place a task
+  // moves between columns, so it is the only place that has to remember it.
+  // Both names are written beside the ids — a line has to keep reading after
+  // either column is renamed or deleted.
+  if (
+    parsed.data.columnId !== undefined &&
+    (parsed.data.columnId ?? null) !== reachable.columnId
+  ) {
     await prisma.taskEvent.create({
       data: {
         taskId: id,
-        status: parsed.data.status,
-        from: reachable.status,
+        columnId: moved?.id ?? null,
+        columnName: moved?.name ?? UNSORTED_LABEL,
+        fromId: reachable.column?.id ?? null,
+        fromName: reachable.column?.name ?? UNSORTED_LABEL,
         by: viewerName(viewer),
       },
     });

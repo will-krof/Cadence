@@ -13,12 +13,14 @@ import { contrastText } from "@/lib/color";
 import { isHttpUrl } from "@/lib/sanitize";
 import {
   Developer,
-  STATUS_OPTIONS,
+  ProjectColumn,
   Task,
   TaskRow,
   TaskFields,
-  TaskStatus,
-  statusMeta,
+  UNSORTED,
+  UNSORTED_COLOR,
+  columnMeta,
+  doneColumnIds,
   taskFields,
 } from "@/lib/types";
 import { analyseNetwork, EMPTY_NETWORK, Link } from "@/lib/critical-path";
@@ -26,18 +28,17 @@ import { useBoard } from "@/components/BoardProvider";
 import {
   useColumnWidths,
   useFoldedSteps,
-  useHiddenStatuses,
   useShowCriticalPath,
   useShowDependencies,
 } from "@/lib/prefs";
 import {
   AssigneePicker,
   AvatarStack,
+  ColumnPill,
   PriorityMark,
   TagDots,
   SprintPicker,
   Stat,
-  StatusPill,
 } from "@/components/ui";
 import { TaskEditModal } from "@/components/TaskEditModal";
 
@@ -124,6 +125,7 @@ interface BarDrag {
 }
 
 type ColKey = "task" | "status" | "developer";
+
 type ColWidths = Record<ColKey, number>;
 
 /** Left to right, which is the order the handles and the header read in. */
@@ -131,7 +133,7 @@ const COL_ORDER: ColKey[] = ["task", "status", "developer"];
 
 const COL_LABELS: Record<ColKey, string> = {
   task: "Task",
-  status: "Status",
+  status: "Column",
   developer: "People",
 };
 
@@ -160,12 +162,15 @@ export function GanttBoard({
     hasUnplanned,
     selectSprint,
     stats,
+    columns,
     updateTask,
     reorderTasks,
   } = useBoard();
 
-  const [hiddenStatuses] = useHiddenStatuses();
   const [folded, setFolded] = useFoldedSteps();
+
+  /** Which columns mean the work is finished, for everything counted below. */
+  const doneIds = useMemo(() => doneColumnIds(columns), [columns]);
 
   // Which of a task's fields this project asks about, read once for the whole
   // board rather than per row.
@@ -179,11 +184,11 @@ export function GanttBoard({
       if (!task.parentId) continue;
       const at = counts.get(task.parentId) ?? { done: 0, total: 0 };
       at.total++;
-      if (task.status === "DONE") at.done++;
+      if (task.columnId != null && doneIds.has(task.columnId)) at.done++;
       counts.set(task.parentId, at);
     }
     return counts;
-  }, [tasks]);
+  }, [tasks, doneIds]);
 
   /**
    * What the chart draws. Folded, it is whole tasks only — their steps are
@@ -894,16 +899,25 @@ export function GanttBoard({
         <div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <Stat label="Total" value={stats.total} />
-            {/* A status put away in the tracker is one nobody is watching, so
-                it drops out of the tally here too until it comes back. */}
-            {STATUS_OPTIONS.filter((s) => !hiddenStatuses.includes(s.value)).map((s) => (
+            {/* The project's own columns, in the tracker's order and its
+                colours: the timeline counts the states the team named rather
+                than a list this app used to keep. */}
+            {columns.map((c) => (
               <Stat
-                key={s.value}
-                label={s.label}
-                value={stats.counts[s.value]}
-                dot={s.color}
+                key={c.id}
+                label={c.name}
+                value={stats.counts.get(c.id) ?? 0}
+                dot={c.color}
               />
             ))}
+            {/* Work standing in no column at all, and only while there is any. */}
+            {(stats.counts.get(UNSORTED) ?? 0) > 0 && (
+              <Stat
+                label="Unsorted"
+                value={stats.counts.get(UNSORTED) ?? 0}
+                dot={UNSORTED_COLOR}
+              />
+            )}
           </div>
           <div className="mt-2.5 flex items-center gap-2">
             <div className="h-1 w-28 overflow-hidden rounded-full bg-[var(--gridline)] sm:w-40">
@@ -1071,7 +1085,7 @@ export function GanttBoard({
               steps={fields.subtasks ? stepCounts.get(task.id) : undefined}
               blocks={blockCounts.get(task.id) ?? 0}
               critical={showCritical && network.critical.has(task.id)}
-              hiddenStatuses={hiddenStatuses}
+              columns={columns}
               developers={developers}
               gridTemplateColumns={gridTemplateColumns}
               fields={fields}
@@ -1250,7 +1264,10 @@ export function GanttBoard({
               // The bar takes its colour from the first person on it — with
               // several, one of them has to lead, and the row's faces say who
               // the rest are.
-              const color = task.assignees[0]?.color ?? statusMeta(task.status).color;
+              const color =
+                task.assignees[0]?.color ??
+                columnMeta(columns, task.columnId)?.color ??
+                UNSORTED_COLOR;
               const critical = showCritical && network.critical.has(task.id);
               // Empty chart on a row is somewhere to draw: the task is on the
               // board but nobody has said when it runs, and dragging across the
@@ -1426,7 +1443,7 @@ const TableRow = memo(function TableRow({
   steps,
   blocks,
   critical,
-  hiddenStatuses,
+  columns,
   developers,
   gridTemplateColumns,
   fields,
@@ -1447,8 +1464,8 @@ const TableRow = memo(function TableRow({
   blocks: number;
   /** This task is on the longest chain of blocked work. */
   critical: boolean;
-  /** Read once for the board and handed down, not read per row. */
-  hiddenStatuses: TaskStatus[];
+  /** The board's columns, read once for the board and handed down. */
+  columns: ProjectColumn[];
   developers: Developer[];
   gridTemplateColumns: string;
   /** What this project asks a task for; a field put away is not drawn. */
@@ -1645,11 +1662,11 @@ const TableRow = memo(function TableRow({
       </div>
 
       <div className="px-2">
-        <StatusPill
-          status={task.status}
-          hidden={hiddenStatuses}
+        <ColumnPill
+          columnId={task.columnId}
+          columns={columns}
           disabled={!canEdit}
-          onChange={(status) => onChange(task.id, { status })}
+          onChange={(columnId) => onChange(task.id, { columnId })}
         />
       </div>
 

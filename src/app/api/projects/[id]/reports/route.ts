@@ -43,12 +43,12 @@ export async function GET(
   // exact — it is a guard against a year-old board, not a filter.
   const since = new Date(Date.now() - WINDOW_DAYS * 3 * 24 * 60 * 60 * 1000);
 
-  const [tasks, events, sprints] = await Promise.all([
+  const [tasks, events, sprints, columns] = await Promise.all([
     prisma.task.findMany({
       where: { projectId: id },
       select: {
         id: true,
-        status: true,
+        columnId: true,
         priority: true,
         createdAt: true,
         startDate: true,
@@ -63,7 +63,7 @@ export async function GET(
     }),
     prisma.taskEvent.findMany({
       where: { task: { projectId: id }, at: { gte: since } },
-      select: { taskId: true, status: true, at: true },
+      select: { taskId: true, columnId: true, at: true },
       orderBy: { at: "asc" },
     }),
     prisma.sprint.findMany({
@@ -76,7 +76,15 @@ export async function GET(
         archived: true,
       },
     }),
+    // The board itself: what its columns are called, what colour each one is,
+    // and which of them mean finished. Every number below is worked out
+    // against these rather than against a list of statuses this app made up.
+    prisma.projectColumn.findMany({
+      where: { projectId: id },
+      select: { id: true, name: true, color: true, order: true, isDone: true },
+      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+    }),
   ]);
 
-  return jsonResponse(request, buildReport({ tasks, events, sprints }));
+  return jsonResponse(request, buildReport({ tasks, events, sprints, columns }));
 }
