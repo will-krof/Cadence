@@ -5,8 +5,8 @@
 ### Sprint planning that doesn't make you choose between a Gantt chart and a board.
 
 One set of tasks. A timeline for the plan, a kanban tracker for the day,
-a roster for the people — and a project card that decides which of them
-this project even needs.
+a roster for the people — and a board whose columns you name, colour and
+order yourself, because no tool knows what your team's states are called.
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.2-000000?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-19-087EA4?style=flat-square&logo=react&logoColor=white)](https://react.dev)
@@ -17,7 +17,7 @@ this project even needs.
 
 <br />
 
-<img src="docs/screenshots/timeline.png" alt="The Cadence timeline: a sprint's tasks as Gantt bars, with status and assignees on every row" width="100%" />
+<img src="docs/screenshots/timeline.png" alt="The Cadence timeline: a sprint's tasks as Gantt bars, with the column each one stands in and who is on it" width="100%" />
 
 </div>
 
@@ -32,13 +32,41 @@ which of them it wants.
 |  | |
 |---|---|
 | **📅 Timeline** | A Gantt chart of the sprint. Drag a bar to move the work, drag its edge to change how long it takes. Weekends fold away. |
-| **🗂 Tracker** | The same tasks as cards in five columns. Drag between them, hide the columns nobody is watching, filter to one person. |
+| **🗂 Tracker** | The same tasks as cards, in columns **you** name. Write them, colour them, drag the board into the order you work in, and say which column means finished. Delete the ones you don't want — properly. |
 | **👥 Team** | A roster with a profile per person — what they do, what they're on, what they're carrying, and what time it is where they are. Pay and contact details stay with the workspace owner. |
 | **📖 Wiki** | A per-project tree of pages for the things that aren't tasks. |
 | **📈 Reports** | The project's own numbers: cumulative flow, throughput a week, cycle time, velocity a sprint, and who is carrying what. Worked out from the tasks and their history, stored nowhere. |
 | **🗒 Notes** | A private pile per person, in whatever order they drag it into — right-click one to pin, copy or delete it. Nobody else in the workspace can read them. |
 | **🔑 Roles & invite links** | Every project has its own roles, and a role is a list of what it opens. Invite somebody with a link that expires in three days and is spent on one login. |
 | **🎚 Nothing you didn't ask for** | A project starts with everything switched off. Tick the tools it needs — and the fields a task should ask for — and the rest never appears. |
+
+<br />
+
+## The board is yours
+
+<img src="docs/screenshots/columns.png" alt="A tracker column being renamed, recoloured, moved and deleted from its own panel" width="100%" />
+
+Most boards hand you three or five columns and a nice word for the fact that you
+can't change them. Cadence hands you an empty tracker and a text field.
+
+- **Name them.** *Backlog*, *Building*, *In review*, *Blocked*, *Shipped* — or
+  whatever your team already says out loud. Up to twenty of them.
+- **Colour them.** Eight colours that tell each other apart on both themes. The
+  colour is a dot beside the name, never instead of it.
+- **Order them.** Move a column left or right and the whole board — cards,
+  counts, the timeline's tally, the reports — moves with it.
+- **Say which one means finished.** Tick it, and progress, velocity, cycle time
+  and "is this still blocked" all count from there. Nothing reads the *name*, so
+  *Shipped*, *Live* and *Готово* work exactly as well as *Done*.
+- **Delete one and it's gone.** Not hidden from you while it stands for everyone
+  else — gone. The work in it isn't deleted with it: those tasks come back on the
+  board as **Unsorted**, ready to drag somewhere that still exists.
+
+A new project's tracker starts with no columns at all, a field to write the first
+one, and a familiar five behind a button for anyone who'd rather not invent a
+board from scratch. Upgrading? Every project you already have keeps exactly the
+board it had — the migration writes your old statuses out as columns, in order,
+with Done already ticked.
 
 <br />
 
@@ -71,12 +99,12 @@ beside the app and nothing to provision before it starts.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/tracker.png" alt="The tracker: tasks as cards in five status columns" /></td>
+<td width="50%"><img src="docs/screenshots/tracker.png" alt="The tracker: tasks as cards in columns the team named and coloured itself" /></td>
 <td width="50%"><img src="docs/screenshots/project.png" alt="The project card: statistics, sprints, and the people on the project with their roles and invite links" /></td>
 </tr>
 <tr>
-<td><b>The tracker.</b> Five columns, drag between them. Any column can be put away with the × in its header — a board of five is wider than a laptop — and comes back in one click with its count intact.</td>
-<td><b>The project card.</b> Everything about one project in one place: how the work is going, the sprints, and who is on it — with their roles and their invite links right there.</td>
+<td><b>The tracker.</b> Columns in this team's own words, in this team's own colours. Drag cards between them with a mouse, a pen or a finger; press the <b>…</b> on any header to rename it, recolour it, move it or delete it.</td>
+<td><b>The project card.</b> Everything about one project in one place: where the work stands column by column, the sprints, and who is on it — with their roles and their invite links right there.</td>
 </tr>
 <tr>
 <td><img src="docs/screenshots/team.png" alt="The team roster with a profile open beside it" /></td>
@@ -98,6 +126,7 @@ Workspace (one account)
 └── Projects
     ├── Roles ───────────── what a role opens: timeline · tracker · team · wiki
     ├── People ──────────── roster ∩ project, holding roles + an invite link
+    ├── Columns ─────────── the tracker's own states, named and coloured here
     ├── Sprints ─────────── each one its own board
     ├── Tasks ───────────── shared by up to four people, with steps,
     │                       dependencies, tags, comments and history
@@ -172,14 +201,15 @@ the "viewing as" picker go — for a project one person runs, they are a screen 
 questions nobody has.
 
 **Reports** are a screen of the project's own numbers, switched on like any other
-tool. A cumulative flow diagram of every task by status day by day, how much is
+tool. A cumulative flow diagram of every task by column day by day, how much is
 finished each week, how long a task takes from the day it is picked up, what each
 sprint got through, and who is carrying what — worked out on the server from the
 tasks and their history each time it is opened. Nothing is stored, so the numbers
-are always as true as the boards, and switching it off loses nothing. Every chart
-carries a legend and can be read as a table: the status colours are the boards'
-own, and two of them are close enough under red-green colour blindness that hue
-alone would not separate them.
+are always as true as the boards, and switching it off loses nothing. The charts
+are drawn in your columns' own colours and stacked in your board's own order, and
+"finished" is whichever column you ticked. Every chart carries a legend and can
+be read as a table: a colour somebody picked is not a palette validated for
+separation, so the labels are what tell two bands apart.
 
 A project can also say **when it runs**, rather than leaving it to be worked out
 from the earliest and latest task. Set a start date, an end date, or just one of
@@ -221,14 +251,28 @@ where they are. It drops out of the run of sprints on the project card into an
 from the sprint picker, so the work in it stays reachable. **Restore** brings it
 back.
 
-On the **tracker**, columns are the five statuses, and any of them can be hidden
-with the × in its header. Hidden columns collect above the board with their
-counts, one click each to bring back, and their tasks were never filtered out of
-anything.
+On the **tracker**, the columns are the project's own. A new tracker has none:
+write the first one, pick its colour, and add the rest as the work needs them —
+or take the familiar five from the button underneath and change them from there.
+The **…** on a column header is where the rest lives: rename it, recolour it,
+move it left or right, and tick whether work standing in it is finished.
+
+**Deleting a column deletes it.** A column used to be hideable and nothing more,
+which was never what anybody meant: the state stayed real, its tasks stayed in
+it, and every picker went on offering it to whoever hadn't hidden it. Now it
+goes — and the work standing in it doesn't go with it. Those tasks come back on
+the board as **Unsorted**, a pile the board only draws while something is in it,
+and drag into any column that still exists. Their history keeps reading, too: a
+line says the name the column had when the task was moved, so *"Doing →
+Shipped"* still means what it meant after *Shipped* is deleted.
+
+Nothing anywhere reads a column's *name* to decide what finished means — the
+tick does. Call the last column *Shipped*, *Live* or *Готово* and progress,
+velocity, cycle time and "is this blocker cleared" all keep working.
 
 A task is written where it will live: the **+** beside the timeline's Task
-column, or the **+** on a tracker column — which also decides what the task
-starts as, so one written under "In test" arrives in test.
+column, or the **+** on a tracker column — which also decides where the task
+starts, so one written under "In review" arrives there.
 
 In the **sidebar**, every project lists the tools it carries, open to begin with:
 what the workspace is made of should be readable without clicking into it. Fold a
@@ -247,7 +291,10 @@ and come back from the chips underneath.
 
 Every project has its own roles, and a role is a list of what it can open:
 timeline, tracker, team, wiki. One role per project is the admin, which always
-sees everything and is the only one that edits the project. Someone can hold
+sees everything and is the only one that edits the project — including what the
+tracker's columns are called, which is a project setting like its tags and its
+roles rather than something anybody working on the board can rewrite under
+everybody else. Someone can hold
 several roles on the same project, and different roles on different projects.
 
 A signed-in member reaches the projects they are on, through the roles they hold
@@ -390,5 +437,5 @@ A database created after this was written never meets it.
 <br />
 
 <div align="center">
-<sub>Screenshots are of a seeded demo workspace. Sprint planning, without the ceremony.</sub>
+<sub>Screenshots are of a seeded demo workspace — its columns are that team's, not ours. Sprint planning, without the ceremony.</sub>
 </div>
